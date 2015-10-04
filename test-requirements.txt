@@ -1,0 +1,4 @@
+pytest
+pytest-coverage
+prospector[with-everything]
+hg+https://bitbucket.org/logilab/pylint
