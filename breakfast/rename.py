@@ -1,6 +1,6 @@
 """Rename refactorings."""
 from collections import namedtuple
-from ast import ClassDef, FunctionDef, Name, NodeVisitor, dump, parse
+from ast import ClassDef, FunctionDef, Name, NodeVisitor, parse
 
 
 Position = namedtuple('Position', ['row', 'column'])
@@ -33,7 +33,6 @@ class NameVisitor(NodeVisitor):
         self.generic_visit(node)
 
     def visit_FunctionDef(self, node: FunctionDef):  # noqa
-        print(dump(node, include_attributes=True))
         if node.name == self.source_name:
             self.positions.append(
                 Position(

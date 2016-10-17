@@ -32,7 +32,7 @@ setup(
     keywords='refactoring',
     url='http://github.com/thisfred/breakfast',
     packages=['breakfast'],
-    long_description=open('README.md').read(),
+    long_description='',  # open('README.md').read(),
     classifiers=[
         'License :: OSI Approved :: BSD License',
         'Programming Language :: Python :: 3',
