@@ -1,46 +1,111 @@
 """Rename refactorings."""
-from astroid import as_string, parse, nodes, transforms
+from collections import namedtuple
+from ast import ClassDef, FunctionDef, Name, NodeVisitor, dump, parse
 
 
-class AsStringVisitorImproved(as_string.AsStringVisitor):
-    """Modifies AsStringVisitor that does not output unneeded parentheses."""
-
-    def wrap_expression(self, node):
-        """Leave parentheses off simple expressions."""
-        stringed = node.accept(self)
-
-        # XXX: hack to detect whether this is a leaf node, there may be
-        # a better way.
-        if not node._astroid_fields:
-            return stringed
-
-        return '(%s)' % stringed
-
-    def visit_binop(self, node):
-        return '%s %s %s' % (
-            self.wrap_expression(node.left),
-            node.op,
-            self.wrap_expression(node.right))
+Position = namedtuple('Position', ['row', 'column'])
+Range = namedtuple('Range', ['start', 'end'])
 
 
-def rename_variable(*, source, old_name, new_name):
-    """Rename a local variable."""
+class NameTransformer:
 
-    source_ast = parse(source)
-    renamer = transforms.TransformVisitor()
+    def __init__(self, old_name, new_name):
+        self.old_name = old_name
+        self.new_name = new_name
 
-    def change_name(node):
-        """Modify the node's name."""
-        node.name = new_name
+    def action(self, node):
+        node.name = self.new_name
 
-    def has_old_name(node):
-        """Return only nodes with the old name."""
-        return node.name == old_name
+    def predicate(self, node):
+        return node.name == self.old_name
 
-    for node_type in (nodes.Name, nodes.AssignName, nodes.DelName):
-        renamer.register_transform(
-            node_type, change_name, predicate=has_old_name)
 
-    transformed = renamer.visit(source_ast)
-    stringer = AsStringVisitorImproved(indent='    ')
-    return stringer(transformed)
+class NameVisitor(NodeVisitor):
+
+    def __init__(self, source_name: str) -> None:
+        self.source_name = source_name
+        self.positions = []  # type: List[Position]
+
+    def visit_Name(self, node: Name):  # noqa
+        if node.id == self.source_name:
+            self.positions.append(
+                Position(row=node.lineno - 1, column=node.col_offset))
+        self.generic_visit(node)
+
+    def visit_FunctionDef(self, node: FunctionDef):  # noqa
+        print(dump(node, include_attributes=True))
+        if node.name == self.source_name:
+            self.positions.append(
+                Position(
+                    row=node.lineno - 1,
+                    column=node.col_offset + len('def ')))
+        for arg in node.args.args:
+            if arg.arg == self.source_name:
+                self.positions.append(
+                    Position(row=arg.lineno - 1, column=arg.col_offset))
+        self.generic_visit(node)
+
+    def visit_ClassDef(self, node: ClassDef):  # noqa
+        if node.name == self.source_name:
+            self.positions.append(
+                Position(
+                    row=node.lineno - 1,
+                    column=node.col_offset + len('class ')))
+        self.generic_visit(node)
+
+    def visit_Attribute(self, node):  # noqa
+        if node.attr == self.source_name:
+            column = node.col_offset + len(node.value.id) + 1
+            self.positions.append(
+                Position(row=node.lineno - 1, column=column))
+        self.generic_visit(node)
+
+    def visit_Call(self, node):  # noqa
+        for keyword in node.keywords:
+            if keyword.arg == self.source_name:
+                self.positions.append(
+                    Position(
+                        row=keyword.value.lineno - 1,
+                        column=keyword.value.col_offset - (
+                            len(self.source_name) + 1)))
+        self.generic_visit(node)
+
+
+class Renamer:
+
+    def __init__(self,
+                 source: str,
+                 position: Position,
+                 old_name: str,
+                 new_name: str) -> None:
+        self.source = source
+        self.ast = parse(source)
+        self.position = position
+        self.old_name = old_name
+        self.new_name = new_name
+
+    def rename(self) -> str:
+        visitor = NameVisitor(source_name=self.old_name)
+        visitor.visit(self.ast)
+        lines = self.source.split('\n')
+
+        for position in reversed(visitor.positions):
+            line = lines[position.row]
+            lines[position.row] = self.replace_at(
+                line=line,
+                column_offset=position.column)
+        return '\n'.join(lines)
+
+    def replace_at(self, line: str, column_offset: int) -> str:
+        end = column_offset + len(self.old_name)
+        return line[:column_offset] + self.new_name + line[end:]
+
+
+def contains(node, position):
+    return node.fromlineno <= position.row <= node.tolineno
+
+
+def matches(node, position):
+    return (
+        node.col_offset == position.column and
+        position.row == node.fromlineno)

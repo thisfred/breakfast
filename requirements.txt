@@ -1,2 +1,0 @@
-hg+https://bitbucket.org/logilab/astroid
-

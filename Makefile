@@ -4,7 +4,7 @@ REQS = pip install -Ur requirements.txt
 TESTREQS = pip install -Ur test-requirements.txt
 INSTALL = pip install -e '.'
 
-venv: requirements.txt
+venv: requirements.txt test-requirements.txt
 	test -d .venv || virtualenv -p python3 .venv
 	. $(ACTIVATE); $(REQS)
 	. $(ACTIVATE); $(TESTREQS)
