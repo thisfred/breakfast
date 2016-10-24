@@ -1,10 +1,7 @@
 """Tests for rename refactoring."""
 
 from breakfast.rename import Renamer, Position
-
-
-def dedent(code: str, *, by: int=4) -> str:
-    return '\n'.join(l[by:] for l in code.split('\n'))
+import pytest
 
 
 def test_renames_local_variable_in_function():
@@ -27,7 +24,7 @@ def test_renames_local_variable_in_function():
     """)
 
     renamer = Renamer(
-        source=source, position=Position(2, 4), old_name='old', new_name='new')
+        source=source, position=Position(2, 4), new_name='new')
 
     assert target == renamer.rename()
 
@@ -47,8 +44,7 @@ def test_renames_function():
 
     renamer = Renamer(
         source=source,
-        position=Position(1, 0),
-        old_name='fun_old',
+        position=Position(1, 4),
         new_name='fun_new')
 
     assert target == renamer.rename()
@@ -71,8 +67,7 @@ def test_renames_class():
 
     renamer = Renamer(
         source=source,
-        position=Position(1, 0),
-        old_name='OldClass',
+        position=Position(1, 6),
         new_name='NewClass')
 
     assert target == renamer.rename()
@@ -94,7 +89,33 @@ def test_renames_parameter():
     renamer = Renamer(
         source=source,
         position=Position(1, 8),
-        old_name='arg',
+        new_name='new_arg')
+
+    assert target == renamer.rename()
+
+
+def test_renames_parameter_with_unusual_indentation():
+    source = dedent("""
+    def fun(arg, arg2):
+        return arg + arg2
+    fun(
+        arg=\\
+            1,
+        arg2=2)
+    """)
+
+    target = dedent("""
+    def fun(new_arg, arg2):
+        return new_arg + arg2
+    fun(
+        new_arg=\\
+            1,
+        arg2=2)
+    """)
+
+    renamer = Renamer(
+        source=source,
+        position=Position(1, 8),
         new_name='new_arg')
 
     assert target == renamer.rename()
@@ -109,6 +130,7 @@ def test_renames_method():
 
     a = A()
     b = a.old()
+    a.old()
     """)
 
     target = dedent("""
@@ -119,12 +141,64 @@ def test_renames_method():
 
     a = A()
     b = a.new()
+    a.new()
     """)
 
     renamer = Renamer(
         source=source,
-        position=Position(3, 4),
-        old_name='old',
+        position=Position(3, 8),
         new_name='new')
 
     assert target == renamer.rename()
+
+
+@pytest.mark.skip
+def test_renames_only_the_right_method_definition_and_calls():
+    source = dedent("""
+    class ClassThatShouldHaveMethodRenamed:
+
+        def old(self, arg):
+            pass
+
+
+    class UnrelatedClass:
+
+        def old(self, arg):
+            pass
+
+
+    a = ClassThatShouldHaveMethodRenamed()
+    a.old()
+    b = UnrelatedClass()
+    b.old()
+    """)
+
+    target = dedent("""
+    class ClassThatShouldHaveMethodRenamed:
+
+        def new(self, arg):
+            pass
+
+
+    class UnrelatedClass:
+
+        def old(self, arg):
+            pass
+
+
+    a = ClassThatShouldHaveMethodRenamed()
+    a.new()
+    b = UnrelatedClass()
+    b.old()
+    """)
+
+    renamer = Renamer(
+        source=source,
+        position=Position(3, 8),
+        new_name='new')
+
+    assert target == renamer.rename()
+
+
+def dedent(code: str, *, by: int=4) -> str:
+    return '\n'.join(l[by:] for l in code.split('\n'))

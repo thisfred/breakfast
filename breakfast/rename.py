@@ -1,23 +1,23 @@
 """Rename refactorings."""
+from typing import List
 from collections import namedtuple
+from itertools import takewhile
 from ast import ClassDef, FunctionDef, Name, NodeVisitor, parse
 
 
 Position = namedtuple('Position', ['row', 'column'])
-Range = namedtuple('Range', ['start', 'end'])
 
 
-class NameTransformer:
+class FindNameVisitor(NodeVisitor):
 
-    def __init__(self, old_name, new_name):
-        self.old_name = old_name
-        self.new_name = new_name
+    def __init__(self, position: Position) -> None:
+        self.position = position
+        self.found = None
 
-    def action(self, node):
-        node.name = self.new_name
-
-    def predicate(self, node):
-        return node.name == self.old_name
+    def visit_Name(self, node: Name):  # noqa
+        if (node.lineno - 1 == self.position.row and
+                node.col_offset == self.position.column):
+            self.found = node
 
 
 class NameVisitor(NodeVisitor):
@@ -72,39 +72,57 @@ class NameVisitor(NodeVisitor):
 
 class Renamer:
 
-    def __init__(self,
+    def __init__(self, *,
                  source: str,
                  position: Position,
-                 old_name: str,
                  new_name: str) -> None:
-        self.source = source
+        self.lines = source.split('\n')
         self.ast = parse(source)
         self.position = position
-        self.old_name = old_name
         self.new_name = new_name
+        self.old_name = get_name_at_position(self.lines, self.position)
 
     def rename(self) -> str:
+
         visitor = NameVisitor(source_name=self.old_name)
         visitor.visit(self.ast)
-        lines = self.source.split('\n')
 
         for position in reversed(visitor.positions):
-            line = lines[position.row]
-            lines[position.row] = self.replace_at(
+            while not is_at(
+                    lines=self.lines,
+                    substring=self.old_name,
+                    position=position):
+                position = previous(position, self.lines)
+            line = self.lines[position.row]
+            self.lines[position.row] = self.replace_at(
                 line=line,
                 column_offset=position.column)
-        return '\n'.join(lines)
+        return '\n'.join(self.lines)
 
-    def replace_at(self, line: str, column_offset: int) -> str:
+    def replace_at(self, *, line: str, column_offset: int) -> str:
         end = column_offset + len(self.old_name)
         return line[:column_offset] + self.new_name + line[end:]
 
 
-def contains(node, position):
-    return node.fromlineno <= position.row <= node.tolineno
+def is_at(*, lines: List[str], substring: str, position: Position) -> bool:
+    return lines[position.row][position.column:].startswith(substring)
 
 
-def matches(node, position):
-    return (
-        node.col_offset == position.column and
-        position.row == node.fromlineno)
+def previous(position: Position, lines: List[str]) -> Position:
+    if position.column == 0:
+        new_row = position.row - 1
+        position = Position(row=new_row, column=len(lines[new_row]) - 1)
+    else:
+        position = Position(row=position.row, column=position.column - 1)
+    return position
+
+
+def get_name_at_position(lines: List[str], position: Position):
+    return "".join(
+        takewhile(
+            lambda c: valid(c),
+            [char for char in lines[position.row][position.column:]]))
+
+
+def valid(char: str):
+    return char == '_' or char.isalnum()
