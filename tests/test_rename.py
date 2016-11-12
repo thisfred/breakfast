@@ -1,7 +1,6 @@
 """Tests for rename refactoring."""
 
 from breakfast.rename import Renamer, Position
-import pytest
 
 
 def test_renames_local_variable_in_function():
@@ -24,7 +23,7 @@ def test_renames_local_variable_in_function():
     """)
 
     renamer = Renamer(
-        source=source, position=Position(2, 4), new_name='new')
+        source=source, position=Position(row=2, column=4), new_name='new')
 
     assert target == renamer.rename()
 
@@ -44,7 +43,7 @@ def test_renames_function():
 
     renamer = Renamer(
         source=source,
-        position=Position(1, 4),
+        position=Position(row=1, column=4),
         new_name='fun_new')
 
     assert target == renamer.rename()
@@ -67,7 +66,7 @@ def test_renames_class():
 
     renamer = Renamer(
         source=source,
-        position=Position(1, 6),
+        position=Position(row=1, column=6),
         new_name='NewClass')
 
     assert target == renamer.rename()
@@ -88,7 +87,7 @@ def test_renames_parameter():
 
     renamer = Renamer(
         source=source,
-        position=Position(1, 8),
+        position=Position(row=1, column=8),
         new_name='new_arg')
 
     assert target == renamer.rename()
@@ -115,7 +114,7 @@ def test_renames_parameter_with_unusual_indentation():
 
     renamer = Renamer(
         source=source,
-        position=Position(1, 8),
+        position=Position(row=1, column=8),
         new_name='new_arg')
 
     assert target == renamer.rename()
@@ -129,7 +128,6 @@ def test_renames_method():
             pass
 
     a = A()
-    b = a.old()
     a.old()
     """)
 
@@ -140,19 +138,17 @@ def test_renames_method():
             pass
 
     a = A()
-    b = a.new()
     a.new()
     """)
 
     renamer = Renamer(
         source=source,
-        position=Position(3, 8),
+        position=Position(row=3, column=8),
         new_name='new')
 
     assert target == renamer.rename()
 
 
-@pytest.mark.skip
 def test_renames_only_the_right_method_definition_and_calls():
     source = dedent("""
     class ClassThatShouldHaveMethodRenamed:
@@ -194,7 +190,7 @@ def test_renames_only_the_right_method_definition_and_calls():
 
     renamer = Renamer(
         source=source,
-        position=Position(3, 8),
+        position=Position(row=3, column=8),
         new_name='new')
 
     assert target == renamer.rename()
