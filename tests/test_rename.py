@@ -49,6 +49,27 @@ def test_renames_function():
     assert target == renamer.rename()
 
 
+def test_renames_from_any_character_in_the_name():
+    source = dedent("""
+    def fun_old():
+        return 'result'
+    result = fun_old()
+    """)
+
+    target = dedent("""
+    def fun_new():
+        return 'result'
+    result = fun_new()
+    """)
+
+    renamer = Renamer(
+        source=source,
+        position=Position(row=1, column=7),
+        new_name='fun_new')
+
+    assert target == renamer.rename()
+
+
 def test_renames_class():
     source = dedent("""
     class OldClass:
@@ -89,6 +110,30 @@ def test_renames_parameter():
         source=source,
         position=Position(row=1, column=8),
         new_name='new_arg')
+
+    assert target == renamer.rename()
+
+
+def test_renames_passed_argument():
+
+    source = dedent("""
+    old = 2
+    def fun(arg, arg2):
+        return arg + arg2
+    fun(1, old)
+    """)
+
+    target = dedent("""
+    new = 2
+    def fun(arg, arg2):
+        return arg + arg2
+    fun(1, new)
+    """)
+
+    renamer = Renamer(
+        source=source,
+        position=Position(row=1, column=0),
+        new_name='new')
 
     assert target == renamer.rename()
 

@@ -1,34 +1,9 @@
 """Rename refactorings."""
-from typing import Any, List, Tuple  # noqa
+from typing import Any, Callable, List, Tuple  # noqa
 from collections import defaultdict
-from itertools import takewhile
-from ast import Attribute, Call, ClassDef, FunctionDef, Name, NodeVisitor, parse
-
-
-class Position:
-
-    def __init__(self, *, row, column):
-        self.row = row
-        self.column = column
-
-    @classmethod
-    def from_node(cls, node):
-        return cls(row=node.lineno - 1, column=node.col_offset)
-
-    def _add_offset(self, offset: int):
-        return Position(row=self.row, column=self.column + offset)
-
-    def __add__(self, column_offset: int):
-        return self._add_offset(column_offset)
-
-    def __sub__(self, column_offset: int):
-        return self._add_offset(-column_offset)
-
-    def __eq__(self, other) -> bool:
-        return self.row == other.row and self.column == other.column
-
-    def __repr__(self):
-        return 'Position(row=%s, column=%s)' % (self.row, self.column)
+from ast import Call, ClassDef, FunctionDef, Name, NodeVisitor, parse
+from breakfast.source import Source
+from breakfast.position import Position
 
 
 class NameVisitor(NodeVisitor):
@@ -43,6 +18,7 @@ class NameVisitor(NodeVisitor):
         for scope, positions in self.positions.items():
             if position in positions:
                 return scope
+
         raise KeyError("Position not found.")
 
     def visit_Name(self, node: Name):  # noqa
@@ -94,10 +70,7 @@ class NameVisitor(NodeVisitor):
         if isinstance(node, Name):
             return self.lookup(node.id)
 
-        if isinstance(node, Attribute):
-            return self.lookup(node.value.id)
-
-        return self.lookup(node.attr)
+        return self.lookup(node.value.id)
 
     def lookup(self, name):
         return self.names.get(name, name)
@@ -109,14 +82,14 @@ class Renamer:
                  source: str,
                  position: Position,
                  new_name: str) -> None:
-        self.lines = source.split('\n')
-        self.ast = parse(source)
-        self.position = position
         self.new_name = new_name
-        self.old_name = self.get_name_at_position(self.position)
+        self.position = position
+        self.source = Source(source)
+        self.ast = parse(source)
+        self.old_name, self.position = self.source.get_name_and_position(
+            self.position)
 
     def rename(self) -> str:
-
         visitor = NameVisitor(source_name=self.old_name)
         visitor.visit(self.ast)
 
@@ -124,44 +97,11 @@ class Renamer:
         for scope, positions in visitor.positions.items():
             for position in reversed(positions):
                 if scope[:len(original_scope)] == original_scope:
-                    actual_position = self.walk_back_to(
-                        name=self.old_name,
-                        start=position)
-                    self.replace_name_at(actual_position)
-        return '\n'.join(self.lines)
+                    self.replace_name_at(position)
+        return self.source.render()
 
-    def walk_back_to(self, *, name: str, start: Position) -> Position:
-        while not self.is_at(substring=self.old_name, position=start):
-            start = self.get_previous_position(start)
-        return start
-
-    def replace_name_at(self, start: Position) -> str:
-        end = start + len(self.old_name)
-        line = self.lines[start.row]
-        self.lines[start.row] = \
-            line[:start.column] + self.new_name + line[end.column:]
-
-    def is_at(self, *, substring: str, position: Position) -> bool:
-        return self.lines[position.row][position.column:].startswith(substring)
-
-    def get_previous_position(self, position: Position) -> Position:
-        if position.column == 0:
-            new_row = position.row - 1
-            position = Position(
-                row=new_row, column=len(self.lines[new_row]) - 1)
-        else:
-            position = Position(row=position.row, column=position.column - 1)
-        return position
-
-    def get_name_at_position(self, position: Position) -> str:
-        return "".join(
-            takewhile(
-                lambda c: valid_name_character(c),
-                [char for char in self.get_string_starting_at(position)]))
-
-    def get_string_starting_at(self, position: Position) -> str:
-        return self.lines[position.row][position.column:]
-
-
-def valid_name_character(char: str) -> bool:
-    return char == '_' or char.isalnum()
+    def replace_name_at(self, position: Position):
+        self.source.replace(
+            position=position,
+            old=self.old_name,
+            new=self.new_name)
