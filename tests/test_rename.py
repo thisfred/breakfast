@@ -1,6 +1,6 @@
 """Tests for rename refactoring."""
 
-from breakfast.rename import Renamer, Position
+from breakfast.rename import Position, rename
 
 
 def test_renames_local_variable_in_function():
@@ -22,10 +22,10 @@ def test_renames_local_variable_in_function():
         return result
     """)
 
-    renamer = Renamer(
-        source=source, position=Position(row=2, column=4), new_name='new')
-
-    assert target == renamer.rename()
+    assert target == rename(
+        source=source,
+        cursor=Position(row=2, column=4),
+        new_name='new')
 
 
 def test_renames_function():
@@ -41,12 +41,10 @@ def test_renames_function():
     result = fun_new()
     """)
 
-    renamer = Renamer(
+    assert target == rename(
         source=source,
-        position=Position(row=1, column=4),
+        cursor=Position(row=1, column=4),
         new_name='fun_new')
-
-    assert target == renamer.rename()
 
 
 def test_renames_from_any_character_in_the_name():
@@ -62,12 +60,10 @@ def test_renames_from_any_character_in_the_name():
     result = fun_new()
     """)
 
-    renamer = Renamer(
+    assert target == rename(
         source=source,
-        position=Position(row=1, column=7),
+        cursor=Position(row=1, column=7),
         new_name='fun_new')
-
-    assert target == renamer.rename()
 
 
 def test_renames_class():
@@ -85,12 +81,10 @@ def test_renames_class():
     instance = NewClass()
     """)
 
-    renamer = Renamer(
+    assert target == rename(
         source=source,
-        position=Position(row=1, column=6),
+        cursor=Position(row=1, column=6),
         new_name='NewClass')
-
-    assert target == renamer.rename()
 
 
 def test_renames_parameter():
@@ -106,12 +100,10 @@ def test_renames_parameter():
     fun(new_arg=1, arg2=2)
     """)
 
-    renamer = Renamer(
+    assert target == rename(
         source=source,
-        position=Position(row=1, column=8),
+        cursor=Position(row=1, column=8),
         new_name='new_arg')
-
-    assert target == renamer.rename()
 
 
 def test_renames_passed_argument():
@@ -130,12 +122,10 @@ def test_renames_passed_argument():
     fun(1, new)
     """)
 
-    renamer = Renamer(
+    assert target == rename(
         source=source,
-        position=Position(row=1, column=0),
+        cursor=Position(row=1, column=0),
         new_name='new')
-
-    assert target == renamer.rename()
 
 
 def test_renames_parameter_with_unusual_indentation():
@@ -157,12 +147,10 @@ def test_renames_parameter_with_unusual_indentation():
         arg2=2)
     """)
 
-    renamer = Renamer(
+    assert target == rename(
         source=source,
-        position=Position(row=1, column=8),
+        cursor=Position(row=1, column=8),
         new_name='new_arg')
-
-    assert target == renamer.rename()
 
 
 def test_renames_method():
@@ -186,12 +174,10 @@ def test_renames_method():
     a.new()
     """)
 
-    renamer = Renamer(
+    assert target == rename(
         source=source,
-        position=Position(row=3, column=8),
+        cursor=Position(row=3, column=8),
         new_name='new')
-
-    assert target == renamer.rename()
 
 
 def test_renames_only_the_right_method_definition_and_calls():
@@ -233,12 +219,10 @@ def test_renames_only_the_right_method_definition_and_calls():
     b.old()
     """)
 
-    renamer = Renamer(
+    assert target == rename(
         source=source,
-        position=Position(row=3, column=8),
+        cursor=Position(row=3, column=8),
         new_name='new')
-
-    assert target == renamer.rename()
 
 
 def dedent(code: str, *, by: int=4) -> str:

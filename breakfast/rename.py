@@ -8,13 +8,13 @@ from breakfast.position import Position
 
 class NameVisitor(NodeVisitor):
 
-    def __init__(self, source_name: str) -> None:
-        self.source_name = source_name
+    def __init__(self, old_name: str) -> None:
+        self.old_name = old_name
         self.positions = defaultdict(list)  # type: Dict[Any, Any]
         self.scope = tuple()  # type: Tuple[str, ...]
         self.names = {}
 
-    def find_scope(self, position: Position) -> Tuple[str, ...]:
+    def determine_scope(self, position: Position) -> Tuple[str, ...]:
         for scope, positions in self.positions.items():
             if position in positions:
                 return scope
@@ -22,23 +22,23 @@ class NameVisitor(NodeVisitor):
         raise KeyError("Position not found.")
 
     def visit_Name(self, node: Name):  # noqa
-        if node.id == self.source_name:
+        if node.id == self.old_name:
             self.positions[self.scope].append(Position.from_node(node))
 
     def visit_FunctionDef(self, node: FunctionDef):  # noqa
-        if node.name == self.source_name:
+        if node.name == self.old_name:
             self.positions[self.scope].append(
                 Position.from_node(node) + len('def '))
 
         self.scope += (node.name,)
         for arg in node.args.args:
-            if arg.arg == self.source_name:
+            if arg.arg == self.old_name:
                 self.positions[self.scope].append(Position.from_node(arg))
         self.generic_visit(node)
         self.scope = self.scope[:-1]
 
     def visit_ClassDef(self, node: ClassDef):  # noqa
-        if node.name == self.source_name:
+        if node.name == self.old_name:
             self.positions[self.scope].append(
                 Position.from_node(node) + len('class '))
         self.scope += (node.name,)
@@ -46,7 +46,7 @@ class NameVisitor(NodeVisitor):
         self.scope = self.scope[:-1]
 
     def visit_Attribute(self, node):  # noqa
-        if node.attr == self.source_name:
+        if node.attr == self.old_name:
             self.positions[self.scope].append(
                 Position.from_node(node) + len(node.value.id) + 1)
         self.generic_visit(node)
@@ -59,10 +59,10 @@ class NameVisitor(NodeVisitor):
     def visit_Call(self, node):  # noqa
         self.scope += (self.get_name(node.func),)
         for keyword in node.keywords:
-            if keyword.arg == self.source_name:
+            if keyword.arg == self.old_name:
                 self.positions[self.scope].append(
                     Position.from_node(keyword.value) -
-                    (len(self.source_name) + 1))
+                    (len(self.old_name) + 1))
         self.generic_visit(node)
         self.scope = self.scope[:-1]
 
@@ -75,33 +75,28 @@ class NameVisitor(NodeVisitor):
     def lookup(self, name):
         return self.names.get(name, name)
 
-
-class Renamer:
-
-    def __init__(self, *,
-                 source: str,
-                 position: Position,
-                 new_name: str) -> None:
-        self.new_name = new_name
-        self.position = position
-        self.source = Source(source)
-        self.ast = parse(source)
-        self.old_name, self.position = self.source.get_name_and_position(
-            self.position)
-
-    def rename(self) -> str:
-        visitor = NameVisitor(source_name=self.old_name)
-        visitor.visit(self.ast)
-
-        original_scope = visitor.find_scope(self.position)
-        for scope, positions in visitor.positions.items():
-            for position in reversed(positions):
+    def replace_occurrences(self,
+                            source: Source,
+                            position: Position,
+                            new_name: str):
+        original_scope = self.determine_scope(position)
+        for scope, occurrences in self.positions.items():
+            for occurrence in reversed(occurrences):
                 if scope[:len(original_scope)] == original_scope:
-                    self.replace_name_at(position)
-        return self.source.render()
+                    source.replace(
+                        position=occurrence,
+                        old=self.old_name,
+                        new=new_name)
 
-    def replace_name_at(self, position: Position):
-        self.source.replace(
-            position=position,
-            old=self.old_name,
-            new=self.new_name)
+
+def rename(*, source, cursor, new_name):
+    ast = parse(source)
+    source = Source(source)
+    old_name, start = source.get_name_and_position(cursor)
+    visitor = NameVisitor(old_name=old_name)
+    visitor.visit(ast)
+    visitor.replace_occurrences(
+        source=source,
+        position=start,
+        new_name=new_name)
+    return source.render()
