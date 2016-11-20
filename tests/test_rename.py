@@ -1,6 +1,7 @@
 """Tests for rename refactoring."""
 
-from breakfast.rename import Position, rename
+from breakfast.rename import NameVisitor, Position, rename
+import pytest
 
 
 def test_renames_local_variable_in_function():
@@ -223,6 +224,13 @@ def test_renames_only_the_right_method_definition_and_calls():
         source=source,
         cursor=Position(row=3, column=8),
         new_name='new')
+
+
+def test_raises_key_error():
+    visitor = NameVisitor("foo")
+    missing_position = Position(row=8, column=4)
+    with pytest.raises(KeyError):
+        visitor.determine_scope(missing_position)
 
 
 def dedent(code: str, *, by: int=4) -> str:
