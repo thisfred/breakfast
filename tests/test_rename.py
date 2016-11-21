@@ -1,6 +1,6 @@
 """Tests for rename refactoring."""
 
-from breakfast.rename import NameVisitor, Position, rename
+from breakfast.rename import NameVisitor, Position, modified, rename
 import pytest
 
 
@@ -26,7 +26,26 @@ def test_renames_local_variable_in_function():
     assert target == rename(
         source=source,
         cursor=Position(row=2, column=4),
+        old_name='old',
         new_name='new')
+
+
+def test_renames_function_from_list():
+    source = [
+        "def fun_old():",
+        "    return 'result'",
+        "result = fun_old()"]
+
+    target = [
+        (0, "def fun_new():"),
+        (2, "result = fun_new()")]
+
+    assert target == [
+        change for change in modified(
+            source=source,
+            cursor=Position(row=0, column=4),
+            old_name='fun_old',
+            new_name='fun_new')]
 
 
 def test_renames_function():
@@ -45,6 +64,7 @@ def test_renames_function():
     assert target == rename(
         source=source,
         cursor=Position(row=1, column=4),
+        old_name='fun_old',
         new_name='fun_new')
 
 
@@ -64,6 +84,7 @@ def test_renames_from_any_character_in_the_name():
     assert target == rename(
         source=source,
         cursor=Position(row=1, column=7),
+        old_name='fun_old',
         new_name='fun_new')
 
 
@@ -85,6 +106,7 @@ def test_renames_class():
     assert target == rename(
         source=source,
         cursor=Position(row=1, column=6),
+        old_name='OldClass',
         new_name='NewClass')
 
 
@@ -104,7 +126,33 @@ def test_renames_parameter():
     assert target == rename(
         source=source,
         cursor=Position(row=1, column=8),
+        old_name='arg',
         new_name='new_arg')
+
+
+@pytest.mark.skip("TODO")
+def test_renames():
+    source = dedent("""
+    def test(old=1):
+        print(old)
+
+    old = 8
+    test(old=old)
+    """)
+
+    target = dedent("""
+    def test(new=1):
+        print(new)
+
+    old = 8
+    test(new=old)
+    """)
+
+    assert target == rename(
+        source=source,
+        cursor=Position(row=1, column=10),
+        old_name='old',
+        new_name='new')
 
 
 def test_renames_passed_argument():
@@ -126,6 +174,7 @@ def test_renames_passed_argument():
     assert target == rename(
         source=source,
         cursor=Position(row=1, column=0),
+        old_name='old',
         new_name='new')
 
 
@@ -151,6 +200,7 @@ def test_renames_parameter_with_unusual_indentation():
     assert target == rename(
         source=source,
         cursor=Position(row=1, column=8),
+        old_name='arg',
         new_name='new_arg')
 
 
@@ -178,6 +228,7 @@ def test_renames_method():
     assert target == rename(
         source=source,
         cursor=Position(row=3, column=8),
+        old_name='old',
         new_name='new')
 
 
@@ -223,6 +274,7 @@ def test_renames_only_the_right_method_definition_and_calls():
     assert target == rename(
         source=source,
         cursor=Position(row=3, column=8),
+        old_name='old',
         new_name='new')
 
 

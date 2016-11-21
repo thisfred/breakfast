@@ -27,14 +27,12 @@ current = vim.current.buffer
 old_name = vim.eval('expand("<cword>")')
 new_name = user_input("rename '{}' to".format(old_name))
 (row, column) = vim.current.window.cursor
-renamed = do_rename(
-    buffer_contents=current,
-    old_name=old_name,
-    row=row-1,
-    column=column,
-    new_name=new_name)
-
-vim.current.buffer[:] = renamed
+for i, line in renamed(buffer_contents=current,
+                       old_name=old_name,
+                       row=row-1,
+                       column=column,
+                       new_name=new_name):
+    vim.current.buffer[i] = line
 
 endOfPython
 endfunction

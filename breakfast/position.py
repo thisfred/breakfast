@@ -5,8 +5,6 @@ class InvalidPosition(Exception):
 class Position:
 
     def __init__(self, *, row, column):
-        if row < 0 or column < 0:
-            raise InvalidPosition
         self.row = row
         self.column = column
 

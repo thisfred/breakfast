@@ -10,17 +10,15 @@ def test_simple_rename():
         "    del old",
         "    return result"]
 
-    result = vim_breakfast.do_rename(
-        buffer_contents=code,
-        old_name="old",
-        row=1,
-        column=4,
-        new_name="new")
+    result = [
+        l for l in vim_breakfast.renamed(
+            buffer_contents=code,
+            old_name="old",
+            row=1,
+            column=4,
+            new_name="new")]
 
     assert [
-        "def fun():",
-        "    new = 12",
-        "    old2 = 13",
-        "    result = new + old2",
-        "    del new",
-        "    return result"] == result
+        (1, "    new = 12"),
+        (3, "    result = new + old2"),
+        (4, "    del new")] == result

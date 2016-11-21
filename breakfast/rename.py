@@ -87,14 +87,36 @@ class NameVisitor(NodeVisitor):
         return self.names.get(name, name)
 
 
-def rename(*, source, cursor, new_name):
+def rename(*,
+           source: str,
+           cursor: Position,
+           old_name: str,
+           new_name: str) -> str:
     ast = parse(source)
-    source = Source(source)
-    old_name, start = source.get_name_and_position(cursor)
+    wrapped_source = Source(source)
+    start = wrapped_source.get_start(name=old_name, before=cursor)
     visitor = NameVisitor(old_name=old_name)
     visitor.visit(ast)
     visitor.replace_occurrences(
-        source=source,
+        source=wrapped_source,
         position=start,
         new_name=new_name)
-    return source.render()
+    return wrapped_source.render()
+
+
+def modified(*,
+             source: List[str],
+             cursor: Position,
+             old_name: str,
+             new_name: str):
+    ast = parse('\n'.join(source))
+    wrapped_source = Source.from_list(source)
+    start = wrapped_source.get_start(name=old_name, before=cursor)
+    visitor = NameVisitor(old_name=old_name)
+    visitor.visit(ast)
+    visitor.replace_occurrences(
+        source=wrapped_source,
+        position=start,
+        new_name=new_name)
+    for change in wrapped_source.get_changes():
+        yield change
