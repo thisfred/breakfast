@@ -13,9 +13,19 @@ python3 << endOfPython
 
 from vim_breakfast import do_rename
 
+def user_input(message):
+"""Request user input.
+
+copied from http://vim.wikia.com/wiki/User_input_from_a_script
+"""
+    vim.command('call inputsave()')
+    vim.command("let user_input = input('" + message + ": ')")
+    vim.command('call inputrestore()')
+    return vim.eval('user_input')
+
 current = vim.current.buffer
 old_name = vim.eval('expand("<cword>")')
-new_name = "new"
+new_name = user_input("rename '{}' to".format(old_name))
 (row, column) = vim.current.window.cursor
 renamed = do_rename(
     buffer_contents=current,
