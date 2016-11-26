@@ -119,7 +119,7 @@ def test_renames_class():
         new_name='NewClass')
 
 
-def test_renames_parameter():
+def test_renames_parameters():
     source = dedent("""
     def fun(arg, arg2):
         return arg + arg2
@@ -139,22 +139,21 @@ def test_renames_parameter():
         new_name='new_arg')
 
 
-@pytest.mark.skip("TODO")
-def test_renames():
+def test_does_not_rename_argument():
     source = dedent("""
-    def test(old=1):
+    def fun(old=1):
         print(old)
 
     old = 8
-    test(old=old)
+    fun(old=old)
     """)
 
     target = dedent("""
-    def test(new=1):
+    def fun(new=1):
         print(new)
 
     old = 8
-    test(new=old)
+    fun(new=old)
     """)
 
     assert target == rename(
