@@ -1,7 +1,18 @@
 """Tests for rename refactoring."""
 
-from breakfast.rename import NameVisitor, Position, modified, rename
+from breakfast.rename import NameVisitor, Position
+from breakfast.source import Source
 import pytest
+
+
+def rename(*,
+           source: str,
+           cursor: Position,
+           old_name: str,
+           new_name: str) -> str:
+    wrapped_source = Source(source)
+    wrapped_source.rename(cursor, old_name, new_name)
+    return wrapped_source.render()
 
 
 def test_renames_local_variable_in_function():
@@ -31,21 +42,19 @@ def test_renames_local_variable_in_function():
 
 
 def test_renames_function_from_list():
-    source = [
+    source = Source.from_lines([
         "def fun_old():",
         "    return 'result'",
-        "result = fun_old()"]
+        "result = fun_old()"])
 
-    target = [
+    source.rename(
+        cursor=Position(row=0, column=4),
+        old_name='fun_old',
+        new_name='fun_new')
+
+    assert [
         (0, "def fun_new():"),
-        (2, "result = fun_new()")]
-
-    assert target == [
-        change for change in modified(
-            source=source,
-            cursor=Position(row=0, column=4),
-            old_name='fun_old',
-            new_name='fun_new')]
+        (2, "result = fun_new()")] == list(source.get_changes())
 
 
 def test_renames_function():

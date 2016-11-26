@@ -1,8 +1,7 @@
 """Rename refactorings."""
 from typing import Any, Callable, List, Tuple  # noqa
 from collections import defaultdict
-from ast import Call, ClassDef, FunctionDef, Name, NodeVisitor, parse
-from breakfast.source import Source
+from ast import Call, ClassDef, FunctionDef, Name, NodeVisitor
 from breakfast.position import Position
 
 
@@ -14,10 +13,7 @@ class NameVisitor(NodeVisitor):
         self.scope = tuple()  # type: Tuple[str, ...]
         self.names = {}  # type: Dict[str, str]
 
-    def replace_occurrences(self,
-                            source: Source,
-                            position: Position,
-                            new_name: str):
+    def replace_occurrences(self, source, position, new_name):
         original_scope = self.determine_scope(position)
         for scope, occurrences in self.positions.items():
             for occurrence in reversed(occurrences):
@@ -85,38 +81,3 @@ class NameVisitor(NodeVisitor):
 
     def lookup(self, name):
         return self.names.get(name, name)
-
-
-def rename(*,
-           source: str,
-           cursor: Position,
-           old_name: str,
-           new_name: str) -> str:
-    ast = parse(source)
-    wrapped_source = Source(source)
-    start = wrapped_source.get_start(name=old_name, before=cursor)
-    visitor = NameVisitor(old_name=old_name)
-    visitor.visit(ast)
-    visitor.replace_occurrences(
-        source=wrapped_source,
-        position=start,
-        new_name=new_name)
-    return wrapped_source.render()
-
-
-def modified(*,
-             source: List[str],
-             cursor: Position,
-             old_name: str,
-             new_name: str):
-    ast = parse('\n'.join(source))
-    wrapped_source = Source.from_list(source)
-    start = wrapped_source.get_start(name=old_name, before=cursor)
-    visitor = NameVisitor(old_name=old_name)
-    visitor.visit(ast)
-    visitor.replace_occurrences(
-        source=wrapped_source,
-        position=start,
-        new_name=new_name)
-    for change in wrapped_source.get_changes():
-        yield change
