@@ -38,26 +38,26 @@ class NameVisitor(NodeVisitor):
         if node.name == self.old_name:
             self.add_node(self.scope, node, offset=len('def '))
 
-        self.scope += (node.name,)
+        self.enter_scope(node.name)
         for arg in node.args.args:
             if arg.arg == self.old_name:
                 self.add_node(self.scope, arg)
         self.generic_visit(node)
-        self.scope = self.scope[:-1]
+        self.leave_scope()
 
     def visit_ClassDef(self, node: ClassDef):  # noqa
         if node.name == self.old_name:
             self.add_node(self.scope, node, offset=len('class '))
-        self.scope += (node.name,)
+        self.enter_scope(node.name)
         self.generic_visit(node)
-        self.scope = self.scope[:-1]
+        self.leave_scope()
 
     def visit_Attribute(self, node):  # noqa
-        self.scope += (self.get_name(node.value),)
+        self.enter_scope(self.get_name(node.value))
         if node.attr == self.old_name:
             self.add_node(self.scope, node, offset=len(node.value.id) + 1)
         self.generic_visit(node)
-        self.scope = self.scope[:-1]
+        self.leave_scope()
 
     def visit_Assign(self, node):  # noqa
         if isinstance(node.value, Call):
@@ -65,13 +65,21 @@ class NameVisitor(NodeVisitor):
         self.generic_visit(node)
 
     def visit_Call(self, node):  # noqa
-        self.scope += (self.get_name(node.func),)
+        self.enter_scope(self.get_name(node.func))
         for keyword in node.keywords:
             if keyword.arg == self.old_name:
                 self.add_node(
-                    self.scope, keyword.value, offset=-(len(self.old_name) + 1))
-        self.scope = self.scope[:-1]
+                    scope=self.scope,
+                    node=keyword.value,
+                    offset=-(len(self.old_name) + 1))
+        self.leave_scope()
         self.generic_visit(node)
+
+    def enter_scope(self, name):
+        self.scope += (name,)
+
+    def leave_scope(self):
+        self.scope = self.scope[:-1]
 
     def add_node(self, scope, node, offset=0):
         self.positions[scope].append(Position.from_node(node) + offset)
