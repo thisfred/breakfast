@@ -1,7 +1,10 @@
 """Rename refactorings."""
-from typing import Any, Callable, List, Tuple  # noqa
-from collections import defaultdict
+
 from ast import Call, ClassDef, FunctionDef, Name, NodeVisitor
+from collections import defaultdict
+from contextlib import contextmanager
+from typing import Any, Callable, List, Tuple  # noqa
+
 from breakfast.position import Position
 
 
@@ -10,7 +13,7 @@ class NameVisitor(NodeVisitor):
     def __init__(self, old_name: str) -> None:
         self.old_name = old_name
         self.positions = defaultdict(list)  # type: Dict[Any, Any]
-        self.scope = tuple()  # type: Tuple[str, ...]
+        self._scope = tuple()  # type: Tuple[str, ...]
         self.names = {}  # type: Dict[str, str]
 
     def replace_occurrences(self, source, position, new_name):
@@ -32,32 +35,29 @@ class NameVisitor(NodeVisitor):
 
     def visit_Name(self, node: Name):  # noqa
         if node.id == self.old_name:
-            self.add_node(self.scope, node)
+            self.add_node(node)
 
     def visit_FunctionDef(self, node: FunctionDef):  # noqa
         if node.name == self.old_name:
-            self.add_node(self.scope, node, offset=len('def '))
+            self.add_node(node, offset=len('def '))
 
-        self.enter_scope(node.name)
-        for arg in node.args.args:
-            if arg.arg == self.old_name:
-                self.add_node(self.scope, arg)
-        self.generic_visit(node)
-        self.leave_scope()
+        with self.scope(node.name):
+            for arg in node.args.args:
+                if arg.arg == self.old_name:
+                    self.add_node(arg)
+            self.generic_visit(node)
 
     def visit_ClassDef(self, node: ClassDef):  # noqa
         if node.name == self.old_name:
-            self.add_node(self.scope, node, offset=len('class '))
-        self.enter_scope(node.name)
-        self.generic_visit(node)
-        self.leave_scope()
+            self.add_node(node, offset=len('class '))
+        with self.scope(node.name):
+            self.generic_visit(node)
 
     def visit_Attribute(self, node):  # noqa
-        self.enter_scope(self.get_name(node.value))
-        if node.attr == self.old_name:
-            self.add_node(self.scope, node, offset=len(node.value.id) + 1)
-        self.generic_visit(node)
-        self.leave_scope()
+        with self.scope(self.get_name(node.value)):
+            if node.attr == self.old_name:
+                self.add_node(node, offset=len(node.value.id) + 1)
+            self.generic_visit(node)
 
     def visit_Assign(self, node):  # noqa
         if isinstance(node.value, Call):
@@ -65,24 +65,22 @@ class NameVisitor(NodeVisitor):
         self.generic_visit(node)
 
     def visit_Call(self, node):  # noqa
-        self.enter_scope(self.get_name(node.func))
-        for keyword in node.keywords:
-            if keyword.arg == self.old_name:
-                self.add_node(
-                    scope=self.scope,
-                    node=keyword.value,
-                    offset=-(len(self.old_name) + 1))
-        self.leave_scope()
+        with self.scope(self.get_name(node.func)):
+            for keyword in node.keywords:
+                if keyword.arg == self.old_name:
+                    self.add_node(
+                        node=keyword.value,
+                        offset=-(len(self.old_name) + 1))
         self.generic_visit(node)
 
-    def enter_scope(self, name):
-        self.scope += (name,)
+    @contextmanager
+    def scope(self, name):
+        self._scope += (name,)
+        yield
+        self._scope = self._scope[:-1]
 
-    def leave_scope(self):
-        self.scope = self.scope[:-1]
-
-    def add_node(self, scope, node, offset=0):
-        self.positions[scope].append(Position.from_node(node) + offset)
+    def add_node(self, node, offset=0):
+        self.positions[self._scope].append(Position.from_node(node) + offset)
 
     def get_name(self, node):
         if isinstance(node, Name):
