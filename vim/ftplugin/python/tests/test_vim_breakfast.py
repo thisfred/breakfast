@@ -11,7 +11,7 @@ def test_simple_rename():
         "    return result"]
 
     result = [
-        l for l in vim_breakfast.renamed(
+        l for l in vim_breakfast.do_rename(
             buffer_contents=code,
             old_name="old",
             row=1,

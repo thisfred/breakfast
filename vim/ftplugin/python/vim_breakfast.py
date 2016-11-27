@@ -2,7 +2,7 @@ from breakfast.position import Position
 from breakfast.source import Source
 
 
-def renamed(buffer_contents, old_name, row, column, new_name):
+def do_rename(buffer_contents, old_name, row, column, new_name):
     source = Source.from_lines(buffer_contents)
     source.rename(
         cursor=Position(row=row, column=column),
