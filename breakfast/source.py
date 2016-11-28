@@ -10,16 +10,17 @@ BACKWARD = -1
 class Source:
 
     def __init__(self, text: str) -> None:
-        self.text = text
         self.lines = text.split('\n')
         self.changes = {}  # type: Dict[int, str]
 
     @classmethod
     def from_lines(cls, lines: List[str]):
         instance = cls("")
-        instance.text = '\n'.join(lines)
         instance.lines = lines
         return instance
+
+    def get_ast(self):
+        return parse('\n'.join(self.lines))
 
     def render(self):
         return '\n'.join(
@@ -57,9 +58,6 @@ class Source:
         else:
             position = Position(row=position.row, column=position.column - 1)
         return position
-
-    def get_ast(self):
-        return parse(self.text)
 
     def rename(self, cursor, old_name, new_name):
         start = self.get_start(name=old_name, before=cursor)
