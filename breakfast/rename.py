@@ -1,11 +1,50 @@
 """Rename refactorings."""
 
-from ast import Call, ClassDef, FunctionDef, Name, NodeVisitor
+from ast import Call, ClassDef, FunctionDef, Name, NodeVisitor, Store
 from collections import defaultdict
 from contextlib import contextmanager
 from typing import Any, Callable, List, Tuple  # noqa
 
 from breakfast.position import Position
+
+
+class FindDefinitionVisitor(NodeVisitor):
+    def __init__(self, name: str, position: Position) -> None:
+        self.name = name
+        self.position = position
+        self.found = None
+
+    def visit(self, node):  # noqa
+        # from ast import dump
+        # print(dump(node, include_attributes=True));
+        if self.found:
+            return
+        super(FindDefinitionVisitor, self).visit(node)
+
+    def visit_FunctionDef(self, node: FunctionDef):  # noqa
+        if node.name == self.name:
+            self.found = Position.from_node(node) + len('def ')
+            return
+
+        for arg in node.args.args:
+            if arg.arg == self.name:
+                self.found = Position.from_node(arg)
+                return
+
+        self.generic_visit(node)
+
+    def visit_Name(self, node):  # noqa
+        if node.id == self.name and isinstance(node.ctx, Store):
+            self.found = Position.from_node(node)
+
+    def visit_ClassDef(self, node: ClassDef):  # noqa
+        if node.name == self.name:
+            self.found = Position.from_node(node) + len('class ')
+        else:
+            self.generic_visit(node)
+
+    def get_definition(self):
+        return self.found
 
 
 class NameVisitor(NodeVisitor):
@@ -36,6 +75,7 @@ class NameVisitor(NodeVisitor):
     def visit_Name(self, node: Name):  # noqa
         if node.id == self.old_name:
             self.add_node(node)
+        self.generic_visit(node)
 
     def visit_FunctionDef(self, node: FunctionDef):  # noqa
         if node.name == self.old_name:

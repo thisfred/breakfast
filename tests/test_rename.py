@@ -1,18 +1,11 @@
 """Tests for rename refactoring."""
 
-from breakfast.rename import NameVisitor, Position
-from breakfast.source import Source
 import pytest
 
+from breakfast.rename import NameVisitor, Position
+from breakfast.source import Source
 
-def rename(*,
-           source: str,
-           cursor: Position,
-           old_name: str,
-           new_name: str) -> str:
-    wrapped_source = Source(source)
-    wrapped_source.rename(cursor, old_name, new_name)
-    return wrapped_source.render()
+from tests import dedent
 
 
 def test_renames_local_variable_in_function():
@@ -286,6 +279,30 @@ def test_renames_only_the_right_method_definition_and_calls():
         new_name='new')
 
 
+def test_renames_from_inner_scope():
+    source = dedent("""
+    def old():
+        pass
+
+    def bar():
+        old()
+    """)
+
+    target = dedent("""
+    def new():
+        pass
+
+    def bar():
+        new()
+    """)
+
+    assert target == rename(
+        source=source,
+        cursor=Position(row=5, column=4),
+        old_name='old',
+        new_name='new')
+
+
 def test_raises_key_error():
     visitor = NameVisitor("foo")
     missing_position = Position(row=8, column=4)
@@ -293,5 +310,11 @@ def test_raises_key_error():
         visitor.determine_scope(missing_position)
 
 
-def dedent(code: str, *, by: int=4) -> str:
-    return '\n'.join(l[by:] for l in code.split('\n'))
+def rename(*,
+           source: str,
+           cursor: Position,
+           old_name: str,
+           new_name: str) -> str:
+    wrapped_source = Source(source)
+    wrapped_source.rename(cursor, old_name, new_name)
+    return wrapped_source.render()

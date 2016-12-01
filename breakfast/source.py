@@ -1,10 +1,7 @@
 from typing import Any, Callable, List, Tuple  # noqa
 from breakfast.position import Position
-from breakfast.rename import NameVisitor
+from breakfast.rename import NameVisitor, FindDefinitionVisitor
 from ast import parse
-
-FORWARD = 1
-BACKWARD = -1
 
 
 class Source:
@@ -18,6 +15,12 @@ class Source:
         instance = cls("")
         instance.lines = lines
         return instance
+
+    def find_definition_for(self, name: str, usage: Position) -> Position:
+        start = self.get_start(name=name, before=usage)
+        visitor = FindDefinitionVisitor(name=name, position=start)
+        visitor.visit(self.get_ast())
+        return visitor.get_definition()
 
     def get_ast(self):
         return parse('\n'.join(self.lines))
@@ -60,7 +63,7 @@ class Source:
         return position
 
     def rename(self, cursor, old_name, new_name):
-        start = self.get_start(name=old_name, before=cursor)
+        start = self.find_definition_for(name=old_name, usage=cursor)
         visitor = NameVisitor(old_name=old_name)
         visitor.visit(self.get_ast())
         visitor.replace_occurrences(
