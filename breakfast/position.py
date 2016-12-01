@@ -4,20 +4,20 @@ class InvalidPosition(Exception):
 
 class Position:
 
-    def __init__(self, *, row, column):
+    def __init__(self, row, column):
         self.row = row
         self.column = column
 
-    def _add_offset(self, offset: int):
+    def _add_offset(self, offset):
         return Position(row=self.row, column=self.column + offset)
 
-    def __add__(self, column_offset: int):
+    def __add__(self, column_offset):
         return self._add_offset(column_offset)
 
-    def __sub__(self, column_offset: int):
+    def __sub__(self, column_offset):
         return self._add_offset(-column_offset)
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other):
         return self.row == other.row and self.column == other.column
 
     def __repr__(self):

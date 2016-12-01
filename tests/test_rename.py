@@ -310,11 +310,7 @@ def test_raises_key_error():
         visitor.determine_scope(missing_position)
 
 
-def rename(*,
-           source: str,
-           cursor: Position,
-           old_name: str,
-           new_name: str) -> str:
+def rename(source, cursor, old_name, new_name):
     wrapped_source = Source(source)
     wrapped_source.rename(cursor, old_name, new_name)
     return wrapped_source.render()

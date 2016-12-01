@@ -3,13 +3,13 @@
 from ast import Attribute, Call, ClassDef, FunctionDef, Name, NodeVisitor, Store
 from collections import defaultdict
 from contextlib import contextmanager
-from typing import Any, Callable, List, Tuple  # noqa
 
 from breakfast.position import Position
 
 
 class FindDefinitionVisitor(NodeVisitor):
-    def __init__(self, name: str, position: Position) -> None:
+
+    def __init__(self, name, position):
         self.name = name
         self.position = position
         self.found = None
@@ -17,15 +17,23 @@ class FindDefinitionVisitor(NodeVisitor):
     def visit(self, node):  # noqa
         if self.found:
             return
+
         super(FindDefinitionVisitor, self).visit(node)
 
-    def visit_FunctionDef(self, node: FunctionDef):  # noqa
+    def visit_FunctionDef(self, node):  # noqa
         if node.name == self.name:
             self.found_node(node)
             return
 
         for arg in node.args.args:
-            if arg.arg == self.name:
+            # python 2
+            if isinstance(arg, Name):
+                if arg.id == self.name:
+                    self.found_node(arg)
+                    return
+                continue
+            # python 3
+            elif arg.arg == self.name:
                 self.found_node(arg)
                 return
 
@@ -35,7 +43,7 @@ class FindDefinitionVisitor(NodeVisitor):
         if node.id == self.name and isinstance(node.ctx, Store):
             self.found_node(node)
 
-    def visit_ClassDef(self, node: ClassDef):  # noqa
+    def visit_ClassDef(self, node):  # noqa
         if node.name == self.name:
             self.found_node(node)
         else:
@@ -50,7 +58,7 @@ class FindDefinitionVisitor(NodeVisitor):
 
 class NameVisitor(NodeVisitor):
 
-    def __init__(self, old_name: str) -> None:
+    def __init__(self, old_name):
         self.old_name = old_name
         self.positions = defaultdict(list)  # type: Dict[Any, Any]
         self._scope = tuple()  # type: Tuple[str, ...]
@@ -66,29 +74,33 @@ class NameVisitor(NodeVisitor):
                         old=self.old_name,
                         new=new_name)
 
-    def determine_scope(self, position: Position) -> Tuple[str, ...]:
+    def determine_scope(self, position):
         for scope, positions in self.positions.items():
             if position in positions:
                 return scope
 
         raise KeyError("Position not found.")
 
-    def visit_Name(self, node: Name):  # noqa
+    def visit_Name(self, node):  # noqa
         if node.id == self.old_name:
             self.add_node(node)
         self.generic_visit(node)
 
-    def visit_FunctionDef(self, node: FunctionDef):  # noqa
+    def visit_FunctionDef(self, node):  # noqa
         if node.name == self.old_name:
             self.add_node(node)
 
         with self.scope(node.name):
             for arg in node.args.args:
-                if arg.arg == self.old_name:
+                # python 2
+                if isinstance(arg, Name):
+                    continue
+                # python 3
+                elif arg.arg == self.old_name:
                     self.add_node(arg)
             self.generic_visit(node)
 
-    def visit_ClassDef(self, node: ClassDef):  # noqa
+    def visit_ClassDef(self, node):  # noqa
         if node.name == self.old_name:
             self.add_node(node)
         with self.scope(node.name):
