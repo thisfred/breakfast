@@ -31,7 +31,6 @@ class FindDefinitionVisitor(NodeVisitor):
                 if arg.id == self.name:
                     self.found_node(arg)
                     return
-                continue
             # python 3
             elif arg.arg == self.name:
                 self.found_node(arg)

@@ -1,7 +1,7 @@
 """
 breakfast: An AST based refactoring tool for Python.
 
-Copyright (c) 2015
+Copyright (c) 2015-2016
 Eric Casteleijn, <thisfred@gmail.com>
 """
 import os
