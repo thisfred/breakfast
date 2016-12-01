@@ -8,10 +8,6 @@ class Position:
         self.row = row
         self.column = column
 
-    @classmethod
-    def from_node(cls, node):
-        return cls(row=node.lineno - 1, column=node.col_offset)
-
     def _add_offset(self, offset: int):
         return Position(row=self.row, column=self.column + offset)
 
