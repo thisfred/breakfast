@@ -28,7 +28,8 @@ class NameCollector(NodeVisitor):
     def visit_Name(self, node):  # noqa
         scope = self._scope
         name = node.id
-        if isinstance(node.ctx, Load):
+        if isinstance(node.ctx, Load) and (
+                not scope or not scope[-1].startswith('$')):
             while scope and not self.in_scope(scope, name):
                 scope = scope[:-1]
         self.add_name(scope, node, name)
@@ -61,6 +62,19 @@ class NameCollector(NodeVisitor):
 
                 # python 3
                 self.add_name(self._scope, arg, arg.arg)
+            self.generic_visit(node)
+
+    def visit_DictComp(self, node):  # noqa
+        self.scoped_visit('$dc', node)
+
+    def visit_SetComp(self, node):  # noqa
+        self.scoped_visit('$sc', node)
+
+    def visit_ListComp(self, node):  # noqa
+        self.scoped_visit('$lc', node)
+
+    def scoped_visit(self, added_scope, node):
+        with self.scope(added_scope):
             self.generic_visit(node)
 
     def visit_Attribute(self, node):  # noqa

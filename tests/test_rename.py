@@ -329,6 +329,84 @@ def test_renames_attributes():
         new_name='renamed')
 
 
+def test_renames_dict_comprehension_variables():
+    source = dedent("""
+    old = 100
+    foo = {old: None for old in range(100) if old % 3}
+    """)
+
+    target = dedent("""
+    old = 100
+    foo = {new: None for new in range(100) if new % 3}
+    """)
+
+    assert target == rename(
+        source=source,
+        cursor=Position(row=2, column=7),
+        old_name='old',
+        new_name='new')
+
+
+def test_renames_set_comprehension_variables():
+    source = dedent("""
+    old = 100
+    foo = {old for old in range(100) if old % 3}
+    """)
+
+    target = dedent("""
+    old = 100
+    foo = {new for new in range(100) if new % 3}
+    """)
+
+    assert target == rename(
+        source=source,
+        cursor=Position(row=2, column=7),
+        old_name='old',
+        new_name='new')
+
+
+def test_renames_list_comprehension_variables():
+    source = dedent("""
+    old = 100
+    foo = [
+        old for old in range(100) if old % 3]
+    """)
+
+    target = dedent("""
+    old = 100
+    foo = [
+        new for new in range(100) if new % 3]
+    """)
+
+    assert target == rename(
+        source=source,
+        cursor=Position(row=3, column=4),
+        old_name='old',
+        new_name='new')
+
+
+def test_renames_for_loop_variables():
+    source = dedent("""
+    old = None
+    for i, old in enumerate([]):
+        print(i)
+        print(old)
+    """)
+
+    target = dedent("""
+    new = None
+    for i, new in enumerate([]):
+        print(i)
+        print(new)
+    """)
+
+    assert target == rename(
+        source=source,
+        cursor=Position(row=3, column=10),
+        old_name='old',
+        new_name='new')
+
+
 def rename(source, cursor, old_name, new_name):
     wrapped_source = Source(source)
     wrapped_source.rename(cursor, old_name, new_name)
