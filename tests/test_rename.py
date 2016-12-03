@@ -1,8 +1,6 @@
 """Tests for rename refactoring."""
 
-import pytest
-
-from breakfast.rename import NameVisitor, Position
+from breakfast.position import Position
 from breakfast.source import Source
 
 from tests import dedent
@@ -303,11 +301,32 @@ def test_renames_from_inner_scope():
         new_name='new')
 
 
-def test_raises_key_error():
-    visitor = NameVisitor("foo")
-    missing_position = Position(row=8, column=4)
-    with pytest.raises(KeyError):
-        visitor.determine_scope(missing_position)
+def test_renames_attributes():
+    source = dedent("""
+    class ClassName:
+
+        def __init__(self, property):
+            self.property = property
+
+        def get_property(self):
+            return self.property
+    """)
+
+    target = dedent("""
+    class ClassName:
+
+        def __init__(self, property):
+            self.renamed = property
+
+        def get_property(self):
+            return self.renamed
+    """)
+
+    assert target == rename(
+        source=source,
+        cursor=Position(row=7, column=26),
+        old_name='property',
+        new_name='renamed')
 
 
 def rename(source, cursor, old_name, new_name):
