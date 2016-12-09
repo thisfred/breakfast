@@ -1,9 +1,12 @@
 """Tests for rename refactoring."""
 
 from breakfast.position import Position
+from breakfast.rename import NameCollector
 from breakfast.source import Source
 
 from tests import dedent
+
+import pytest
 
 
 def test_renames_local_variable_in_function():
@@ -385,6 +388,30 @@ def test_renames_list_comprehension_variables():
         new_name='new')
 
 
+def test_renames_only_desired_list_comprehension_variables():
+    source = dedent("""
+    old = 100
+    foo = [
+        old for old in range(100) if old % 3]
+    bar = [
+        old for old in range(100) if old % 3]
+    """)
+
+    target = dedent("""
+    old = 100
+    foo = [
+        new for new in range(100) if new % 3]
+    bar = [
+        old for old in range(100) if old % 3]
+    """)
+
+    assert target == rename(
+        source=source,
+        cursor=Position(row=3, column=4),
+        old_name='old',
+        new_name='new')
+
+
 def test_renames_for_loop_variables():
     source = dedent("""
     old = None
@@ -405,6 +432,72 @@ def test_renames_for_loop_variables():
         cursor=Position(row=3, column=10),
         old_name='old',
         new_name='new')
+
+
+def test_renames_dotted_assignments():
+    source = dedent("""
+    class Foo:
+        def bar(self):
+            self.old = some.qux()
+    """)
+
+    target = dedent("""
+    class Foo:
+        def bar(self):
+            self.new = some.qux()
+    """)
+
+    assert target == rename(
+        source=source,
+        cursor=Position(row=3, column=13),
+        old_name='old',
+        new_name='new')
+
+
+def test_renames_tuple_unpack():
+    source = dedent("""
+    foo, old = 1, 2
+    """)
+
+    target = dedent("""
+    foo, new = 1, 2
+    """)
+
+    assert target == rename(
+        source=source,
+        cursor=Position(row=1, column=5),
+        old_name='old',
+        new_name='new')
+
+
+def test_renames_double_dotted_assignments():
+    source = dedent("""
+    def find_occurrences(old, position):
+        for _, occurrences in old.positions.items():
+            if position in occurrences:
+                return occurrences
+    """)
+
+    target = dedent("""
+    def find_occurrences(new, position):
+        for _, occurrences in new.positions.items():
+            if position in occurrences:
+                return occurrences
+    """)
+
+    assert target == rename(
+        source=source,
+        cursor=Position(row=2, column=26),
+        old_name='old',
+        new_name='new')
+
+
+@pytest.mark.skip
+def test_dogfooding():
+    with open('breakfast/rename.py', 'r') as source:
+        wrapped = Source.from_lines(source.readlines())
+        visitor = NameCollector()
+        visitor.visit(wrapped.get_ast())
 
 
 def rename(source, cursor, old_name, new_name):
