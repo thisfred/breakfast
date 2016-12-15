@@ -1,6 +1,6 @@
 """Tests for rename refactoring."""
 
-from breakfast.position import Position
+from breakfast.occurrence import Position
 from breakfast.rename import NameCollector
 from breakfast.source import Source
 

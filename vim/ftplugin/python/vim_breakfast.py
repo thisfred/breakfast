@@ -1,4 +1,4 @@
-from breakfast.position import Position
+from breakfast.occurrence import Position
 from breakfast.source import Source
 
 

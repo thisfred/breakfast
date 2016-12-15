@@ -1,6 +1,6 @@
 from ast import parse
 
-from breakfast.position import Position
+from breakfast.occurrence import Position
 from breakfast.rename import NameCollector
 
 
