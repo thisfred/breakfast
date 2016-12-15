@@ -6,8 +6,6 @@ from breakfast.source import Source
 
 from tests import dedent
 
-import pytest
-
 
 def test_renames_local_variable_in_function():
     source = dedent("""
@@ -492,11 +490,53 @@ def test_renames_double_dotted_assignments():
         new_name='new')
 
 
-@pytest.mark.skip
+def test_renames_subscript():
+    source = dedent("""
+    def old():
+        return 1
+
+    a = {}
+    a[old()] = old()
+    """)
+
+    target = dedent("""
+    def new():
+        return 1
+
+    a = {}
+    a[new()] = new()
+    """)
+
+    assert target == rename(
+        source=source,
+        cursor=Position(row=1, column=4),
+        old_name='old',
+        new_name='new')
+
+
+def test_renames_enclosing_scope_variables_in_comprehensions():
+    source = dedent("""
+    old = 3
+    foo = [foo for foo in range(100) if foo % old]
+    """)
+
+    target = dedent("""
+    new = 3
+    foo = [foo for foo in range(100) if foo % new]
+    """)
+
+    assert target == rename(
+        source=source,
+        cursor=Position(row=2, column=42),
+        old_name='old',
+        new_name='new')
+
+
 def test_dogfooding():
+    """Test that we can at least parse our own code."""
     with open('breakfast/rename.py', 'r') as source:
-        wrapped = Source.from_lines(source.readlines())
-        visitor = NameCollector()
+        wrapped = Source.from_lines([l[:-1] for l in source.readlines()])
+        visitor = NameCollector('position')
         visitor.visit(wrapped.get_ast())
 
 

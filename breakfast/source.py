@@ -1,6 +1,7 @@
+from ast import parse
+
 from breakfast.position import Position
 from breakfast.rename import NameCollector
-from ast import parse
 
 
 class Source:
@@ -57,7 +58,7 @@ class Source:
 
     def rename(self, cursor, old_name, new_name):
         start = self.get_start(name=old_name, before=cursor)
-        visitor = NameCollector()
+        visitor = NameCollector(old_name)
         visitor.visit(self.get_ast())
         for occurrence in reversed(visitor.find_occurrences(start)):
             self.replace(
