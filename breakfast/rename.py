@@ -49,41 +49,34 @@ class NameCollector(NodeVisitor):
 
     def visit_Print(self, node):  # noqa
         # python 2
-        position = position_from_node(node)
         self.add_occurrence(
             scope=self._scope.path,
-            name='print',
-            position=position)
+            node=node,
+            name='print')
         self.generic_visit(node)
 
     def visit_Name(self, node):  # noqa
-        name = node.id
-        position = position_from_node(node)
         self.add_occurrence(
             scope=self._scope.path,
-            name=name,
-            position=position,
+            name=node.id,
+            node=node,
             is_definition=(
                 isinstance(node.ctx, Store) or isinstance(node.ctx, Param)))
         self.generic_visit(node)
 
     def visit_ClassDef(self, node):  # noqa
         class_name = self._scope.get_name(node.name)
-        position = position_from_node(node)
         self.add_occurrence(
             scope=self._scope.path,
-            name=node.name,
-            position=position,
+            node=node,
             is_definition=True)
         with self.scope(node.name, in_class=class_name):
             self.generic_visit(node)
 
     def visit_FunctionDef(self, node):  # noqa
-        position = position_from_node(node)
         self.add_occurrence(
             scope=self._scope.path,
-            name=node.name,
-            position=position,
+            node=node,
             is_definition=True)
         is_method = self._scope.in_class_scope
         with self.scope(node.name):
@@ -97,16 +90,16 @@ class NameCollector(NodeVisitor):
                     continue
 
                 # python 3
-
                 self.add_occurrence(
                     scope=self._scope.path,
+                    node=arg,
                     name=arg.arg,
-                    position=position_from_node(arg),
                     is_definition=True)
             self.generic_visit(node)
 
     def comp_visit(self, node):
-        name = '$%s-%r' % (type(node), position_from_node(node))
+        position = position_from_node(node)
+        name = 'comprehension-%s-%s' % (position.row, position.column)
         self.scoped_visit(name, node)
 
     def visit_DictComp(self, node):  # noqa
@@ -127,8 +120,8 @@ class NameCollector(NodeVisitor):
 
             self.add_occurrence(
                 scope=scope.path,
-                name=node.attr,
-                position=position_from_node(node))
+                node=node,
+                name=node.attr)
         self.generic_visit(node)
 
     def visit_Assign(self, node):  # noqa
@@ -140,12 +133,11 @@ class NameCollector(NodeVisitor):
     def visit_Call(self, node):  # noqa
         with self.scope(self.get_name(node.func)):
             for keyword in node.keywords:
-                position = (
-                    position_from_node(keyword.value) - (len(keyword.arg) + 1))
                 self.add_occurrence(
                     scope=self._scope.path,
+                    node=keyword.value,
                     name=keyword.arg,
-                    position=position)
+                    offset=-(len(keyword.arg) + 1))
         self.generic_visit(node)
 
     def scoped_visit(self, added_scope, node):
@@ -162,12 +154,14 @@ class NameCollector(NodeVisitor):
             yield
             self._scope = self._scope.parent
 
-    def add_occurrence(self, scope, name, position, is_definition=False):
+    def add_occurrence(self, scope, node, name=None, is_definition=False,
+                       offset=0):
+        name = name or node.name
         if name == self._name:
             self._occurrences[scope].append(
                 Occurrence(
                     name=name,
-                    position=position,
+                    position=position_from_node(node, extra_offset=offset),
                     is_definition=is_definition))
 
     def get_name(self, node):
@@ -200,20 +194,12 @@ def name_from_node(node):
         return node.id
 
 
-def length_from_node(node):
-    if isinstance(node, Name):
-        return len(node.id)
-
-    return 0
-
-
-def position_from_node(node):
-    extra_offset = 0
+def position_from_node(node, extra_offset=0):
     if isinstance(node, ClassDef):
-        extra_offset = len('class ')
+        extra_offset += len('class ')
     elif isinstance(node, FunctionDef):
-        extra_offset = len('fun ')
+        extra_offset += len('fun ')
     elif isinstance(node, Attribute):
-        extra_offset = length_from_node(node.value) + 1
+        extra_offset += len(node.value.id) + 1
 
     return Position(row=node.lineno - 1, column=node.col_offset) + extra_offset
