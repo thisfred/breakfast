@@ -1,4 +1,5 @@
 from ast import parse
+from collections import defaultdict
 
 from breakfast.occurrence import Position
 from breakfast.rename import NameCollector
@@ -57,11 +58,48 @@ class Source:
         return position
 
     def rename(self, cursor, old_name, new_name):
-        start = self.get_start(name=old_name, before=cursor)
+        name_position = self.get_start(name=old_name, before=cursor)
         visitor = NameCollector(old_name)
         visitor.visit(self.get_ast())
-        for occurrence in visitor.find_occurrences(start):
+        for occurrence in find_occurrences(name_position,
+                                           visitor.occurrences):
             self.replace(
                 position=occurrence,
                 old=old_name,
                 new=new_name)
+
+
+def find_occurrences(position, occurrences):
+    grouped = group_occurrences(occurrences)
+    for positions in grouped.values():
+        if position in positions:
+            return sorted(positions, reverse=True)
+
+
+def group_occurrences(occurrences):
+    to_do = {}
+    done = defaultdict(list)
+    for path in sorted(occurrences.keys(), reverse=True):
+        path_occurrences = occurrences[path]
+        positions = [o.position for o in path_occurrences]
+        for occurrence in path_occurrences:
+            if occurrence.is_definition:
+                done[path] = positions
+                break
+        else:
+            to_do[path[:-1]] = positions
+
+    for path in to_do:
+        for prefix in get_prefixes(path, done):
+            done[prefix].extend(to_do[path])
+            break
+
+    return done
+
+
+def get_prefixes(path, done):
+    prefix = path
+    while prefix and prefix not in done:
+        prefix = prefix[:-1]
+        yield prefix
+    yield prefix

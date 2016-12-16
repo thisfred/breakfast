@@ -14,41 +14,11 @@ TOP = Scope()
 class NameCollector(NodeVisitor):
 
     def __init__(self, name):
-        self._occurrences = defaultdict(list)
+        self.occurrences = defaultdict(list)
         self._scope = TOP
         self._lookup = {}
         self._name = name
         self._module = "module"
-
-    def find_occurrences(self, position):
-        grouped = self.group_occurrences()
-        for positions in grouped.values():
-            if position in positions:
-                return sorted(positions, reverse=True)
-
-    def group_occurrences(self):
-        to_do = {}
-        done = defaultdict(list)
-        for path in sorted(self._occurrences.keys(), reverse=True):
-            occurrences = self._occurrences[path]
-            for occurrence in self._occurrences[path]:
-                if occurrence.is_definition:
-                    done[path] = [o.position for o in occurrences]
-                    break
-            else:
-                to_do[path[:-1]] = [o.position for o in occurrences]
-        for path in to_do:
-            for prefix in self.get_prefixes(path, done):
-                done[prefix].extend(to_do[path])
-                break
-        return done
-
-    def get_prefixes(self, path, done):
-        prefix = path
-        while prefix and prefix not in done:
-            prefix = prefix[:-1]
-            yield prefix
-        yield prefix
 
     def visit_Module(self, node):  # noqa
         with self.scope(self._module):
@@ -141,7 +111,7 @@ class NameCollector(NodeVisitor):
                     offset=-(len(keyword.arg) + 1))
         self.generic_visit(node)
 
-    def visit_ImportFrom(self, node):
+    def visit_ImportFrom(self, node):  # noqa
         name = node.names[0].name
         self.add_occurrence(
             scope=self._scope.path,
@@ -175,7 +145,7 @@ class NameCollector(NodeVisitor):
                        offset=0):
         name = name or node.name
         if name == self._name:
-            self._occurrences[scope].append(
+            self.occurrences[scope].append(
                 Occurrence(
                     name=name,
                     position=position_from_node(node, extra_offset=offset),
