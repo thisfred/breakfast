@@ -7,8 +7,72 @@ from contextlib import contextmanager
 
 from breakfast.occurrence import Occurrence, Position
 from breakfast.scope import Scope
+from breakfast.source import Source
 
 TOP = Scope()
+
+
+class Rename:
+
+    def __init__(self, lines, position, old_name, new_name):
+        self.lines = lines
+        self.position = position
+        self.old_name = old_name
+        self.new_name = new_name
+        self.base_source = Source(lines=lines)
+        self.other_sources = []
+        self.visitor = NameCollector(old_name)
+
+    def apply(self):
+        self.visitor.visit(self.base_source.get_ast())
+        name_position = self.base_source.get_start(
+            name=self.old_name, before=self.position)
+        for occurrence in self.find_occurrences(name_position):
+            self.base_source.replace(
+                position=occurrence,
+                old=self.old_name,
+                new=self.new_name)
+
+    def get_changes(self):
+        return self.base_source.get_changes()
+
+    def get_result(self):
+        return self.base_source.render()
+
+    def find_occurrences(self, position):
+        grouped = self.group_occurrences()
+        for positions in grouped.values():
+            if position in positions:
+                return sorted(positions, reverse=True)
+
+    def group_occurrences(self):
+        to_do = {}
+        done = defaultdict(list)
+        occurrences = self.visitor.occurrences
+        for path in sorted(occurrences.keys(), reverse=True):
+            path_occurrences = occurrences[path]
+            positions = [o.position for o in path_occurrences]
+            for occurrence in path_occurrences:
+                if occurrence.is_definition:
+                    done[path] = positions
+                    break
+            else:
+                to_do[path[:-1]] = positions
+
+        for path in to_do:
+            for prefix in self.get_prefixes(path, done):
+                done[prefix].extend(to_do[path])
+                break
+
+        return done
+
+    @staticmethod
+    def get_prefixes(path, done):
+        prefix = path
+        while prefix and prefix not in done:
+            prefix = prefix[:-1]
+            yield prefix
+        yield prefix
 
 
 class NameCollector(NodeVisitor):

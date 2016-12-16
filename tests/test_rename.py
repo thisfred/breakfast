@@ -1,7 +1,7 @@
 """Tests for rename refactoring."""
 
 from breakfast.occurrence import Position
-from breakfast.rename import NameCollector
+from breakfast.rename import NameCollector, Rename
 from breakfast.source import Source
 
 from tests import dedent
@@ -33,20 +33,21 @@ def test_renames_local_variable_in_function():
         new_name='new')
 
 
-def test_renames_function_from_list():
-    source = Source.from_lines([
-        "def fun_old():",
-        "    return 'result'",
-        "result = fun_old()"])
-
-    source.rename(
-        cursor=Position(row=0, column=4),
+def test_renames_function_from_lines():
+    refactoring = Rename(
+        lines=[
+            "def fun_old():",
+            "    return 'result'",
+            "result = fun_old()"],
+        position=Position(row=0, column=4),
         old_name='fun_old',
         new_name='fun_new')
 
+    refactoring.apply()
+
     assert [
         (0, "def fun_new():"),
-        (2, "result = fun_new()")] == list(source.get_changes())
+        (2, "result = fun_new()")] == list(refactoring.get_changes())
 
 
 def test_renames_function():
@@ -553,12 +554,16 @@ def test_renames_imports():
 def test_dogfooding():
     """Test that we can at least parse our own code."""
     with open('breakfast/rename.py', 'r') as source:
-        wrapped = Source.from_lines([l[:-1] for l in source.readlines()])
+        wrapped = Source(lines=[l[:-1] for l in source.readlines()])
         visitor = NameCollector('position')
         visitor.visit(wrapped.get_ast())
 
 
 def rename(source, cursor, old_name, new_name):
-    wrapped_source = Source(source)
-    wrapped_source.rename(cursor, old_name, new_name)
-    return wrapped_source.render()
+    refactoring = Rename(
+        lines=source.split('\n'),
+        position=cursor,
+        old_name=old_name,
+        new_name=new_name)
+    refactoring.apply()
+    return refactoring.get_result()
