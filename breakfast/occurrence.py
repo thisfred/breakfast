@@ -34,5 +34,9 @@ class Position:
     def __eq__(self, other):
         return self.row == other.row and self.column == other.column
 
+    def __lt__(self, other):
+        return self.row < other.row or (
+            self.row == other.row and self.column < other.column)
+
     def __repr__(self):
         return 'Position(row=%s, column=%s)' % (self.row, self.column)

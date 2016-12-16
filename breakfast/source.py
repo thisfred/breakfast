@@ -60,7 +60,7 @@ class Source:
         start = self.get_start(name=old_name, before=cursor)
         visitor = NameCollector(old_name)
         visitor.visit(self.get_ast())
-        for occurrence in reversed(visitor.find_occurrences(start)):
+        for occurrence in visitor.find_occurrences(start):
             self.replace(
                 position=occurrence,
                 old=old_name,

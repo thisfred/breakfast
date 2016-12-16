@@ -532,6 +532,24 @@ def test_renames_enclosing_scope_variables_in_comprehensions():
         new_name='new')
 
 
+def test_renames_imports():
+    source = dedent("""
+    from foo import old
+    old()
+    """)
+
+    target = dedent("""
+    from foo import new
+    new()
+    """)
+
+    assert target == rename(
+        source=source,
+        cursor=Position(row=2, column=0),
+        old_name='old',
+        new_name='new')
+
+
 def test_dogfooding():
     """Test that we can at least parse our own code."""
     with open('breakfast/rename.py', 'r') as source:

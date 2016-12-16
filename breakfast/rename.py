@@ -18,6 +18,13 @@ class NameCollector(NodeVisitor):
         self._scope = TOP
         self._lookup = {}
         self._name = name
+        self._module = "module"
+
+    def find_occurrences(self, position):
+        grouped = self.group_occurrences()
+        for positions in grouped.values():
+            if position in positions:
+                return sorted(positions, reverse=True)
 
     def group_occurrences(self):
         to_do = {}
@@ -31,20 +38,20 @@ class NameCollector(NodeVisitor):
             else:
                 to_do[path[:-1]] = [o.position for o in occurrences]
         for path in to_do:
-            prefix = path
-            while prefix and prefix not in done:
-                prefix = prefix[:-1]
-            done[prefix].extend(to_do[path])
+            for prefix in self.get_prefixes(path, done):
+                done[prefix].extend(to_do[path])
+                break
         return done
 
-    def find_occurrences(self, position):
-        grouped = self.group_occurrences()
-        for positions in grouped.values():
-            if position in positions:
-                return positions
+    def get_prefixes(self, path, done):
+        prefix = path
+        while prefix and prefix not in done:
+            prefix = prefix[:-1]
+            yield prefix
+        yield prefix
 
     def visit_Module(self, node):  # noqa
-        with self.scope("module"):
+        with self.scope(self._module):
             self.generic_visit(node)
 
     def visit_Print(self, node):  # noqa
@@ -62,7 +69,6 @@ class NameCollector(NodeVisitor):
             node=node,
             is_definition=(
                 isinstance(node.ctx, Store) or isinstance(node.ctx, Param)))
-        self.generic_visit(node)
 
     def visit_ClassDef(self, node):  # noqa
         class_name = self._scope.get_name(node.name)
@@ -96,11 +102,6 @@ class NameCollector(NodeVisitor):
                     name=arg.arg,
                     is_definition=True)
             self.generic_visit(node)
-
-    def comp_visit(self, node):
-        position = position_from_node(node)
-        name = 'comprehension-%s-%s' % (position.row, position.column)
-        self.scoped_visit(name, node)
 
     def visit_DictComp(self, node):  # noqa
         self.comp_visit(node)
@@ -139,6 +140,22 @@ class NameCollector(NodeVisitor):
                     name=keyword.arg,
                     offset=-(len(keyword.arg) + 1))
         self.generic_visit(node)
+
+    def visit_ImportFrom(self, node):
+        name = node.names[0].name
+        self.add_occurrence(
+            scope=self._scope.path,
+            node=node,
+            name=name,
+            offset=len('from %s import ' % (node.module)),
+            is_definition=True)
+
+    def comp_visit(self, node):
+        """Create a unique scope for the comprehension."""
+        position = position_from_node(node)
+        # The dashes make sure it can never clash with an actual Python name.
+        name = 'comprehension-%s-%s' % (position.row, position.column)
+        self.scoped_visit(name, node)
 
     def scoped_visit(self, added_scope, node):
         with self.scope(added_scope):
