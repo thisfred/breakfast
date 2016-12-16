@@ -1,4 +1,4 @@
-from breakfast.occurrence import Position
+from breakfast.position import Position
 from breakfast.rename import Rename
 
 

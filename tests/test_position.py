@@ -1,18 +1,11 @@
 import pytest
 
-from breakfast.occurrence import IllegalPosition, Occurrence, Position
+from breakfast.position import IllegalPosition, Position
 
 
 def test_position_repr_looks_ok():
     position = Position(row=12, column=4)
-    assert "Position(row=12, column=4)" == repr(position)
-
-
-def test_occurrence_repr_looks_ok():
-    occurrence = Occurrence(name='foo', position=Position(row=12, column=4))
-    assert (
-        "<Occurrence(foo, Position(row=12, column=4), is_definition=False)>" ==
-        repr(occurrence))
+    assert repr(position) == "Position(row=12, column=4)"
 
 
 def test_cannot_create_negative_positions():

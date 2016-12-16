@@ -1,6 +1,6 @@
 from ast import parse
 
-from breakfast.occurrence import IllegalPosition, Position
+from breakfast.position import IllegalPosition, Position
 
 
 class Source:

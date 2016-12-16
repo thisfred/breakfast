@@ -1,7 +1,7 @@
 """Tests for rename refactoring."""
 
-from breakfast.occurrence import Position
-from breakfast.rename import NameCollector, Rename
+from breakfast.position import Position
+from breakfast.rename import NameCollector, Occurrence, Rename
 from breakfast.source import Source
 
 from tests import dedent
@@ -557,6 +557,13 @@ def test_dogfooding():
         wrapped = Source(lines=[l[:-1] for l in source.readlines()])
         visitor = NameCollector('position')
         visitor.visit(wrapped.get_ast())
+
+
+def test_occurrence_repr_looks_ok():
+    occurrence = Occurrence(name='foo', position=Position(row=12, column=4))
+    assert (
+        "<Occurrence(foo, Position(row=12, column=4), is_definition=False)>" ==
+        repr(occurrence))
 
 
 def rename(source, cursor, old_name, new_name):

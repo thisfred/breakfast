@@ -5,7 +5,7 @@ from ast import (
 from collections import defaultdict
 from contextlib import contextmanager
 
-from breakfast.occurrence import Occurrence, Position
+from breakfast.position import Position
 from breakfast.scope import Scope
 from breakfast.source import Source
 
@@ -224,6 +224,19 @@ class NameCollector(NodeVisitor):
 
     def lookup(self, name):
         return self._lookup.get(name, name)
+
+
+class Occurrence:
+
+    def __init__(self, name, position, is_definition=False):
+        self.name = name
+        self.position = position
+        self.is_definition = is_definition
+
+    def __repr__(self):
+        return (
+            "<Occurrence({}, {}, is_definition={})>".format(
+                self.name, self.position, self.is_definition))
 
 
 def arg_or_id(arg):

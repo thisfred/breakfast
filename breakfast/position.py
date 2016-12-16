@@ -2,19 +2,6 @@ class IllegalPosition(Exception):
     pass
 
 
-class Occurrence:
-
-    def __init__(self, name, position, is_definition=False):
-        self.name = name
-        self.position = position
-        self.is_definition = is_definition
-
-    def __repr__(self):
-        return (
-            "<Occurrence({}, {}, is_definition={})>".format(
-                self.name, self.position, self.is_definition))
-
-
 class Position:
 
     def __init__(self, row, column):
