@@ -1,6 +1,6 @@
 from ast import parse
 
-from breakfast.occurrence import Position
+from breakfast.occurrence import IllegalPosition, Position
 
 
 class Source:
@@ -41,10 +41,11 @@ class Source:
         return self.lines[position.row][position.column:]
 
     def get_previous_position(self, position):
-        if position.column == 0:
-            new_row = position.row - 1
-            position = Position(
-                row=new_row, column=len(self.lines[new_row]) - 1)
-        else:
-            position = Position(row=position.row, column=position.column - 1)
-        return position
+        try:
+            return position - 1
+
+        except IllegalPosition:
+            return self.get_last_column(position.row - 1)
+
+    def get_last_column(self, row):
+        return Position(row=row, column=len(self.lines[row]) - 1)

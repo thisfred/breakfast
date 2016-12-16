@@ -10,7 +10,8 @@ class Occurrence:
         self.is_definition = is_definition
 
     def __repr__(self):
-        return ("<Occurrence({}, {}, is_definition={})>".format(
+        return (
+            "<Occurrence({}, {}, is_definition={})>".format(
                 self.name, self.position, self.is_definition))
 
 
