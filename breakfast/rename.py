@@ -51,13 +51,12 @@ class Rename:
         occurrences = self.visitor.occurrences
         for path in sorted(occurrences.keys(), reverse=True):
             path_occurrences = occurrences[path]
-            positions = [o.position for o in path_occurrences]
             for occurrence in path_occurrences:
                 if occurrence.is_definition:
-                    done[path] = positions
+                    done[path] = path_occurrences
                     break
             else:
-                to_do[path[:-1]] = positions
+                to_do[path[:-1]] = path_occurrences
 
         for path in to_do:
             for prefix in self.get_prefixes(path, done):
@@ -210,9 +209,9 @@ class NameCollector(NodeVisitor):
         name = name or node.name
         if name == self._name:
             self.occurrences[scope].append(
-                Occurrence(
-                    name=name,
-                    position=position_from_node(node, extra_offset=offset),
+                position_from_node(
+                    node=node,
+                    extra_offset=offset,
                     is_definition=is_definition))
 
     def get_name(self, node):
@@ -224,19 +223,6 @@ class NameCollector(NodeVisitor):
 
     def lookup(self, name):
         return self._lookup.get(name, name)
-
-
-class Occurrence:
-
-    def __init__(self, name, position, is_definition=False):
-        self.name = name
-        self.position = position
-        self.is_definition = is_definition
-
-    def __repr__(self):
-        return (
-            "<Occurrence({}, {}, is_definition={})>".format(
-                self.name, self.position, self.is_definition))
 
 
 def arg_or_id(arg):
@@ -258,7 +244,7 @@ def name_from_node(node):
         return node.id
 
 
-def position_from_node(node, extra_offset=0):
+def position_from_node(node, extra_offset=0, is_definition=False):
     if isinstance(node, ClassDef):
         extra_offset += len('class ')
     elif isinstance(node, FunctionDef):
@@ -266,4 +252,7 @@ def position_from_node(node, extra_offset=0):
     elif isinstance(node, Attribute):
         extra_offset += len(node.value.id) + 1
 
-    return Position(row=node.lineno - 1, column=node.col_offset) + extra_offset
+    return Position(
+        row=node.lineno - 1,
+        column=node.col_offset + extra_offset,
+        is_definition=is_definition)
