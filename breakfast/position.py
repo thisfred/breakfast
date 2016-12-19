@@ -4,11 +4,12 @@ class IllegalPosition(Exception):
 
 class Position:
 
-    def __init__(self, row, column, is_definition=False):
+    def __init__(self, row, column, module=None, is_definition=False):
         if row < 0 or column < 0:
             raise IllegalPosition
         self.row = row
         self.column = column
+        self.module = module
         self.is_definition = is_definition
 
     def _add_offset(self, offset):
@@ -28,7 +29,8 @@ class Position:
             self.row == other.row and self.column < other.column)
 
     def __repr__(self):
-        return 'Position(row=%s, column=%s%s)' % (
+        return 'Position(row=%s, column=%s, module=%r%s)' % (
             self.row,
             self.column,
+            self.module,
             '' if not self.is_definition else ', is_definition=True')

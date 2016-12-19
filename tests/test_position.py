@@ -4,8 +4,8 @@ from breakfast.position import IllegalPosition, Position
 
 
 def test_position_repr_looks_ok():
-    position = Position(row=12, column=4)
-    assert repr(position) == "Position(row=12, column=4)"
+    position = Position(row=12, column=4, module='foo')
+    assert repr(position) == "Position(row=12, column=4, module='foo')"
 
 
 def test_cannot_create_negative_positions():

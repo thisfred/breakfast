@@ -35,10 +35,12 @@ def test_renames_local_variable_in_function():
 
 def test_renames_function_from_lines():
     refactoring = Rename(
-        lines=[
+        files={'module': [
             "def fun_old():",
             "    return 'result'",
-            "result = fun_old()"],
+            "result = fun_old()"]})
+    refactoring.initialize(
+        module='module',
         position=Position(row=0, column=4),
         old_name='fun_old',
         new_name='fun_new')
@@ -47,7 +49,7 @@ def test_renames_function_from_lines():
 
     assert [
         (0, "def fun_new():"),
-        (2, "result = fun_new()")] == list(refactoring.get_changes())
+        (2, "result = fun_new()")] == list(refactoring.get_changes('module'))
 
 
 def test_renames_function():
@@ -533,24 +535,6 @@ def test_renames_enclosing_scope_variables_in_comprehensions():
         new_name='new')
 
 
-def test_renames_imports():
-    source = dedent("""
-    from foo import old
-    old()
-    """)
-
-    target = dedent("""
-    from foo import new
-    new()
-    """)
-
-    assert target == rename(
-        source=source,
-        cursor=Position(row=2, column=0),
-        old_name='old',
-        new_name='new')
-
-
 def test_dogfooding():
     """Test that we can at least parse our own code."""
     with open('breakfast/rename.py', 'r') as source:
@@ -559,11 +543,42 @@ def test_dogfooding():
         visitor.visit(wrapped.get_ast())
 
 
+def test_rename_across_files():
+    files = {
+        'foo': dedent(
+            """
+            def old():
+                pass
+            """),
+        'bar': dedent(
+            """
+            from foo import old
+            old()
+            """)}
+
+    refactoring = Rename(files={m: f.split('\n') for m, f in files.items()})
+    refactoring.initialize(
+        module='bar',
+        position=Position(row=2, column=0),
+        old_name='old',
+        new_name='new')
+    refactoring.apply()
+    assert refactoring.get_result('foo') == dedent("""
+        def new():
+            pass
+        """)
+    assert refactoring.get_result('bar') == dedent("""
+        from foo import new
+        new()
+        """)
+
+
 def rename(source, cursor, old_name, new_name):
-    refactoring = Rename(
-        lines=source.split('\n'),
+    refactoring = Rename(files={'module': source.split('\n')})
+    refactoring.initialize(
+        module='module',
         position=cursor,
         old_name=old_name,
         new_name=new_name)
     refactoring.apply()
-    return refactoring.get_result()
+    return refactoring.get_result('module')

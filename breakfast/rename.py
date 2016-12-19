@@ -14,34 +14,44 @@ TOP = Scope()
 
 class Rename:
 
-    def __init__(self, lines, position, old_name, new_name):
-        self.lines = lines
+    def __init__(self, files):
+        self.position = None
+        self.old_name = None
+        self.new_name = None
+        self.visitor = None
+        self.module = None
+        self.sources = {
+            m: Source(lines=l) for m, l in files.items()}
+
+    def initialize(self, module, position, old_name, new_name):
         self.position = position
         self.old_name = old_name
         self.new_name = new_name
-        self.base_source = Source(lines=lines)
-        self.other_sources = []
+        self.module = module
         self.visitor = NameCollector(old_name)
 
     def apply(self):
-        self.visitor.visit(self.base_source.get_ast())
-        name_position = self.base_source.get_start(
+        primary_source = self.sources[self.module]
+        for module, source in self.sources.items():
+            with self.visitor.scope(module):
+                self.visitor.visit(source.get_ast())
+        name_position = primary_source.get_start(
             name=self.old_name, before=self.position)
         for occurrence in self.find_occurrences(name_position):
-            self.base_source.replace(
+            self.sources.get(occurrence.module, primary_source).replace(
                 position=occurrence,
                 old=self.old_name,
                 new=self.new_name)
 
-    def get_changes(self):
-        return self.base_source.get_changes()
+    def get_changes(self, module):
+        return self.sources[module].get_changes()
 
-    def get_result(self):
-        return self.base_source.render()
+    def get_result(self, module):
+        return self.sources[module].render()
 
     def find_occurrences(self, position):
         grouped = self.group_occurrences()
-        for positions in grouped.values():
+        for _, positions in grouped.items():
             if position in positions:
                 return sorted(positions, reverse=True)
 
@@ -81,42 +91,40 @@ class NameCollector(NodeVisitor):
         self._scope = TOP
         self._lookup = {}
         self._name = name
-        self._module = "module"
-
-    def visit_Module(self, node):  # noqa
-        with self.scope(self._module):
-            self.generic_visit(node)
+        self._aliases = {}
 
     def visit_Print(self, node):  # noqa
         # python 2
-        self.add_occurrence(
+        self.occur(
             scope=self._scope.path,
-            node=node,
+            position=self.position_from_node(node),
             name='print')
+
         self.generic_visit(node)
 
     def visit_Name(self, node):  # noqa
-        self.add_occurrence(
-            scope=self._scope.path,
-            name=node.id,
+        if node.id != self._name:
+            return
+
+        position = self.position_from_node(
             node=node,
             is_definition=(
                 isinstance(node.ctx, Store) or isinstance(node.ctx, Param)))
+        self.occur(
+            scope=self._scope.path,
+            position=position,
+            name=node.id)
 
     def visit_ClassDef(self, node):  # noqa
         class_name = self._scope.get_name(node.name)
-        self.add_occurrence(
-            scope=self._scope.path,
-            node=node,
-            is_definition=True)
+        if node.name == self._name:
+            self.add_definition(node=node, name=node.name)
         with self.scope(node.name, in_class=class_name):
             self.generic_visit(node)
 
     def visit_FunctionDef(self, node):  # noqa
-        self.add_occurrence(
-            scope=self._scope.path,
-            node=node,
-            is_definition=True)
+        if node.name == self._name:
+            self.add_definition(node=node, name=node.name)
         is_method = self._scope.in_class_scope
         with self.scope(node.name):
             for i, arg in enumerate(node.args.args):
@@ -129,11 +137,8 @@ class NameCollector(NodeVisitor):
                     continue
 
                 # python 3
-                self.add_occurrence(
-                    scope=self._scope.path,
-                    node=arg,
-                    name=arg.arg,
-                    is_definition=True)
+                if arg.arg == self._name:
+                    self.add_definition(node=arg, name=arg.arg)
             self.generic_visit(node)
 
     def visit_DictComp(self, node):  # noqa
@@ -146,16 +151,17 @@ class NameCollector(NodeVisitor):
         self.comp_visit(node)
 
     def visit_Attribute(self, node):  # noqa
-        with self.scope(self.get_name(node.value)):
-            path = self.lookup(self._scope.path)
-            scope = self._scope
-            while scope.path and scope.path != path:
-                scope = scope.parent
+        if node.attr == self._name:
+            with self.scope(self.get_name(node.value)):
+                path = self.lookup(self._scope.path)
+                scope = self._scope
+                while scope.path and scope.path != path:
+                    scope = scope.parent
+                position = self.position_from_node(
+                    node=node,
+                    module=scope.path[0])
+                self.occur(scope.path, position, node.attr)
 
-            self.add_occurrence(
-                scope=scope.path,
-                node=node,
-                name=node.attr)
         self.generic_visit(node)
 
     def visit_Assign(self, node):  # noqa
@@ -167,25 +173,35 @@ class NameCollector(NodeVisitor):
     def visit_Call(self, node):  # noqa
         with self.scope(self.get_name(node.func)):
             for keyword in node.keywords:
-                self.add_occurrence(
-                    scope=self._scope.path,
+                if keyword.arg != self._name:
+                    continue
+
+                position = self.position_from_node(
                     node=keyword.value,
-                    name=keyword.arg,
-                    offset=-(len(keyword.arg) + 1))
+                    extra_offset=-(len(keyword.arg) + 1))
+                self.occur(
+                    scope=self._scope.path,
+                    position=position,
+                    name=keyword.arg)
+
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node):  # noqa
         name = node.names[0].name
-        self.add_occurrence(
-            scope=self._scope.path,
+        if name != self._name:
+            return
+
+        self._aliases[
+            self._scope.get_name(name)] = (node.module, name)
+        position = self.position_from_node(
             node=node,
-            name=name,
-            offset=len('from %s import ' % (node.module)),
-            is_definition=True)
+            # TODO: handle multiple imports
+            extra_offset=len('from %s import ' % (node.module)))
+        self.occur(self._scope.path, position, name)
 
     def comp_visit(self, node):
         """Create a unique scope for the comprehension."""
-        position = position_from_node(node)
+        position = self.position_from_node(node, module=self._scope.path[0])
         # The dashes make sure it can never clash with an actual Python name.
         name = 'comprehension-%s-%s' % (position.row, position.column)
         self.scoped_visit(name, node)
@@ -196,23 +212,20 @@ class NameCollector(NodeVisitor):
 
     @contextmanager
     def scope(self, name, in_class=None):
-        if name is None:
-            yield
-        else:
-            self._scope = self._scope.enter_scope(
-                name=name, direct_class=in_class)
-            yield
-            self._scope = self._scope.parent
+        self._scope = self._scope.enter_scope(
+            name=name, direct_class=in_class)
+        yield
+        self._scope = self._scope.parent
 
-    def add_occurrence(self, scope, node, name=None, is_definition=False,
-                       offset=0):
-        name = name or node.name
-        if name == self._name:
-            self.occurrences[scope].append(
-                position_from_node(
-                    node=node,
-                    extra_offset=offset,
-                    is_definition=is_definition))
+    def occur(self, scope, position, name):
+        path = self._aliases.get(scope + (name,), scope + tuple())
+        self.occurrences[path].append(position)
+
+    def add_definition(self, node, name):
+        position = self.position_from_node(
+            node=node,
+            is_definition=True)
+        self.occur(self._scope.path, position, name)
 
     def get_name(self, node):
         if isinstance(node, Name):
@@ -223,6 +236,21 @@ class NameCollector(NodeVisitor):
 
     def lookup(self, name):
         return self._lookup.get(name, name)
+
+    def position_from_node(self, node, module=None, extra_offset=0,
+                           is_definition=False):
+        if isinstance(node, ClassDef):
+            extra_offset += len('class ')
+        elif isinstance(node, FunctionDef):
+            extra_offset += len('fun ')
+        elif isinstance(node, Attribute):
+            extra_offset += len(node.value.id) + 1
+
+        return Position(
+            row=node.lineno - 1,
+            column=node.col_offset + extra_offset,
+            module=module or self._scope.path[0],
+            is_definition=is_definition)
 
 
 def arg_or_id(arg):
@@ -242,17 +270,3 @@ def name_from_node(node):
 
     if isinstance(node, Name):
         return node.id
-
-
-def position_from_node(node, extra_offset=0, is_definition=False):
-    if isinstance(node, ClassDef):
-        extra_offset += len('class ')
-    elif isinstance(node, FunctionDef):
-        extra_offset += len('fun ')
-    elif isinstance(node, Attribute):
-        extra_offset += len(node.value.id) + 1
-
-    return Position(
-        row=node.lineno - 1,
-        column=node.col_offset + extra_offset,
-        is_definition=is_definition)
