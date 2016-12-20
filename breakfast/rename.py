@@ -55,18 +55,22 @@ class Rename:
             if position in positions:
                 return sorted(positions, reverse=True)
 
+    def done_or_todo(self, occurrences, done, to_do):
+        if any(o.is_definition for o in occurrences):
+            return done
+
+        return to_do
+
     def group_occurrences(self):
         to_do = {}
         done = defaultdict(list)
         occurrences = self.visitor.occurrences
-        for path in sorted(occurrences.keys(), reverse=True):
-            path_occurrences = occurrences[path]
-            for occurrence in path_occurrences:
-                if occurrence.is_definition:
-                    done[path] = path_occurrences
-                    break
-            else:
-                to_do[path[:-1]] = path_occurrences
+        for path, path_occurrences in sorted(occurrences.items(),
+                                             reverse=True):
+            self.done_or_todo(
+                path_occurrences,
+                done=done,
+                to_do=to_do)[path] = path_occurrences
 
         for path in to_do:
             for prefix in self.get_prefixes(path, done):
