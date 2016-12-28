@@ -22,9 +22,7 @@ class Source:
             yield change
 
     def replace(self, position, old, new):
-        start = self.get_start(name=old, before=position)
-        end = start + len(old)
-        self.modify_line(start=start, end=end, new=new)
+        self.modify_line(start=position, end=position + len(old), new=new)
 
     def modify_line(self, start, end, new):
         line_number = start.row
@@ -32,7 +30,7 @@ class Source:
         modified_line = line[:start.column] + new + line[end.column:]
         self.changes[line_number] = modified_line
 
-    def get_start(self, name, before):
+    def find_backwards(self, name, before):
         while not self.get_string_starting_at(before).startswith(name):
             before = self.get_previous_position(before)
         return before

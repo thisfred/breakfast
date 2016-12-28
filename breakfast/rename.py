@@ -34,10 +34,9 @@ class Rename:
         primary_source = self.sources[self.module]
         for module, source in self.sources.items():
             with self.visitor.scope(module):
-                self.visitor.visit(source.get_ast())
-        name_position = primary_source.get_start(
-            name=self.old_name, before=self.position)
-        for occurrence in self.find_occurrences(name_position):
+                self.visitor.set_source(source)
+                self.visitor.collect_occurrences()
+        for occurrence in self.find_occurrences(self.position):
             self.sources.get(occurrence.module, primary_source).replace(
                 position=occurrence,
                 old=self.old_name,
@@ -96,14 +95,16 @@ class NameCollector(NodeVisitor):
         self._lookup = {}
         self._name = name
         self._aliases = {}
+        self.source = None
+
+    def set_source(self, source):
+        self.source = source
+
+    def collect_occurrences(self):
+        self.visit(self.source.get_ast())
 
     def visit_Print(self, node):  # noqa
         # python 2
-        self.occur(
-            scope=self._scope.path,
-            position=self.position_from_node(node),
-            name='print')
-
         self.generic_visit(node)
 
     def visit_Name(self, node):  # noqa
@@ -181,12 +182,9 @@ class NameCollector(NodeVisitor):
                 if keyword.arg != self._name:
                     continue
 
-                position = self.position_from_node(
-                    node=keyword.value,
-                    extra_offset=-(len(keyword.arg) + 1))
                 self.occur(
                     scope=self._scope.path,
-                    position=position,
+                    position=self.arg_position_from_value(keyword.value),
                     name=keyword.arg)
 
         self.generic_visit(node)
@@ -261,6 +259,11 @@ class NameCollector(NodeVisitor):
             column=node.col_offset + extra_offset,
             module=module or self._scope.path[0],
             is_definition=is_definition)
+
+    def arg_position_from_value(self, value):
+        position = self.position_from_node(node=value)
+        start = self.source.find_backwards('=', position)
+        return self.source.find_backwards(self._name, start)
 
 
 def arg_or_id(arg):

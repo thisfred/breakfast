@@ -72,26 +72,6 @@ def test_renames_function():
         new_name='fun_new')
 
 
-def test_renames_from_any_character_in_the_name():
-    source = dedent("""
-    def fun_old():
-        return 'result'
-    result = fun_old()
-    """)
-
-    target = dedent("""
-    def fun_new():
-        return 'result'
-    result = fun_new()
-    """)
-
-    assert target == rename_in_single_file(
-        source=source,
-        cursor=Position(row=1, column=7),
-        old_name='fun_old',
-        new_name='fun_new')
-
-
 def test_renames_class():
     source = dedent("""
     class OldClass:
@@ -153,7 +133,7 @@ def test_does_not_rename_argument():
 
     assert target == rename_in_single_file(
         source=source,
-        cursor=Position(row=1, column=10),
+        cursor=Position(row=1, column=8),
         old_name='old',
         new_name='new')
 
@@ -328,7 +308,7 @@ def test_renames_attributes():
 
     assert target == rename_in_single_file(
         source=source,
-        cursor=Position(row=7, column=26),
+        cursor=Position(row=7, column=20),
         old_name='property',
         new_name='renamed')
 
@@ -430,7 +410,7 @@ def test_renames_for_loop_variables():
 
     assert target == rename_in_single_file(
         source=source,
-        cursor=Position(row=3, column=10),
+        cursor=Position(row=2, column=7),
         old_name='old',
         new_name='new')
 
@@ -540,7 +520,8 @@ def test_dogfooding():
     with open('breakfast/rename.py', 'r') as source:
         wrapped = Source(lines=[l[:-1] for l in source.readlines()])
         visitor = NameCollector('position')
-        visitor.visit(wrapped.get_ast())
+        visitor.set_source(wrapped)
+        visitor.collect_occurrences()
 
 
 def test_rename_across_files():
