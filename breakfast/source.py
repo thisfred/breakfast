@@ -43,7 +43,6 @@ class Source:
     def get_previous_position(self, position):
         try:
             return position - 1
-
         except IllegalPosition:
             return self.get_last_column(position.row - 1)
 

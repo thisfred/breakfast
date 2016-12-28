@@ -55,7 +55,8 @@ class Rename:
             if position in positions:
                 return sorted(positions, reverse=True)
 
-    def done_or_todo(self, occurrences, done, to_do):
+    @staticmethod
+    def done_or_todo(occurrences, done, to_do):
         if any(o.is_definition for o in occurrences):
             return done
 
@@ -85,7 +86,6 @@ class Rename:
         while prefix and prefix not in done:
             prefix = prefix[:-1]
             yield prefix
-        yield prefix
 
 
 class NameCollector(NodeVisitor):
@@ -120,30 +120,31 @@ class NameCollector(NodeVisitor):
             name=node.id)
 
     def visit_ClassDef(self, node):  # noqa
-        class_name = self._scope.get_name(node.name)
-        if node.name == self._name:
-            self.add_definition(node=node, name=node.name)
-        with self.scope(node.name, in_class=class_name):
+        self.add_definition(node)
+        with self.scope(node.name, in_class=self._scope.get_name(node.name)):
             self.generic_visit(node)
 
     def visit_FunctionDef(self, node):  # noqa
-        if node.name == self._name:
-            self.add_definition(node=node, name=node.name)
+        self.add_definition(node)
         is_method = self._scope.in_class_scope
         with self.scope(node.name):
-            for i, arg in enumerate(node.args.args):
-                if is_method and i == 0:
-                    self._lookup[
-                        self._scope.path +
-                        (arg_or_id(arg),)] = self._scope.direct_class
-                if isinstance(arg, Name):
-                    # python 2
-                    continue
-
-                # python 3
-                if arg.arg == self._name:
-                    self.add_definition(node=arg, name=arg.arg)
+            self.process_args(node.args.args, is_method)
             self.generic_visit(node)
+
+    def process_args(self, args, is_method):
+        if args and is_method:
+            arg = args[0]
+            self._lookup[
+                self._scope.path +
+                (arg_or_id(arg),)] = self._scope.direct_class
+
+        for arg in args:
+            if isinstance(arg, Name):
+                # python 2: these will be caught by generic_visit
+                continue
+
+            # python 3
+            self.add_definition(node=arg, name=arg.arg)
 
     def visit_DictComp(self, node):  # noqa
         self.comp_visit(node)
@@ -225,7 +226,11 @@ class NameCollector(NodeVisitor):
         path = self._aliases.get(scope + (name,), scope + tuple())
         self.occurrences[path].append(position)
 
-    def add_definition(self, node, name):
+    def add_definition(self, node, name=None):
+        name = name or node.name
+        if name != self._name:
+            return
+
         position = self.position_from_node(
             node=node,
             is_definition=True)
@@ -248,7 +253,8 @@ class NameCollector(NodeVisitor):
         elif isinstance(node, FunctionDef):
             extra_offset += len('fun ')
         elif isinstance(node, Attribute):
-            extra_offset += len(node.value.id) + 1
+            value = node.value
+            extra_offset += len(value.id) + 1
 
         return Position(
             row=node.lineno - 1,

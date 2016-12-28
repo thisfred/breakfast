@@ -5,12 +5,12 @@ class IllegalPosition(Exception):
 class Position:
 
     def __init__(self, row, column, module=None, is_definition=False):
-        if row < 0 or column < 0:
-            raise IllegalPosition
         self.row = row
         self.column = column
         self.module = module
         self.is_definition = is_definition
+        if row < 0 or column < 0:
+            raise IllegalPosition
 
     def _add_offset(self, offset):
         return Position(row=self.row, column=self.column + offset)

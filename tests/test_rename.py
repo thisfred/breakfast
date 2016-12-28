@@ -26,7 +26,7 @@ def test_renames_local_variable_in_function():
         return result
     """)
 
-    assert target == rename(
+    assert target == rename_in_single_file(
         source=source,
         cursor=Position(row=2, column=4),
         old_name='old',
@@ -65,7 +65,7 @@ def test_renames_function():
     result = fun_new()
     """)
 
-    assert target == rename(
+    assert target == rename_in_single_file(
         source=source,
         cursor=Position(row=1, column=4),
         old_name='fun_old',
@@ -85,7 +85,7 @@ def test_renames_from_any_character_in_the_name():
     result = fun_new()
     """)
 
-    assert target == rename(
+    assert target == rename_in_single_file(
         source=source,
         cursor=Position(row=1, column=7),
         old_name='fun_old',
@@ -107,7 +107,7 @@ def test_renames_class():
     instance = NewClass()
     """)
 
-    assert target == rename(
+    assert target == rename_in_single_file(
         source=source,
         cursor=Position(row=1, column=6),
         old_name='OldClass',
@@ -127,7 +127,7 @@ def test_renames_parameters():
     fun(new_arg=1, arg2=2)
     """)
 
-    assert target == rename(
+    assert target == rename_in_single_file(
         source=source,
         cursor=Position(row=1, column=8),
         old_name='arg',
@@ -151,7 +151,7 @@ def test_does_not_rename_argument():
     fun(new=old)
     """)
 
-    assert target == rename(
+    assert target == rename_in_single_file(
         source=source,
         cursor=Position(row=1, column=10),
         old_name='old',
@@ -174,7 +174,7 @@ def test_renames_passed_argument():
     fun(1, new)
     """)
 
-    assert target == rename(
+    assert target == rename_in_single_file(
         source=source,
         cursor=Position(row=1, column=0),
         old_name='old',
@@ -200,7 +200,7 @@ def test_renames_parameter_with_unusual_indentation():
         arg2=2)
     """)
 
-    assert target == rename(
+    assert target == rename_in_single_file(
         source=source,
         cursor=Position(row=1, column=8),
         old_name='arg',
@@ -228,7 +228,7 @@ def test_renames_method():
     a.new()
     """)
 
-    assert target == rename(
+    assert target == rename_in_single_file(
         source=source,
         cursor=Position(row=3, column=8),
         old_name='old',
@@ -274,7 +274,7 @@ def test_renames_only_the_right_method_definition_and_calls():
     b.old()
     """)
 
-    assert target == rename(
+    assert target == rename_in_single_file(
         source=source,
         cursor=Position(row=3, column=8),
         old_name='old',
@@ -298,7 +298,7 @@ def test_renames_from_inner_scope():
         new()
     """)
 
-    assert target == rename(
+    assert target == rename_in_single_file(
         source=source,
         cursor=Position(row=5, column=4),
         old_name='old',
@@ -326,7 +326,7 @@ def test_renames_attributes():
             return self.renamed
     """)
 
-    assert target == rename(
+    assert target == rename_in_single_file(
         source=source,
         cursor=Position(row=7, column=26),
         old_name='property',
@@ -344,7 +344,7 @@ def test_renames_dict_comprehension_variables():
     foo = {new: None for new in range(100) if new % 3}
     """)
 
-    assert target == rename(
+    assert target == rename_in_single_file(
         source=source,
         cursor=Position(row=2, column=7),
         old_name='old',
@@ -362,7 +362,7 @@ def test_renames_set_comprehension_variables():
     foo = {new for new in range(100) if new % 3}
     """)
 
-    assert target == rename(
+    assert target == rename_in_single_file(
         source=source,
         cursor=Position(row=2, column=7),
         old_name='old',
@@ -382,7 +382,7 @@ def test_renames_list_comprehension_variables():
         new for new in range(100) if new % 3]
     """)
 
-    assert target == rename(
+    assert target == rename_in_single_file(
         source=source,
         cursor=Position(row=3, column=4),
         old_name='old',
@@ -406,7 +406,7 @@ def test_renames_only_desired_list_comprehension_variables():
         old for old in range(100) if old % 3]
     """)
 
-    assert target == rename(
+    assert target == rename_in_single_file(
         source=source,
         cursor=Position(row=3, column=4),
         old_name='old',
@@ -428,7 +428,7 @@ def test_renames_for_loop_variables():
         print(new)
     """)
 
-    assert target == rename(
+    assert target == rename_in_single_file(
         source=source,
         cursor=Position(row=3, column=10),
         old_name='old',
@@ -448,7 +448,7 @@ def test_renames_dotted_assignments():
             self.new = some.qux()
     """)
 
-    assert target == rename(
+    assert target == rename_in_single_file(
         source=source,
         cursor=Position(row=3, column=13),
         old_name='old',
@@ -464,7 +464,7 @@ def test_renames_tuple_unpack():
     foo, new = 1, 2
     """)
 
-    assert target == rename(
+    assert target == rename_in_single_file(
         source=source,
         cursor=Position(row=1, column=5),
         old_name='old',
@@ -486,7 +486,7 @@ def test_renames_double_dotted_assignments():
                 return occurrences
     """)
 
-    assert target == rename(
+    assert target == rename_in_single_file(
         source=source,
         cursor=Position(row=2, column=26),
         old_name='old',
@@ -510,7 +510,7 @@ def test_renames_subscript():
     a[new()] = new()
     """)
 
-    assert target == rename(
+    assert target == rename_in_single_file(
         source=source,
         cursor=Position(row=1, column=4),
         old_name='old',
@@ -528,7 +528,7 @@ def test_renames_enclosing_scope_variables_in_comprehensions():
     foo = [foo for foo in range(100) if foo % new]
     """)
 
-    assert target == rename(
+    assert target == rename_in_single_file(
         source=source,
         cursor=Position(row=2, column=42),
         old_name='old',
@@ -573,7 +573,7 @@ def test_rename_across_files():
         """)
 
 
-def rename(source, cursor, old_name, new_name):
+def rename_in_single_file(source, cursor, old_name, new_name):
     refactoring = Rename(files={'module': source.split('\n')})
     refactoring.initialize(
         module='module',
