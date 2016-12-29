@@ -554,6 +554,44 @@ def test_rename_across_files():
         """)
 
 
+def test_rename_with_multiple_imports_on_one_line():
+    files = {
+        'foo': dedent(
+            """
+            def old():
+                pass
+
+            def bar():
+                pass
+            """),
+        'bar': dedent(
+            """
+            from foo import bar, old
+            old()
+            bar()
+            """)}
+
+    refactoring = Rename(files={m: f.split('\n') for m, f in files.items()})
+    refactoring.initialize(
+        module='bar',
+        position=Position(refactoring.sources['bar'], row=2, column=0),
+        old_name='old',
+        new_name='new')
+    refactoring.apply()
+    assert refactoring.get_result('bar') == dedent("""
+        from foo import bar, new
+        new()
+        bar()
+        """)
+    assert refactoring.get_result('foo') == dedent("""
+        def new():
+            pass
+
+        def bar():
+            pass
+        """)
+
+
 def rename_in_single_file(source, cursor, old_name, new_name):
     refactoring = Rename(files={'module': source.split('\n')})
     refactoring.initialize(

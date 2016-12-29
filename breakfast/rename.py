@@ -194,19 +194,20 @@ class NameCollector(NodeVisitor):
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node):  # noqa
-        name = node.names[0].name
-        if name != self._name:
-            return
-
-        self._aliases[
-            self._scope.get_name(name)] = (node.module, name)
-
         position = Position.from_node(
             source=self.source,
             node=node,
-            # TODO: handle multiple imports
             extra_offset=len('from %s import ' % (node.module)))
-        self.occur(self._scope.path, position, name)
+        for alias in node.names:
+            name = alias.name
+            if name != self._name:
+                position += len(name + ', ')
+                continue
+
+            self._aliases[
+                self._scope.get_name(name)] = (node.module, name)
+
+            self.occur(self._scope.path, position, name)
 
     def comp_visit(self, node):
         """Create a unique scope for the comprehension."""
