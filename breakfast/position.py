@@ -4,16 +4,25 @@ class IllegalPosition(Exception):
 
 class Position:
 
-    def __init__(self, row, column, module=None, is_definition=False):
+    def __init__(self, source, row, column, is_definition=False):
+        self.source = source
         self.row = row
         self.column = column
-        self.module = module
         self.is_definition = is_definition
         if row < 0 or column < 0:
             raise IllegalPosition
 
+    @classmethod
+    def from_node(cls, source, node, extra_offset=0, is_definition=False):
+        return cls(
+            source=source,
+            row=node.lineno - 1,
+            column=node.col_offset + extra_offset,
+            is_definition=is_definition)
+
     def _add_offset(self, offset):
-        return Position(row=self.row, column=self.column + offset)
+        return Position(
+            source=self.source, row=self.row, column=self.column + offset)
 
     def __add__(self, column_offset):
         return self._add_offset(column_offset)
@@ -29,8 +38,13 @@ class Position:
             self.row == other.row and self.column < other.column)
 
     def __repr__(self):
-        return 'Position(row=%s, column=%s, module=%r%s)' % (
+        return 'Position(row=%s, column=%s%s)' % (
             self.row,
             self.column,
-            self.module,
             '' if not self.is_definition else ', is_definition=True')
+
+    def previous(self):
+        try:
+            return self - 1
+        except IllegalPosition:
+            return self.source.get_last_column(self.row - 1)

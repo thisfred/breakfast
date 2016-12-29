@@ -1,6 +1,6 @@
 from ast import parse
 
-from breakfast.position import IllegalPosition, Position
+from breakfast.position import Position
 
 
 class Source:
@@ -32,17 +32,12 @@ class Source:
 
     def find_backwards(self, name, before):
         while not self.get_string_starting_at(before).startswith(name):
-            before = self.get_previous_position(before)
+            before = before.previous()
         return before
 
     def get_string_starting_at(self, position):
         return self.lines[position.row][position.column:]
 
-    def get_previous_position(self, position):
-        try:
-            return position - 1
-        except IllegalPosition:
-            return self.get_last_column(position.row - 1)
-
     def get_last_column(self, row):
-        return Position(row=row, column=len(self.lines[row]) - 1)
+        return Position(
+            source=self, row=row, column=len(self.lines[row]) - 1)

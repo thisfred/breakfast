@@ -1,7 +1,6 @@
 """Rename refactorings."""
 
-from ast import (
-    Attribute, Call, ClassDef, FunctionDef, Name, NodeVisitor, Param, Store)
+from ast import Attribute, Call, Name, NodeVisitor, Param, Store
 from collections import defaultdict
 from contextlib import contextmanager
 
@@ -37,7 +36,8 @@ class Rename:
                 self.visitor.set_source(source)
                 self.visitor.collect_occurrences()
         for occurrence in self.find_occurrences(self.position):
-            self.sources.get(occurrence.module, primary_source).replace(
+            source = occurrence.source or primary_source
+            source.replace(
                 position=occurrence,
                 old=self.old_name,
                 new=self.new_name)
@@ -111,7 +111,8 @@ class NameCollector(NodeVisitor):
         if node.id != self._name:
             return
 
-        position = self.position_from_node(
+        position = Position.from_node(
+            source=self.source,
             node=node,
             is_definition=(
                 isinstance(node.ctx, Store) or isinstance(node.ctx, Param)))
@@ -121,12 +122,13 @@ class NameCollector(NodeVisitor):
             name=node.id)
 
     def visit_ClassDef(self, node):  # noqa
-        self.add_definition(node)
-        with self.scope(node.name, in_class=self._scope.get_name(node.name)):
+        name = node.name
+        self.add_definition(node, extra_offset=len('class '))
+        with self.scope(name, in_class=self._scope.get_name(name)):
             self.generic_visit(node)
 
     def visit_FunctionDef(self, node):  # noqa
-        self.add_definition(node)
+        self.add_definition(node, extra_offset=len('fun '))
         is_method = self._scope.in_class_scope
         with self.scope(node.name):
             self.process_args(node.args.args, is_method)
@@ -163,9 +165,11 @@ class NameCollector(NodeVisitor):
                 scope = self._scope
                 while scope.path and scope.path != path:
                     scope = scope.parent
-                position = self.position_from_node(
+
+                position = Position.from_node(
+                    source=self.source,
                     node=node,
-                    module=scope.path[0])
+                    extra_offset=len(node.value.id) + 1)
                 self.occur(scope.path, position, node.attr)
 
         self.generic_visit(node)
@@ -196,7 +200,9 @@ class NameCollector(NodeVisitor):
 
         self._aliases[
             self._scope.get_name(name)] = (node.module, name)
-        position = self.position_from_node(
+
+        position = Position.from_node(
+            source=self.source,
             node=node,
             # TODO: handle multiple imports
             extra_offset=len('from %s import ' % (node.module)))
@@ -204,7 +210,8 @@ class NameCollector(NodeVisitor):
 
     def comp_visit(self, node):
         """Create a unique scope for the comprehension."""
-        position = self.position_from_node(node, module=self._scope.path[0])
+
+        position = Position.from_node(source=self.source, node=node)
         # The dashes make sure it can never clash with an actual Python name.
         name = 'comprehension-%s-%s' % (position.row, position.column)
         self.scoped_visit(name, node)
@@ -224,13 +231,15 @@ class NameCollector(NodeVisitor):
         path = self._aliases.get(scope + (name,), scope + tuple())
         self.occurrences[path].append(position)
 
-    def add_definition(self, node, name=None):
+    def add_definition(self, node, extra_offset=0, name=None):
         name = name or node.name
         if name != self._name:
             return
 
-        position = self.position_from_node(
+        position = Position.from_node(
+            source=self.source,
             node=node,
+            extra_offset=extra_offset,
             is_definition=True)
         self.occur(self._scope.path, position, name)
 
@@ -244,24 +253,10 @@ class NameCollector(NodeVisitor):
     def lookup(self, name):
         return self._lookup.get(name, name)
 
-    def position_from_node(self, node, module=None, extra_offset=0,
-                           is_definition=False):
-        if isinstance(node, ClassDef):
-            extra_offset += len('class ')
-        elif isinstance(node, FunctionDef):
-            extra_offset += len('fun ')
-        elif isinstance(node, Attribute):
-            value = node.value
-            extra_offset += len(value.id) + 1
-
-        return Position(
-            row=node.lineno - 1,
-            column=node.col_offset + extra_offset,
-            module=module or self._scope.path[0],
-            is_definition=is_definition)
-
     def arg_position_from_value(self, value):
-        position = self.position_from_node(node=value)
+        position = Position.from_node(
+            source=self.source,
+            node=value)
         start = self.source.find_backwards('=', position)
         return self.source.find_backwards(self._name, start)
 

@@ -7,7 +7,8 @@ def do_rename(buffer_contents, old_name, row, column, new_name):
     refactoring = Rename(files={module_name: buffer_contents})
     refactoring.initialize(
         module=module_name,
-        position=Position(row=row, column=column),
+        position=Position(
+            refactoring.sources[module_name], row=row, column=column),
         old_name=old_name,
         new_name=new_name)
     refactoring.apply()
