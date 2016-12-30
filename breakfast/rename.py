@@ -4,7 +4,6 @@ from ast import Attribute, Call, Name, NodeVisitor, Param, Store
 from collections import defaultdict
 from contextlib import contextmanager
 
-from breakfast.position import Position
 from breakfast.scope import Scope
 from breakfast.source import Source
 
@@ -111,8 +110,7 @@ class NameCollector(NodeVisitor):
         if node.id != self._name:
             return
 
-        position = Position.from_node(
-            source=self.source,
+        position = self.source.position_from_node(
             node=node,
             is_definition=(
                 isinstance(node.ctx, Store) or isinstance(node.ctx, Param)))
@@ -165,11 +163,8 @@ class NameCollector(NodeVisitor):
                 scope = self._scope
                 while scope.path and scope.path != path:
                     scope = scope.parent
-
-                position = Position.from_node(
-                    source=self.source,
-                    node=node,
-                    extra_offset=len(node.value.id) + 1)
+                start = self.source.position_from_node(node=node)
+                position = self.source.find_after(self._name, start)
                 self.occur(scope.path, position, node.attr)
 
         self.generic_visit(node)
@@ -194,25 +189,20 @@ class NameCollector(NodeVisitor):
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node):  # noqa
-        position = Position.from_node(
-            source=self.source,
-            node=node,
-            extra_offset=len('from %s import ' % (node.module)))
+        start = self.source.position_from_node(node=node)
+        position = self.source.find_after(self._name, start)
         for alias in node.names:
             name = alias.name
             if name != self._name:
-                position += len(name + ', ')
                 continue
-
             self._aliases[
                 self._scope.get_name(name)] = (node.module, name)
-
             self.occur(self._scope.path, position, name)
 
     def comp_visit(self, node):
         """Create a unique scope for the comprehension."""
 
-        position = Position.from_node(source=self.source, node=node)
+        position = self.source.position_from_node(node)
         # The dashes make sure it can never clash with an actual Python name.
         name = 'comprehension-%s-%s' % (position.row, position.column)
         self.scoped_visit(name, node)
@@ -237,8 +227,7 @@ class NameCollector(NodeVisitor):
         if name != self._name:
             return
 
-        position = Position.from_node(
-            source=self.source,
+        position = self.source.position_from_node(
             node=node,
             extra_offset=extra_offset,
             is_definition=True)
@@ -255,11 +244,9 @@ class NameCollector(NodeVisitor):
         return self._lookup.get(name, name)
 
     def arg_position_from_value(self, value):
-        position = Position.from_node(
-            source=self.source,
-            node=value)
-        start = self.source.find_backwards('=', position)
-        return self.source.find_backwards(self._name, start)
+        position = self.source.position_from_node(value)
+        start = self.source.find_before('=', position)
+        return self.source.find_before(self._name, start)
 
 
 def arg_or_id(arg):

@@ -48,3 +48,14 @@ class Position:
             return self - 1
         except IllegalPosition:
             return self.source.get_last_column(self.row - 1)
+
+    def next(self):
+        position = self + 1
+        if position.column <= len(self.source.lines[self.row]):
+            return position
+
+        return Position(
+            source=self.source,
+            row=self.row + 1,
+            column=0,
+            is_definition=self.is_definition)

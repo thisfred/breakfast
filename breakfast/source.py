@@ -30,10 +30,15 @@ class Source:
         modified_line = line[:start.column] + new + line[end.column:]
         self.changes[line_number] = modified_line
 
-    def find_backwards(self, name, before):
-        while not self.get_string_starting_at(before).startswith(name):
-            before = before.previous()
-        return before
+    def find_before(self, name, start):
+        while not self.get_string_starting_at(start).startswith(name):
+            start = start.previous()
+        return start
+
+    def find_after(self, name, start):
+        while not self.get_string_starting_at(start).startswith(name):
+            start = start.next()
+        return start
 
     def get_string_starting_at(self, position):
         return self.lines[position.row][position.column:]
@@ -41,3 +46,10 @@ class Source:
     def get_last_column(self, row):
         return Position(
             source=self, row=row, column=len(self.lines[row]) - 1)
+
+    def position_from_node(self, node, extra_offset=0, is_definition=False):
+        return Position.from_node(
+            source=self,
+            node=node,
+            extra_offset=extra_offset,
+            is_definition=is_definition)
