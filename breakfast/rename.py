@@ -4,6 +4,7 @@ from ast import Attribute, Call, Name, NodeVisitor, Param, Store
 from collections import defaultdict
 from contextlib import contextmanager
 
+from breakfast.position import Position
 from breakfast.scope import Scope
 from breakfast.source import Source
 
@@ -12,59 +13,22 @@ TOP = Scope()
 
 class Rename:
 
-    def __init__(self, files):
-        self.position = None
-        self.old_name = None
-        self.new_name = None
-        self.visitor = None
-        self.module = None
-        self.sources = {
-            m: Source(lines=l) for m, l in files.items()}
-
-    def initialize(self, module, position, old_name, new_name):
-        self.position = position
+    def __init__(self, files, module, row, column, old_name, new_name):
         self.old_name = old_name
         self.new_name = new_name
-        self.module = module
-        self.visitor = NameCollector(old_name)
+        self.sources = {
+            m: Source(lines=l) for m, l in files.items()}
+        self.position = Position(
+            self.sources[module], row=row, column=column)
 
     def apply(self):
-        primary_source = self.sources[self.module]
+        visitor = NameCollector(self.old_name)
         for module, source in self.sources.items():
-            with self.visitor.scope(module):
-                self.visitor.set_source(source)
-                self.visitor.collect_occurrences()
-        for occurrence in self.find_occurrences(self.position):
-            source = occurrence.source or primary_source
-            source.replace(
-                position=occurrence,
-                old=self.old_name,
-                new=self.new_name)
-
-    def get_changes(self, module):
-        return self.sources[module].get_changes()
-
-    def get_result(self, module):
-        return self.sources[module].render()
-
-    def find_occurrences(self, position):
-        grouped = self.group_occurrences()
-        for _, positions in grouped.items():
-            if position in positions:
-                return sorted(positions, reverse=True)
-
-    @staticmethod
-    def done_or_todo(occurrences, done, to_do):
-        if any(o.is_definition for o in occurrences):
-            return done
-
-        return to_do
-
-    def group_occurrences(self):
+            with visitor.scope(name=module, source=source):
+                visitor.visit(source.get_ast())
         to_do = {}
         done = defaultdict(list)
-        occurrences = self.visitor.occurrences
-        for path, path_occurrences in sorted(occurrences.items(),
+        for path, path_occurrences in sorted(visitor.occurrences.items(),
                                              reverse=True):
             self.done_or_todo(
                 path_occurrences,
@@ -76,7 +40,29 @@ class Rename:
                 done[prefix].extend(to_do[path])
                 break
 
-        return done
+        occurrences = []
+        for _, positions in done.items():
+            if self.position in positions:
+                occurrences = sorted(positions, reverse=True)
+                break
+        for occurrence in occurrences:
+            occurrence.source.replace(
+                position=occurrence,
+                old=self.old_name,
+                new=self.new_name)
+
+    def get_changes(self, module):
+        return self.sources[module].get_changes()
+
+    def get_result(self, module):
+        return self.sources[module].render()
+
+    @staticmethod
+    def done_or_todo(occurrences, done, to_do):
+        if any(o.is_definition for o in occurrences):
+            return done
+
+        return to_do
 
     @staticmethod
     def get_prefixes(path, done):
@@ -95,12 +81,6 @@ class NameCollector(NodeVisitor):
         self._name = name
         self._aliases = {}
         self.source = None
-
-    def set_source(self, source):
-        self.source = source
-
-    def collect_occurrences(self):
-        self.visit(self.source.get_ast())
 
     def visit_Print(self, node):  # noqa
         # python 2
@@ -212,7 +192,9 @@ class NameCollector(NodeVisitor):
             self.generic_visit(node)
 
     @contextmanager
-    def scope(self, name, in_class=None):
+    def scope(self, name, in_class=None, source=None):
+        if source:
+            self.source = source
         self._scope = self._scope.enter_scope(
             name=name, direct_class=in_class)
         yield

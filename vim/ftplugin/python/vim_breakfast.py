@@ -1,14 +1,13 @@
-from breakfast.position import Position
 from breakfast.rename import Rename
 
 
 def do_rename(buffer_contents, old_name, row, column, new_name):
     module_name = 'module'
-    refactoring = Rename(files={module_name: buffer_contents})
-    refactoring.initialize(
+    refactoring = Rename(
+        files={module_name: buffer_contents},
         module=module_name,
-        position=Position(
-            refactoring.sources[module_name], row=row, column=column),
+        row=row,
+        column=column,
         old_name=old_name,
         new_name=new_name)
     refactoring.apply()

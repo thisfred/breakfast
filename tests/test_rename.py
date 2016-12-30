@@ -38,10 +38,10 @@ def test_renames_function_from_lines():
         files={'module': [
             "def fun_old():",
             "    return 'result'",
-            "result = fun_old()"]})
-    refactoring.initialize(
+            "result = fun_old()"]},
         module='module',
-        position=Position(refactoring.sources['module'], row=0, column=4),
+        row=0,
+        column=4,
         old_name='fun_old',
         new_name='fun_new')
 
@@ -520,8 +520,8 @@ def test_dogfooding():
     with open('breakfast/rename.py', 'r') as source:
         wrapped = Source(lines=[l[:-1] for l in source.readlines()])
         visitor = NameCollector('position')
-        visitor.set_source(wrapped)
-        visitor.collect_occurrences()
+        with visitor.scope(name='rename', source=wrapped):
+            visitor.visit(wrapped.get_ast())
 
 
 def test_rename_across_files():
@@ -537,10 +537,11 @@ def test_rename_across_files():
             old()
             """)}
 
-    refactoring = Rename(files={m: f.split('\n') for m, f in files.items()})
-    refactoring.initialize(
+    refactoring = Rename(
+        files={m: f.split('\n') for m, f in files.items()},
         module='bar',
-        position=Position(refactoring.sources['bar'], row=2, column=0),
+        row=2,
+        column=0,
         old_name='old',
         new_name='new')
     refactoring.apply()
@@ -571,10 +572,11 @@ def test_rename_with_multiple_imports_on_one_line():
             bar()
             """)}
 
-    refactoring = Rename(files={m: f.split('\n') for m, f in files.items()})
-    refactoring.initialize(
+    refactoring = Rename(
+        files={m: f.split('\n') for m, f in files.items()},
         module='bar',
-        position=Position(refactoring.sources['bar'], row=2, column=0),
+        row=2,
+        column=0,
         old_name='old',
         new_name='new')
     refactoring.apply()
@@ -593,10 +595,11 @@ def test_rename_with_multiple_imports_on_one_line():
 
 
 def rename_in_single_file(source, cursor, old_name, new_name):
-    refactoring = Rename(files={'module': source.split('\n')})
-    refactoring.initialize(
+    refactoring = Rename(
+        files={'module': source.split('\n')},
         module='module',
-        position=cursor,
+        row=cursor.row,
+        column=cursor.column,
         old_name=old_name,
         new_name=new_name)
     refactoring.apply()
