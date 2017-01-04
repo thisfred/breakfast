@@ -57,11 +57,3 @@ class Source:
     def get_last_column(self, row):
         return Position(
             source=self, row=row, column=len(self.lines[row]) - 1)
-
-    def position_from_node(self, node, column_offset=0, row_offset=0,
-                           is_definition=False):
-        return Position(
-            source=self,
-            row=(node.lineno - 1) + row_offset,
-            column=node.col_offset + column_offset,
-            is_definition=is_definition)

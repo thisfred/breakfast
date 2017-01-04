@@ -152,7 +152,7 @@ class NameCollector(NodeVisitor):
                 scope = self._scope
                 while scope.path and scope.path != path:
                     scope = scope.parent
-                start = self.source.position_from_node(node=node)
+                start = position_from_node(source=self.source, node=node)
                 position = self.source.find_after(self._name, start)
                 self.occur(scope.path, position, node.attr)
 
@@ -178,7 +178,7 @@ class NameCollector(NodeVisitor):
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node):  # noqa
-        start = self.source.position_from_node(node=node)
+        start = position_from_node(source=self.source, node=node)
         position = self.source.find_after(self._name, start)
         for alias in node.names:
             name = alias.name
@@ -191,7 +191,7 @@ class NameCollector(NodeVisitor):
     def comp_visit(self, node):
         """Create a unique scope for the comprehension."""
 
-        position = self.source.position_from_node(node)
+        position = position_from_node(source=self.source, node=node)
         # The dashes make sure it can never clash with an actual Python name.
         name = 'comprehension-%s-%s' % (position.row, position.column)
         self.scoped_visit(name, node)
@@ -218,7 +218,8 @@ class NameCollector(NodeVisitor):
         if name != self._name:
             return
 
-        position = self.source.position_from_node(
+        position = position_from_node(
+            source=self.source,
             node=node,
             column_offset=column_offset,
             row_offset=row_offset,
@@ -236,7 +237,7 @@ class NameCollector(NodeVisitor):
         return self._lookup.get(name, name)
 
     def arg_position_from_value(self, value):
-        position = self.source.position_from_node(value)
+        position = position_from_node(source=self.source, node=value)
         start = self.source.find_before('=', position)
         return self.source.find_before(self._name, start)
 
@@ -258,3 +259,12 @@ def name_from_node(node):
 
     if isinstance(node, Name):
         return node.id
+
+
+def position_from_node(source, node, column_offset=0, row_offset=0,
+                       is_definition=False):
+    return Position(
+        source=source,
+        row=(node.lineno - 1) + row_offset,
+        column=node.col_offset + column_offset,
+        is_definition=is_definition)
