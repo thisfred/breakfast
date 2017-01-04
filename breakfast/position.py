@@ -13,11 +13,12 @@ class Position:
             raise IllegalPosition
 
     @classmethod
-    def from_node(cls, source, node, extra_offset=0, is_definition=False):
+    def from_node(cls, source, node, column_offset=0, row_offset=0,
+                  is_definition=False):
         return cls(
             source=source,
-            row=node.lineno - 1,
-            column=node.col_offset + extra_offset,
+            row=(node.lineno - 1) + row_offset,
+            column=node.col_offset + column_offset,
             is_definition=is_definition)
 
     def _add_offset(self, offset):

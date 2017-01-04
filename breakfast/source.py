@@ -47,9 +47,11 @@ class Source:
         return Position(
             source=self, row=row, column=len(self.lines[row]) - 1)
 
-    def position_from_node(self, node, extra_offset=0, is_definition=False):
+    def position_from_node(self, node, column_offset=0, row_offset=0,
+                           is_definition=False):
         return Position.from_node(
             source=self,
             node=node,
-            extra_offset=extra_offset,
+            column_offset=column_offset,
+            row_offset=row_offset,
             is_definition=is_definition)

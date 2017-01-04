@@ -101,12 +101,19 @@ class NameCollector(NodeVisitor):
 
     def visit_ClassDef(self, node):  # noqa
         name = node.name
-        self.add_definition(node, extra_offset=len('class '))
+        self.add_definition(
+            node,
+            row_offset=len(node.decorator_list),
+            column_offset=len('class '))
+
         with self.scope(name, in_class=self._scope.get_name(name)):
             self.generic_visit(node)
 
     def visit_FunctionDef(self, node):  # noqa
-        self.add_definition(node, extra_offset=len('fun '))
+        self.add_definition(
+            node,
+            row_offset=len(node.decorator_list),
+            column_offset=len('fun '))
         is_method = self._scope.in_class_scope
         with self.scope(node.name):
             self.process_args(node.args.args, is_method)
@@ -204,14 +211,15 @@ class NameCollector(NodeVisitor):
         path = self._aliases.get(scope + (name,), scope + tuple())
         self.occurrences[path].append(position)
 
-    def add_definition(self, node, extra_offset=0, name=None):
+    def add_definition(self, node, column_offset=0, row_offset=0, name=None):
         name = name or node.name
         if name != self._name:
             return
 
         position = self.source.position_from_node(
             node=node,
-            extra_offset=extra_offset,
+            column_offset=column_offset,
+            row_offset=row_offset,
             is_definition=True)
         self.occur(self._scope.path, position, name)
 

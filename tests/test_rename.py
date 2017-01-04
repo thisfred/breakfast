@@ -222,11 +222,17 @@ def test_renames_only_the_right_method_definition_and_calls():
         def old(self, arg):
             pass
 
+        def foo(self):
+            self.old('whatever')
+
 
     class UnrelatedClass:
 
         def old(self, arg):
             pass
+
+        def foo(self):
+            self.old('whatever')
 
 
     a = ClassThatShouldHaveMethodRenamed()
@@ -241,11 +247,17 @@ def test_renames_only_the_right_method_definition_and_calls():
         def new(self, arg):
             pass
 
+        def foo(self):
+            self.new('whatever')
+
 
     class UnrelatedClass:
 
         def old(self, arg):
             pass
+
+        def foo(self):
+            self.old('whatever')
 
 
     a = ClassThatShouldHaveMethodRenamed()
@@ -592,6 +604,36 @@ def test_rename_with_multiple_imports_on_one_line():
         def bar():
             pass
         """)
+
+
+def test_renames_static_method():
+    source = dedent("""
+    class A:
+
+        @staticmethod
+        def old(arg):
+            pass
+
+    a = A()
+    a.old('foo')
+    """)
+
+    target = dedent("""
+    class A:
+
+        @staticmethod
+        def new(arg):
+            pass
+
+    a = A()
+    a.new('foo')
+    """)
+
+    assert target == rename_in_single_file(
+        source=source,
+        cursor=Position(source, row=4, column=8),
+        old_name='old',
+        new_name='new')
 
 
 def rename_in_single_file(source, cursor, old_name, new_name):
