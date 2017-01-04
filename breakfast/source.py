@@ -1,6 +1,6 @@
 from ast import parse
 
-from breakfast.position import Position
+from breakfast.position import IllegalPosition, Position
 
 
 class Source:
@@ -32,12 +32,23 @@ class Source:
 
     def find_before(self, name, start):
         while not self.get_string_starting_at(start).startswith(name):
-            start = start.previous()
+            try:
+                start = start - 1
+            except IllegalPosition:
+                start = self.get_last_column(start.row - 1)
+
         return start
 
     def find_after(self, name, start):
         while not self.get_string_starting_at(start).startswith(name):
-            start = start.next()
+            start = start + 1
+            if start.column > len(self.lines[start.row]):
+                start = Position(
+                    source=start.source,
+                    row=start.row + 1,
+                    column=0,
+                    is_definition=start.is_definition)
+
         return start
 
     def get_string_starting_at(self, position):
@@ -49,9 +60,8 @@ class Source:
 
     def position_from_node(self, node, column_offset=0, row_offset=0,
                            is_definition=False):
-        return Position.from_node(
+        return Position(
             source=self,
-            node=node,
-            column_offset=column_offset,
-            row_offset=row_offset,
+            row=(node.lineno - 1) + row_offset,
+            column=node.col_offset + column_offset,
             is_definition=is_definition)

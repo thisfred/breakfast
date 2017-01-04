@@ -90,8 +90,10 @@ class NameCollector(NodeVisitor):
         if node.id != self._name:
             return
 
-        position = self.source.position_from_node(
-            node=node,
+        position = Position(
+            source=self.source,
+            row=(node.lineno - 1),
+            column=node.col_offset,
             is_definition=(
                 isinstance(node.ctx, Store) or isinstance(node.ctx, Param)))
         self.occur(
