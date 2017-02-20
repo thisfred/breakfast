@@ -194,12 +194,12 @@ class NewNameCollector(NodeVisitor):
 
     def visit_ImportFrom(self, node):  # noqa
         start = position_from_node(source=self.source, node=node)
-        position = self.source.find_after(self._name, start)
         for imported in node.names:
             name = imported.name
             self.rewrites[self._scope + (name,)] = (node.module, name)
             if name != self._name:
                 continue
+            position = self.source.find_after(name, start)
             self.occur(name=name, position=position)
 
     def visit_DictComp(self, node):  # noqa
