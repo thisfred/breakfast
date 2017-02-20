@@ -34,3 +34,6 @@ class Position:
             self.row,
             self.column,
             '' if not self.is_definition else ', is_definition=True')
+
+    def __hash__(self):
+        return self.row * 100 + self.column
