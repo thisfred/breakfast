@@ -1,7 +1,7 @@
 """Tests for rename refactoring."""
 
 from breakfast.position import Position
-from breakfast.rename import NewNameCollector, rename
+from breakfast.rename import AttributeNames, NameCollector, State, rename
 from breakfast.source import Source
 
 from tests import dedent
@@ -497,6 +497,24 @@ def test_renames_tuple_unpack():
     assert sources['module'].render() == target
 
 
+def test_renames_multiple_assign():
+    source = dedent("""
+    foo, old = old, foo
+    """)
+
+    target = dedent("""
+    foo, new = new, foo
+    """)
+
+    sources = rename(
+        sources={'module': Source(source.split('\n'))},
+        position=Position(source, row=1, column=5),
+        old_name='old',
+        new_name='new')
+
+    assert sources['module'].render() == target
+
+
 def test_renames_double_dotted_assignments():
     source = dedent("""
     def find_occurrences(old, position):
@@ -567,12 +585,19 @@ def test_renames_enclosing_scope_variables_in_comprehensions():
     assert sources['module'].render() == target
 
 
-def skip_test_dogfooding():
+def test_multiple_calls():
+    source = Source(["bar.names.copy().items()"])
+    visitor = AttributeNames()
+    assert visitor.collect(source.get_ast()) == (
+        'bar', 'names', 'copy', 'items')
+
+
+def test_dogfooding():
     """Test that we can at least parse our own code."""
     with open('breakfast/rename.py', 'r') as source:
         wrapped = Source(lines=[l[:-1] for l in source.readlines()])
-        visitor = NewNameCollector(
-            position=Position(wrapped, row=11, column=0), name='TOP')
+        state = State()
+        visitor = NameCollector(name='whatever', state=state)
         visitor.process(wrapped, 'rename')
 
 
@@ -691,29 +716,6 @@ def test_fails_to_rename_builtins():
         new_name='new')
 
     assert sources['module'].render() == source
-
-
-def test_collects_names():
-    source = Source(
-        dedent("""
-        class A:
-
-            def foo(self, arg):
-                print(arg)
-
-            def bar(self):
-                arg = "1"
-                self.foo(arg=arg)
-        """).split('\n'))
-    visitor = NewNameCollector(
-        position=Position(source, row=8, column=17),
-        name='arg')
-
-    visitor.process(source, 'module')
-
-    assert {k: len(v) for k, v in visitor.names.items()} == {
-        ('module', 'A', 'bar', 'arg'): 2,
-        ('module', 'A', 'foo', 'arg'): 3}
 
 
 def test_renames_argument():

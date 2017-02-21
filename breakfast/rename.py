@@ -8,12 +8,13 @@ from breakfast.position import Position
 
 
 def rename(sources, position, old_name, new_name):
-    visitor = NewNameCollector(position, name=old_name)
+    state = State()
+    visitor = NameCollector(name=old_name, state=state)
     for module, source in sources.items():
         visitor.process(
             source=source,
             initial_scope=module)
-    for occurrence in sorted(visitor.get_occurrences(), reverse=True):
+    for occurrence in sorted(state.get_occurrences(position), reverse=True):
         occurrence.source.replace(
             position=occurrence,
             old=old_name,
@@ -21,63 +22,87 @@ def rename(sources, position, old_name, new_name):
     return sources
 
 
-class NewNameCollector(NodeVisitor):
+class AttributeNames(NodeVisitor):
 
-    def __init__(self, position, name):
-        self.names = defaultdict(set)
-        self.aliases = {}
-        self.rewrites = {}
-        self.definitions = set()
+    def __init__(self):
+        self._names = []
+
+    def collect(self, attribute):
+        self.visit(attribute)
+        return tuple(self._names)
+
+    def visit_Attribute(self, node):  # noqa
+        self.generic_visit(node)
+        self._names.append(node.attr)
+
+    def visit_Name(self, node):  # noqa
+        self._names.append(node.id)
+
+
+class State:
+
+    def __init__(self):
+        self._scope = tuple()
         self._class_scope = False
-        self.source = None
-        self._scope = None
-        self._position = position
-        self._name = name
+        self._names = defaultdict(set)
+        self._aliases = {}
+        self._rewrites = {}
+        self._definitions = set()
 
-    def process(self, source, initial_scope):
-        self.source = source
-        self._scope = (initial_scope,)
-        self.visit(self.source.get_ast())
-        for path, positions in self.names.copy().items():
+    def get_occurrences(self, position):
+        for occurrences in self._names.values():
+            if position in occurrences:
+                return occurrences
+        return []
+
+    def post_process(self):
+        for path, positions in self._names.copy().items():
             alternative = (
-                self.rewrites.get(path) or self.shorten(path) or
-                self.get_definition(path))
+                self._rewrites.get(path) or self._shorten(path) or
+                self._get_definition(path))
             if alternative and alternative != path:
-                self.names[alternative] |= positions
-                del self.names[path]
+                self._names[alternative] |= positions
+                del self._names[path]
                 continue
             if not alternative:
-                del self.names[path]
+                del self._names[path]
                 continue
 
-    def get_definition(self, path):
-        if path in self.definitions:
+    def occur(self, name, position, is_definition=True):
+        self._names[self._scope + (name,)].add(position)
+        if is_definition:
+            self._definitions.add(self._scope + (name,))
+
+    def link_to_enclosing_scope(self, name):
+        self._add_alias(name, self._scope[:-1])
+
+    def add_alias_in_scope(self, name, new_name):
+        self._add_alias(name, self._scope + (new_name,))
+
+    def add_rewrite(self, module, name):
+        self._rewrites[self._scope + (name,)] = (module, name)
+
+    def in_class(self):
+        return self._class_scope
+
+    def _add_alias(self, name, alias):
+        self._aliases[self._scope + (name,)] = alias
+
+    def _shorten(self, path):
+        for long_form, alias in self._aliases.items():
+            if is_prefix(long_form, path):
+                return alias + path[len(long_form):]
+
+    def _get_definition(self, path):
+        if path in self._definitions:
             return path
         name = path[-1:]
         scope = path[:-1]
         while scope:
             scope = scope[:-1]
             shrunk = scope + name
-            if shrunk in self.definitions:
+            if shrunk in self._definitions:
                 return shrunk
-
-    def get_occurrences(self):
-        for occurrences in self.names.values():
-            if self._position in occurrences:
-                return occurrences
-        return []
-
-    def shorten(self, path):
-        for long_form, alias in self.aliases.items():
-            if self.is_prefix(long_form, path):
-                return alias + path[len(long_form):]
-
-    def is_prefix(self, prefix, path):
-        return len(path) > len(prefix) and self.starts_with(path, prefix)
-
-    @staticmethod
-    def starts_with(longer, shorter):
-        return all(a == b for a, b in zip(shorter, longer))
 
     @contextmanager
     def tuple_scope(self, names):
@@ -98,22 +123,31 @@ class NewNameCollector(NodeVisitor):
         if class_scope is not None:
             self._class_scope = previous
 
+
+def is_prefix(prefix, path):
+    return len(path) > len(prefix) and starts_with(path, prefix)
+
+
+def starts_with(longer, shorter):
+    return all(a == b for a, b in zip(shorter, longer))
+
+
+class NameCollector(NodeVisitor):
+
+    def __init__(self, name, state):
+        self.source = None
+        self._name = name
+        self._state = state or State()
+
+    def process(self, source, initial_scope):
+        self.source = source
+        with self._state.scope(initial_scope):
+            self.visit(self.source.get_ast())
+            self._state.post_process()
+
     @staticmethod
     def is_definition(node):
         return isinstance(node.ctx, Store) or isinstance(node.ctx, Param)
-
-    def occur(self, name, position, is_definition=True):
-        self.names[self._scope + (name,)].add(position)
-        if is_definition:
-            self.definitions.add(self._scope + (name,))
-
-    def add_alias(self, arg):
-        if isinstance(arg, Name):
-            name = arg.id
-        else:
-            name = arg.arg
-
-        self.aliases[self._scope + (name,)] = self._scope[:-1]
 
     def position_from_node(self, node, column_offset=0, row_offset=0):
         return Position(
@@ -126,7 +160,10 @@ class NewNameCollector(NodeVisitor):
             return
 
         position = self.position_from_node(node)
-        self.occur(node.id, position, is_definition=self.is_definition(node))
+        self._state.occur(
+            name=node.id,
+            position=position,
+            is_definition=self.is_definition(node))
 
     def visit_ClassDef(self, node):  # noqa
         if node.name == self._name:
@@ -134,8 +171,8 @@ class NewNameCollector(NodeVisitor):
                 node=node,
                 row_offset=len(node.decorator_list),
                 column_offset=len('class '))
-            self.occur(name=node.name, position=position)
-        with self.scope(node.name, class_scope=True):
+            self._state.occur(name=node.name, position=position)
+        with self._state.scope(node.name, class_scope=True):
             self.generic_visit(node)
 
     def visit_FunctionDef(self, node):  # noqa
@@ -144,10 +181,10 @@ class NewNameCollector(NodeVisitor):
                 node=node,
                 row_offset=len(node.decorator_list),
                 column_offset=len('fun '))
-            self.occur(name=node.name, position=position)
+            self._state.occur(name=node.name, position=position)
 
-        is_method = self._class_scope
-        with self.scope(node.name, class_scope=False):
+        is_method = self._state.in_class()
+        with self._state.scope(node.name, class_scope=False):
             self.process_args(node.args.args, is_method)
             self.generic_visit(node)
 
@@ -155,9 +192,9 @@ class NewNameCollector(NodeVisitor):
         name = node.attr
         if name == self._name:
             start = self.position_from_node(node=node)
-            with self.scope(node.value.id):
+            with self._state.scope(node.value.id):
                 position = self.source.find_after(name, start)
-                self.occur(name=name, position=position)
+                self._state.occur(name=name, position=position)
 
         self.generic_visit(node)
 
@@ -165,26 +202,16 @@ class NewNameCollector(NodeVisitor):
         # TODO: handle multiple assignment
         name = name_from_node(node.targets[0])
         if name:
-            self.aliases[self._scope + (name,)] = self._scope + (
-                name_from_node(node.value),)
+            self._state.add_alias_in_scope(name, name_from_node(node.value))
         self.generic_visit(node)
 
     def visit_Call(self, node):  # noqa
-        if isinstance(node.func, Name):
-            names = (node.func.id,)
-        else:
-            attribute = node.func
-            names = tuple()
-            while isinstance(attribute, Attribute):
-                names = (attribute.attr,) + names
-                attribute = attribute.value
-            names = (attribute.id,) + names
-
-        with self.tuple_scope(names):
+        names = AttributeNames().collect(node.func)
+        with self._state.tuple_scope(names):
             for keyword in node.keywords:
                 if keyword.arg != self._name:
                     continue
-                self.occur(
+                self._state.occur(
                     name=keyword.arg,
                     position=self.arg_position_from_value(
                         value=keyword.value,
@@ -196,11 +223,14 @@ class NewNameCollector(NodeVisitor):
         start = position_from_node(source=self.source, node=node)
         for imported in node.names:
             name = imported.name
-            self.rewrites[self._scope + (name,)] = (node.module, name)
+            self.add_rewrite(node.module, name)
             if name != self._name:
                 continue
             position = self.source.find_after(name, start)
-            self.occur(name=name, position=position)
+            self._state.occur(name=name, position=position)
+
+    def add_rewrite(self, module, name):
+        self._state.add_rewrite(module, name)
 
     def visit_DictComp(self, node):  # noqa
         self.comp_visit(node)
@@ -215,7 +245,7 @@ class NewNameCollector(NodeVisitor):
         position = position_from_node(source=self.source, node=node)
         # The dashes make sure it can never clash with an actual Python name.
         name = 'comprehension-%s-%s' % (position.row, position.column)
-        with self.scope(name):
+        with self._state.scope(name):
             self.generic_visit(node)
 
     def arg_position_from_value(self, value, name):
@@ -226,7 +256,11 @@ class NewNameCollector(NodeVisitor):
     def process_args(self, args, is_method):
         if args and is_method:
             arg = args[0]
-            self.add_alias(arg)
+            if isinstance(arg, Name):
+                name = arg.id
+            else:
+                name = arg.arg
+            self._state.link_to_enclosing_scope(name)
 
         for arg in args:
             if isinstance(arg, Name):
@@ -237,7 +271,7 @@ class NewNameCollector(NodeVisitor):
             if arg.arg != self._name:
                 continue
             position = self.position_from_node(node=arg)
-            self.occur(name=arg.arg, position=position)
+            self._state.occur(name=arg.arg, position=position)
 
 
 def name_from_node(node):
