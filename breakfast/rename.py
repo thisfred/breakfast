@@ -1,6 +1,6 @@
 """Rename refactorings."""
 
-from ast import Attribute, Call, Name, NodeVisitor, Param, Store
+from ast import Attribute, Call, Name, NodeVisitor, Param, Store, Tuple
 from collections import defaultdict
 from contextlib import contextmanager
 
@@ -66,7 +66,6 @@ class State:
                 continue
             if not alternative:
                 del self._names[path]
-                continue
 
     def occur(self, name, position, is_definition=True):
         self._names[self._scope + (name,)].add(position)
@@ -199,10 +198,11 @@ class NameCollector(NodeVisitor):
         self.generic_visit(node)
 
     def visit_Assign(self, node):  # noqa
-        # TODO: handle multiple assignment
-        name = name_from_node(node.targets[0])
-        if name:
-            self._state.add_alias_in_scope(name, name_from_node(node.value))
+        names = names_from_node(node.targets[0])
+        values = names_from_node(node.value)
+        if names:
+            for name, value in zip(names, values):
+                self._state.add_alias_in_scope(name, value)
         self.generic_visit(node)
 
     def visit_Call(self, node):  # noqa
@@ -272,6 +272,13 @@ class NameCollector(NodeVisitor):
                 continue
             position = self.position_from_node(node=arg)
             self._state.occur(name=arg.arg, position=position)
+
+
+def names_from_node(node):
+    if isinstance(node, Tuple):
+        return [name_from_node(n) for n in node.elts]
+
+    return [name_from_node(node)]
 
 
 def name_from_node(node):

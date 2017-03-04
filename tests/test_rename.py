@@ -497,24 +497,6 @@ def test_renames_tuple_unpack():
     assert sources['module'].render() == target
 
 
-def test_renames_multiple_assign():
-    source = dedent("""
-    foo, old = old, foo
-    """)
-
-    target = dedent("""
-    foo, new = new, foo
-    """)
-
-    sources = rename(
-        sources={'module': Source(source.split('\n'))},
-        position=Position(source, row=1, column=5),
-        old_name='old',
-        new_name='new')
-
-    assert sources['module'].render() == target
-
-
 def test_renames_double_dotted_assignments():
     source = dedent("""
     def find_occurrences(old, position):
@@ -599,6 +581,16 @@ def test_dogfooding():
         state = State()
         visitor = NameCollector(name='whatever', state=state)
         visitor.process(wrapped, 'rename')
+
+    with open('tests/test_rename.py', 'r') as source:
+        wrapped = Source(lines=[l[:-1] for l in source.readlines()])
+        sources = rename(
+            sources={'test_rename': wrapped},
+            position=Position(wrapped, row=28, column=4),
+            old_name='sources',
+            new_name='sworces')
+        changes = [c for c in sources['test_rename'].get_changes()]
+        assert changes != []
 
 
 def test_rename_across_files():
@@ -748,3 +740,44 @@ def test_renames_argument():
         new_name='new')
 
     assert sources['module'].render() == target
+
+
+def test_renames_multiple_assignment():
+    source = dedent("""
+    class A:
+
+        def old(self):
+            pass
+
+    class B:
+        pass
+
+    b, a = B(), A()
+    a.old()
+    """)
+
+    target = dedent("""
+    class A:
+
+        def new(self):
+            pass
+
+    class B:
+        pass
+
+    b, a = B(), A()
+    a.new()
+    """)
+
+    sources = rename(
+        sources={'module': Source(source.split('\n'))},
+        position=Position(source, row=3, column=8),
+        old_name='old',
+        new_name='new')
+
+    assert sources['module'].render() == target
+
+
+# TODO: rename methods / attributes in subclasses
+# TODO: rename @properties
+# TODO: recognize 'cls' argument in @classmethods
