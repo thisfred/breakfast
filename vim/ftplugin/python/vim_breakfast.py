@@ -16,8 +16,8 @@ def do_rename(buffer_contents, row, column, new_name):
 
 
 def move_to_start_of_word(vim):
-    vim.command('normal b')
     cursor = vim.current.window.cursor
+    vim.command('normal b')
     vim.command('normal w')
     if vim.current.window.cursor != cursor:
         vim.command('normal b')

@@ -12,8 +12,8 @@ def get_name(position):
 
 
 def rename(sources, position, new_name):
-    old = get_name(position)
-    visitor = NameCollector(name=old)
+    old_name = get_name(position)
+    visitor = NameCollector(name=old_name)
     for module, source in sources.items():
         visitor.process(
             source=source,
@@ -21,7 +21,7 @@ def rename(sources, position, new_name):
     for occurrence in sorted(visitor.get_occurrences(position), reverse=True):
         occurrence.source.replace(
             position=occurrence,
-            old=old,
+            old=old_name,
             new=new_name)
     return sources
 

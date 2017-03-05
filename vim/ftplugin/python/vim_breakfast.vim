@@ -11,10 +11,10 @@ python3 sys.path.append(vim.eval('expand("<sfile>:h")'))
 function! Rename()
 python3 << endOfPython
 
-from vim_breakfast import do_rename, user_input, move_to_start_of_word
+from vim_breakfast import do_rename, move_to_start_of_word, user_input
 
 current = vim.current.buffer
-vim.command('w')
+vim.command('up')
 move_to_start_of_word(vim)
 
 old_name = vim.eval('expand("<cword>")')
@@ -25,7 +25,7 @@ for i, line in do_rename(buffer_contents=current,
                          column=column,
                          new_name=new_name):
     vim.current.buffer[i] = line
-vim.command('w')
+vim.command('up')
 
 endOfPython
 endfunction
