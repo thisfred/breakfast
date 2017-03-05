@@ -7,5 +7,5 @@ def dedent(code):
     return '\n'.join(l[cut:] for l in lines)
 
 
-def make_source(code):
-    return Source(dedent(code).split('\n'))
+def make_source(code, module_name=None):
+    return Source(dedent(code).split('\n'), module_name=module_name)

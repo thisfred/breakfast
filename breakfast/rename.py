@@ -7,25 +7,6 @@ from contextlib import contextmanager
 from breakfast.position import Position
 
 
-def get_name(position):
-    return position.get_name()
-
-
-def rename(sources, position, new_name):
-    old_name = get_name(position)
-    visitor = NameCollector(name=old_name)
-    for module, source in sources.items():
-        visitor.process(
-            source=source,
-            initial_scope=module)
-    for occurrence in sorted(visitor.get_occurrences(position), reverse=True):
-        occurrence.source.replace(
-            position=occurrence,
-            old=old_name,
-            new=new_name)
-    return sources
-
-
 class AttributeNames(NodeVisitor):
 
     def __init__(self):
@@ -135,21 +116,45 @@ def starts_with(longer, shorter):
     return all(a == b for a, b in zip(shorter, longer))
 
 
-class NameCollector(NodeVisitor):
+class Rename(NodeVisitor):
 
-    def __init__(self, name, state=None):
-        self.source = None
+    def __init__(self, name, state=None, source=None, position=None,
+                 new_name=None):
+        self._initial_source = source
+        self._additional_sources = []
+        self._current_source = None
         self._name = name
         self._state = state or State()
+        self._position = position
+        self._new_name = new_name
+
+    def get_sources(self):
+        return [self._initial_source] + self._additional_sources
+
+    def process_sources(self):
+        for source in self.get_sources():
+            self.process(source, source.module_name)
 
     def process(self, source, initial_scope):
-        self.source = source
+        self._current_source = source
         with self._state.scope(initial_scope):
-            self.visit(self.source.get_ast())
+            self.visit(self._current_source.get_ast())
             self._state.post_process()
 
     def get_occurrences(self, position):
         return self._state.get_occurrences(position)
+
+    def add_source(self, source):
+        self._additional_sources.append(source)
+
+    def apply(self):
+        self.process_sources()
+        for occurrence in sorted(self.get_occurrences(self._position),
+                                 reverse=True):
+            occurrence.source.replace(
+                position=occurrence,
+                old=self._name,
+                new=self._new_name)
 
     @staticmethod
     def is_definition(node):
@@ -157,7 +162,7 @@ class NameCollector(NodeVisitor):
 
     def position_from_node(self, node, column_offset=0, row_offset=0):
         return Position(
-            source=self.source,
+            source=self._current_source,
             row=(node.lineno - 1) + row_offset,
             column=node.col_offset + column_offset)
 
@@ -199,7 +204,7 @@ class NameCollector(NodeVisitor):
         if name == self._name:
             start = self.position_from_node(node=node)
             with self._state.scope(node.value.id):
-                position = self.source.find_after(name, start)
+                position = self._current_source.find_after(name, start)
                 self._state.occur(name=name, position=position)
 
         self.generic_visit(node)
@@ -227,13 +232,13 @@ class NameCollector(NodeVisitor):
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node):  # noqa
-        start = position_from_node(source=self.source, node=node)
+        start = position_from_node(source=self._current_source, node=node)
         for imported in node.names:
             name = imported.name
             self.add_rewrite(node.module, name)
             if name != self._name:
                 continue
-            position = self.source.find_after(name, start)
+            position = self._current_source.find_after(name, start)
             self._state.occur(name=name, position=position)
 
     def add_rewrite(self, module, name):
@@ -249,7 +254,7 @@ class NameCollector(NodeVisitor):
         self.comp_visit(node)
 
     def comp_visit(self, node):
-        position = position_from_node(source=self.source, node=node)
+        position = position_from_node(source=self._current_source, node=node)
         # The dashes make sure it can never clash with an actual Python name.
         name = 'comprehension-%s-%s' % (position.row, position.column)
         with self._state.scope(name):
@@ -257,8 +262,8 @@ class NameCollector(NodeVisitor):
 
     def arg_position_from_value(self, value, name):
         position = self.position_from_node(node=value)
-        start = self.source.find_before('=', position)
-        return self.source.find_before(name, start)
+        start = self._current_source.find_before('=', position)
+        return self._current_source.find_before(name, start)
 
     def process_args(self, args, is_method):
         if args and is_method:

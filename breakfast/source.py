@@ -2,15 +2,29 @@ import re
 from ast import parse
 
 from breakfast.position import IllegalPosition, Position
+from breakfast.rename import Rename
 
 
 class Source:
 
     word = re.compile(r'\w+|\W+')
 
-    def __init__(self, lines):
+    def __init__(self, lines, module_name='module'):
         self.lines = lines
         self.changes = {}  # type: Dict[int, str]
+        self.module_name = module_name
+
+    def rename(self, row, column, new_name, additional_sources=None):
+        position = Position(self, row=row, column=column)
+        old_name = position.get_name()
+        refactoring = Rename(
+            name=old_name,
+            source=self,
+            position=position,
+            new_name=new_name)
+        for source in additional_sources or []:
+            refactoring.add_source(source)
+        refactoring.apply()
 
     def get_name_at(self, position):
         return self.word.search(self.get_string_starting_at(position)).group()

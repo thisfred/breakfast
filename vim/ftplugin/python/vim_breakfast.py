@@ -1,21 +1,18 @@
-from breakfast.rename import rename
 from breakfast.source import Source
-from breakfast.position import Position
 
 
 def do_rename(buffer_contents, row, column, new_name):
-    module_name = 'module'
-    source = Source(buffer_contents)
-    sources = rename(
-        sources={module_name: source},
-        position=Position(source, row=row, column=column),
+    source = Source(buffer_contents, module_name='module')
+    source.rename(
+        row=row,
+        column=column,
         new_name=new_name)
-    for i, line in sources[module_name].get_changes():
+    for i, line in source.get_changes():
         if buffer_contents[i] != line:
             yield (i, line)
 
 
-def move_to_start_of_word(vim):
+def move_to_start_of_word(vim):  # pragma: nocover
     cursor = vim.current.window.cursor
     vim.command('normal b')
     vim.command('normal w')
