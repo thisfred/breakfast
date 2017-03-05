@@ -19,7 +19,6 @@ class Source:
         old_name = position.get_name()
         refactoring = Rename(
             name=old_name,
-            source=self,
             position=position,
             new_name=new_name)
         for source in additional_sources or []:

@@ -1,6 +1,6 @@
 """Tests for rename refactoring."""
 
-from breakfast.rename import AttributeNames, Rename
+from breakfast.rename import AttributeNames
 from breakfast.source import Source
 
 from tests import dedent, make_source
@@ -441,14 +441,6 @@ def test_multiple_calls():
     visitor = AttributeNames()
     assert visitor.collect(source.get_ast()) == (
         'bar', 'names', 'copy', 'items')
-
-
-def test_dogfooding():
-    """Test that we can at least parse our own code."""
-    with open('breakfast/rename.py', 'r') as source:
-        wrapped = Source(lines=[l[:-1] for l in source.readlines()])
-        visitor = Rename(name='whatever')
-        visitor.process(wrapped, 'rename')
 
 
 def test_rename_across_files():
