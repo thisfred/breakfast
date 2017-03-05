@@ -3,13 +3,12 @@ from breakfast.source import Source
 from breakfast.position import Position
 
 
-def do_rename(buffer_contents, old_name, row, column, new_name):
+def do_rename(buffer_contents, row, column, new_name):
     module_name = 'module'
     source = Source(buffer_contents)
     sources = rename(
         sources={module_name: source},
         position=Position(source, row=row, column=column),
-        old_name=old_name,
         new_name=new_name)
     for i, line in sources[module_name].get_changes():
         if buffer_contents[i] != line:

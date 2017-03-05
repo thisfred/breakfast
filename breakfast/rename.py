@@ -7,17 +7,21 @@ from contextlib import contextmanager
 from breakfast.position import Position
 
 
-def rename(sources, position, old_name, new_name):
-    state = State()
-    visitor = NameCollector(name=old_name, state=state)
+def get_name(position):
+    return position.get_name()
+
+
+def rename(sources, position, new_name):
+    old = get_name(position)
+    visitor = NameCollector(name=old)
     for module, source in sources.items():
         visitor.process(
             source=source,
             initial_scope=module)
-    for occurrence in sorted(state.get_occurrences(position), reverse=True):
+    for occurrence in sorted(visitor.get_occurrences(position), reverse=True):
         occurrence.source.replace(
             position=occurrence,
-            old=old_name,
+            old=old,
             new=new_name)
     return sources
 
@@ -133,7 +137,7 @@ def starts_with(longer, shorter):
 
 class NameCollector(NodeVisitor):
 
-    def __init__(self, name, state):
+    def __init__(self, name, state=None):
         self.source = None
         self._name = name
         self._state = state or State()
@@ -143,6 +147,9 @@ class NameCollector(NodeVisitor):
         with self._state.scope(initial_scope):
             self.visit(self.source.get_ast())
             self._state.post_process()
+
+    def get_occurrences(self, position):
+        return self._state.get_occurrences(position)
 
     @staticmethod
     def is_definition(node):

@@ -13,7 +13,6 @@ def test_simple_rename():
     result = [
         l for l in vim_breakfast.do_rename(
             buffer_contents=code,
-            old_name="old",
             row=1,
             column=4,
             new_name="new")]

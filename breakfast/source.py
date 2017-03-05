@@ -1,3 +1,4 @@
+import re
 from ast import parse
 
 from breakfast.position import IllegalPosition, Position
@@ -5,9 +6,14 @@ from breakfast.position import IllegalPosition, Position
 
 class Source:
 
+    word = re.compile(r'\w+|\W+')
+
     def __init__(self, lines):
         self.lines = lines
         self.changes = {}  # type: Dict[int, str]
+
+    def get_name_at(self, position):
+        return self.word.search(self.get_string_starting_at(position)).group()
 
     def get_ast(self):
         return parse('\n'.join(self.lines))

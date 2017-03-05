@@ -12,6 +12,9 @@ class Position:
         if row < 0 or column < 0:
             raise IllegalPosition
 
+    def get_name(self):
+        return self.source.get_name_at(self)
+
     def _add_offset(self, offset):
         return Position(
             source=self.source, row=self.row, column=self.column + offset)

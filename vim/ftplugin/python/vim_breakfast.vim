@@ -14,15 +14,17 @@ python3 << endOfPython
 from vim_breakfast import do_rename, user_input
 
 current = vim.current.buffer
+vim.command('w')
+vim.command('normal b')
 old_name = vim.eval('expand("<cword>")')
 new_name = user_input(vim, "rename {} to".format(old_name))
 (row, column) = vim.current.window.cursor
 for i, line in do_rename(buffer_contents=current,
-                         old_name=old_name,
                          row=row-1,
                          column=column,
                          new_name=new_name):
     vim.current.buffer[i] = line
+vim.command('w')
 
 endOfPython
 endfunction
