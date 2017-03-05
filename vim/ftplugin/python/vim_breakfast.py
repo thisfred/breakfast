@@ -15,6 +15,14 @@ def do_rename(buffer_contents, row, column, new_name):
             yield (i, line)
 
 
+def move_to_start_of_word(vim):
+    vim.command('normal b')
+    cursor = vim.current.window.cursor
+    vim.command('normal w')
+    if vim.current.window.cursor != cursor:
+        vim.command('normal b')
+
+
 def user_input(vim, message):  # pragma: nocover
     """Request user input.
 

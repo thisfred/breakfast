@@ -11,11 +11,12 @@ python3 sys.path.append(vim.eval('expand("<sfile>:h")'))
 function! Rename()
 python3 << endOfPython
 
-from vim_breakfast import do_rename, user_input
+from vim_breakfast import do_rename, user_input, move_to_start_of_word
 
 current = vim.current.buffer
 vim.command('w')
-vim.command('normal b')
+move_to_start_of_word(vim)
+
 old_name = vim.eval('expand("<cword>")')
 new_name = user_input(vim, "rename {} to".format(old_name))
 (row, column) = vim.current.window.cursor
