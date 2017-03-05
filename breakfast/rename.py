@@ -57,29 +57,19 @@ class NameVisitor(NodeVisitor):
         if node.id != self._name:
             return
 
-        position = self.position_from_node(node)
+        position = self._position_from_node(node)
         self._state.occur(
             name=node.id,
             position=position,
             is_definition=self._is_definition(node))
 
     def visit_ClassDef(self, node):  # noqa
-        if node.name == self._name:
-            position = self.position_from_node(
-                node=node,
-                row_offset=len(node.decorator_list),
-                column_offset=len('class '))
-            self._state.occur(name=node.name, position=position)
+        self._occur_definition(node=node, prefix='class')
         with self._state.scope(node.name, class_scope=True):
             self.generic_visit(node)
 
     def visit_FunctionDef(self, node):  # noqa
-        if node.name == self._name:
-            position = self.position_from_node(
-                node=node,
-                row_offset=len(node.decorator_list),
-                column_offset=len('fun '))
-            self._state.occur(name=node.name, position=position)
+        self._occur_definition(node=node, prefix='def')
 
         is_method = self._state.in_class()
         with self._state.scope(node.name, class_scope=False):
@@ -89,7 +79,7 @@ class NameVisitor(NodeVisitor):
     def visit_Attribute(self, node):  # noqa
         name = node.attr
         if name == self._name:
-            start = self.position_from_node(node=node)
+            start = self._position_from_node(node=node)
             with self._state.scope(node.value.id):
                 position = self._current_source.find_after(name, start)
                 self._state.occur(name=name, position=position)
@@ -137,7 +127,15 @@ class NameVisitor(NodeVisitor):
     def visit_ListComp(self, node):  # noqa
         self._comp_visit(node)
 
-    def position_from_node(self, node, column_offset=0, row_offset=0):
+    def _occur_definition(self, node, prefix):
+        if node.name == self._name:
+            position = self._position_from_node(
+                node=node,
+                row_offset=len(node.decorator_list),
+                column_offset=len(prefix) + 1)
+            self._state.occur(name=node.name, position=position)
+
+    def _position_from_node(self, node, column_offset=0, row_offset=0):
         return Position(
             source=self._current_source,
             row=(node.lineno - 1) + row_offset,
@@ -164,11 +162,11 @@ class NameVisitor(NodeVisitor):
             # python 3
             if arg.arg != self._name:
                 continue
-            position = self.position_from_node(node=arg)
+            position = self._position_from_node(node=arg)
             self._state.occur(name=arg.arg, position=position)
 
     def _arg_position_from_value(self, value, name):
-        position = self.position_from_node(node=value)
+        position = self._position_from_node(node=value)
         start = self._current_source.find_before('=', position)
         return self._current_source.find_before(name, start)
 
