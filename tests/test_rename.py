@@ -1,8 +1,8 @@
 """Tests for rename refactoring."""
 
+
 from breakfast.rename import AttributeNames
 from breakfast.source import Source
-
 from tests import dedent, make_source
 
 
@@ -18,14 +18,14 @@ def test_renames_local_variable_in_function():
 
     source.rename(row=2, column=4, new_name='new')
 
-    assert source.render() == dedent("""
+    assert dedent("""
         def fun():
             new = 12
             old2 = 13
             result = new + old2
             del new
             return result
-        """)
+        """) == source.render()
 
 
 def test_renames_function_from_lines():
@@ -50,11 +50,11 @@ def test_renames_function():
 
     source.rename(row=1, column=4, new_name='fun_new')
 
-    assert source.render() == dedent("""
+    assert dedent("""
         def fun_new():
             return 'result'
         result = fun_new()
-        """)
+        """) == source.render()
 
 
 def test_renames_class():
@@ -67,12 +67,12 @@ def test_renames_class():
 
     source.rename(row=1, column=6, new_name='NewClass')
 
-    assert source.render() == dedent("""
+    assert dedent("""
         class NewClass:
             pass
 
         instance = NewClass()
-        """)
+        """) == source.render()
 
 
 def test_renames_parameters():
@@ -84,11 +84,11 @@ def test_renames_parameters():
 
     source.rename(row=1, column=8, new_name='new_arg')
 
-    assert source.render() == dedent("""
+    assert dedent("""
         def fun(new_arg, arg2):
             return new_arg + arg2
         fun(new_arg=1, arg2=2)
-        """)
+        """) == source.render()
 
 
 def test_does_not_rename_argument():
@@ -102,13 +102,13 @@ def test_does_not_rename_argument():
 
     source.rename(row=1, column=8, new_name='new')
 
-    assert source.render() == dedent("""
+    assert dedent("""
         def fun(new=1):
             print(new)
 
         old = 8
         fun(new=old)
-        """)
+        """) == source.render()
 
 
 def test_renames_passed_argument():
@@ -122,12 +122,12 @@ def test_renames_passed_argument():
 
     source.rename(row=1, column=0, new_name='new')
 
-    assert source.render() == dedent("""
+    assert dedent("""
         new = 2
         def fun(arg, arg2):
             return arg + arg2
         fun(1, new)
-        """)
+        """) == source.render()
 
 
 def test_renames_parameter_with_unusual_indentation():
@@ -142,14 +142,14 @@ def test_renames_parameter_with_unusual_indentation():
 
     source.rename(row=1, column=8, new_name='new_arg')
 
-    assert source.render() == dedent("""
+    assert dedent("""
         def fun(new_arg, arg2):
             return new_arg + arg2
         fun(
             new_arg=\\
                 1,
             arg2=2)
-        """)
+        """) == source.render()
 
 
 def test_renames_method():
@@ -165,7 +165,7 @@ def test_renames_method():
 
     source.rename(row=3, column=8, new_name='new')
 
-    assert source.render() == dedent("""
+    assert dedent("""
         class A:
 
             def new(self):
@@ -173,7 +173,7 @@ def test_renames_method():
 
         a = A()
         a.new()
-        """)
+        """) == source.render()
 
 
 def test_renames_only_the_right_method_definition_and_calls():
@@ -204,7 +204,7 @@ def test_renames_only_the_right_method_definition_and_calls():
 
     source.rename(row=3, column=8, new_name='new')
 
-    assert source.render() == dedent("""
+    assert dedent("""
         class ClassThatShouldHaveMethodRenamed:
 
             def new(self, arg):
@@ -227,7 +227,7 @@ def test_renames_only_the_right_method_definition_and_calls():
         a.new()
         b = UnrelatedClass()
         b.old()
-        """)
+        """) == source.render()
 
 
 def test_renames_from_inner_scope():
@@ -241,13 +241,13 @@ def test_renames_from_inner_scope():
 
     source.rename(row=5, column=4, new_name='new')
 
-    assert source.render() == dedent("""
+    assert dedent("""
         def new():
             pass
 
         def bar():
             new()
-        """)
+        """) == source.render()
 
 
 def test_renames_attributes():
@@ -263,7 +263,7 @@ def test_renames_attributes():
 
     source.rename(row=7, column=20, new_name='renamed')
 
-    assert source.render() == dedent("""
+    assert dedent("""
         class ClassName:
 
             def __init__(self, property):
@@ -271,7 +271,7 @@ def test_renames_attributes():
 
             def get_property(self):
                 return self.renamed
-        """)
+        """) == source.render()
 
 
 def test_renames_dict_comprehension_variables():
@@ -282,10 +282,10 @@ def test_renames_dict_comprehension_variables():
 
     source.rename(row=2, column=7, new_name='new')
 
-    assert source.render() == dedent("""
+    assert dedent("""
         old = 100
         foo = {new: None for new in range(100) if new % 3}
-        """)
+        """) == source.render()
 
 
 def test_renames_set_comprehension_variables():
@@ -296,10 +296,10 @@ def test_renames_set_comprehension_variables():
 
     source.rename(row=2, column=7, new_name='new')
 
-    assert source.render() == dedent("""
+    assert dedent("""
         old = 100
         foo = {new for new in range(100) if new % 3}
-        """)
+        """) == source.render()
 
 
 def test_renames_list_comprehension_variables():
@@ -311,11 +311,11 @@ def test_renames_list_comprehension_variables():
 
     source.rename(row=3, column=4, new_name='new')
 
-    assert source.render() == dedent("""
+    assert dedent("""
         old = 100
         foo = [
             new for new in range(100) if new % 3]
-        """)
+        """) == source.render()
 
 
 def test_renames_only_desired_list_comprehension_variables():
@@ -329,13 +329,13 @@ def test_renames_only_desired_list_comprehension_variables():
 
     source.rename(row=3, column=4, new_name='new')
 
-    assert source.render() == dedent("""
+    assert dedent("""
         old = 100
         foo = [
             new for new in range(100) if new % 3]
         bar = [
             old for old in range(100) if old % 3]
-        """)
+        """) == source.render()
 
 
 def test_renames_for_loop_variables():
@@ -348,12 +348,12 @@ def test_renames_for_loop_variables():
 
     source.rename(row=2, column=7, new_name='new')
 
-    assert source.render() == dedent("""
+    assert dedent("""
         new = None
         for i, new in enumerate([]):
             print(i)
             print(new)
-        """)
+        """) == source.render()
 
 
 def test_renames_dotted_assignments():
@@ -365,11 +365,11 @@ def test_renames_dotted_assignments():
 
     source.rename(row=3, column=13, new_name='new')
 
-    assert source.render() == dedent("""
+    assert dedent("""
         class Foo:
             def bar(self):
                 self.new = some.qux()
-        """)
+        """) == source.render()
 
 
 def test_renames_tuple_unpack():
@@ -379,9 +379,9 @@ def test_renames_tuple_unpack():
 
     source.rename(row=1, column=5, new_name='new')
 
-    assert source.render() == dedent("""
+    assert dedent("""
         foo, new = 1, 2
-        """)
+        """) == source.render()
 
 
 def test_renames_double_dotted_assignments():
@@ -394,12 +394,12 @@ def test_renames_double_dotted_assignments():
 
     source.rename(row=2, column=26, new_name='new')
 
-    assert source.render() == dedent("""
+    assert dedent("""
         def find_occurrences(new, position):
             for _, occurrences in new.positions.items():
                 if position in occurrences:
                     return occurrences
-        """)
+        """) == source.render()
 
 
 def test_renames_subscript():
@@ -413,13 +413,13 @@ def test_renames_subscript():
 
     source.rename(row=1, column=4, new_name='new')
 
-    assert source.render() == dedent("""
+    assert dedent("""
         def new():
             return 1
 
         a = {}
         a[new()] = new()
-        """)
+        """) == source.render()
 
 
 def test_renames_enclosing_scope_variables_in_comprehensions():
@@ -430,17 +430,17 @@ def test_renames_enclosing_scope_variables_in_comprehensions():
 
     source.rename(row=2, column=42, new_name='new')
 
-    assert source.render() == dedent("""
+    assert dedent("""
         new = 3
         foo = [foo for foo in range(100) if foo % new]
-        """)
+        """) == source.render()
 
 
 def test_multiple_calls():
     source = Source(["bar.names.copy().items()"])
     visitor = AttributeNames()
-    assert visitor.collect(source.get_ast()) == (
-        'bar', 'names', 'copy', 'items')
+    assert (
+        'bar', 'names', 'copy', 'items') == visitor.collect(source.get_ast())
 
 
 def test_rename_across_files():
@@ -460,14 +460,15 @@ def test_rename_across_files():
     other_source.rename(
         row=2, column=0, new_name='new', additional_sources=[source])
 
-    assert source.render() == dedent("""
+    assert dedent("""
         def new():
             pass
-        """)
-    assert other_source.render() == dedent("""
+        """) == source.render()
+
+    assert dedent("""
         from foo import new
         new()
-        """)
+        """) == other_source.render()
 
 
 def test_rename_with_multiple_imports_on_one_line():
@@ -491,18 +492,18 @@ def test_rename_with_multiple_imports_on_one_line():
     other_source.rename(
         row=2, column=0, new_name='new', additional_sources=[source])
 
-    assert source.render() == dedent("""
+    assert dedent("""
         def new():
             pass
 
         def bar():
             pass
-        """)
-    assert other_source.render() == dedent("""
+        """) == source.render()
+    assert dedent("""
         from foo import bar, new
         new()
         bar()
-        """)
+        """) == other_source.render()
 
 
 def test_renames_static_method():
@@ -519,7 +520,7 @@ def test_renames_static_method():
 
     source.rename(row=4, column=8, new_name='new')
 
-    assert source.render() == dedent("""
+    assert dedent("""
         class A:
 
             @staticmethod
@@ -528,7 +529,7 @@ def test_renames_static_method():
 
         a = A()
         a.new('foo')
-        """)
+        """) == source.render()
 
 
 def test_fails_to_rename_builtins():
@@ -542,7 +543,7 @@ def test_fails_to_rename_builtins():
     source = Source(source_text.split('\n'))
     source.rename(row=4, column=8, new_name='new')
 
-    assert source.render() == source_text
+    assert source_text == source.render()
 
 
 def test_renames_argument():
@@ -559,7 +560,7 @@ def test_renames_argument():
 
     source.rename(row=8, column=17, new_name='new')
 
-    assert source.render() == dedent("""
+    assert dedent("""
             class A:
 
                 def foo(self, new):
@@ -568,7 +569,7 @@ def test_renames_argument():
                 def bar(self):
                     arg = "1"
                     self.foo(new=arg)
-            """)
+            """) == source.render()
 
 
 def test_renames_multiple_assignment():
@@ -587,7 +588,7 @@ def test_renames_multiple_assignment():
 
     source.rename(row=3, column=8, new_name='new')
 
-    assert source.render() == dedent("""
+    assert dedent("""
         class A:
 
             def new(self):
@@ -598,9 +599,47 @@ def test_renames_multiple_assignment():
 
         b, a = B(), A()
         a.new()
-        """)
+        """) == source.render()
+
+
+def test_renames_method_but_not_function():
+    source = make_source("""
+    class A:
+
+        def old(self):
+            pass
+
+        def foo(self):
+            self.old()
+
+        def bar(self):
+            old()
+
+    def old():
+        pass
+    """)
+
+    source.rename(row=3, column=8, new_name='new')
+
+    assert dedent("""
+        class A:
+
+            def new(self):
+                pass
+
+            def foo(self):
+                self.new()
+
+            def bar(self):
+                old()
+
+        def old():
+            pass
+        """) == source.render()
 
 
 # TODO: rename methods / attributes in subclasses
 # TODO: rename @properties
+# TODO: rename class variables
 # TODO: recognize 'cls' argument in @classmethods
+# TODO: rename 'global' variables
