@@ -638,7 +638,49 @@ def test_renames_method_but_not_function():
         """) == source.render()
 
 
-# TODO: rename methods / attributes in subclasses
+def test_renames_method_in_subclass():
+    source = make_source("""
+    class A:
+
+        def old(self):
+            pass
+
+    class B(A):
+
+        def foo(self):
+            self.old()
+
+    class C(A):
+
+        def old(self):
+            pass
+
+        def bar(self):
+            self.old()
+    """)
+
+    source.rename(row=3, column=8, new_name='new')
+
+    assert dedent("""
+    class A:
+
+        def new(self):
+            pass
+
+    class B(A):
+
+        def foo(self):
+            self.new()
+
+    class C(A):
+
+        def old(self):
+            pass
+
+        def bar(self):
+            self.old()
+    """) == source.render()
+
 # TODO: rename @properties
 # TODO: rename class variables
 # TODO: recognize 'cls' argument in @classmethods

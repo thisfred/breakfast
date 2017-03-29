@@ -36,6 +36,7 @@ class Rename:
     def _process_sources(self):
         for source in self._get_sources():
             self._visitor.process(source, source.module_name)
+        self._visitor.post_process()
 
     def _get_sources(self):
         return [self._initial_source] + self._additional_sources
@@ -101,7 +102,9 @@ class NameVisitor(NodeVisitor):
         with self.scope(names=initial_scope,
                         position=Position(source, 0, 0)):
             self.visit(self._current_source.get_ast())
-            self._state.post_process()
+
+    def post_process(self):
+        self._state.post_process()
 
     def get_occurrences(self, position):
         return self._state.get_occurrences(position)
@@ -124,6 +127,10 @@ class NameVisitor(NodeVisitor):
             node=node,
             row_offset=len(node.decorator_list),
             column_offset=len(prefix) + 1)
+        self._state.add_base_classes(
+            scope=self._scope,
+            class_name=node.name,
+            base_classes=node.bases)
         with self.scope(names=node.name, position=position):
             self.generic_visit(node)
 
@@ -147,8 +154,10 @@ class NameVisitor(NodeVisitor):
             with self.scope(names=node.value.id, position=start):
                 position = self._current_source.find_after(
                     name, start).copy(node=node)
-                self.occur(name=name, position=position)
-
+                self.occur(
+                    name=name,
+                    position=position,
+                    is_definition=self._is_definition(node))
         self.generic_visit(node)
 
     def visit_Assign(self, node):  # noqa
@@ -162,7 +171,7 @@ class NameVisitor(NodeVisitor):
                     alias=self._scope.path + (value,))
         self.generic_visit(node)
 
-    def occur(self, name, position, is_definition=True):
+    def occur(self, name, position, is_definition=False):
         self._state.occur(
             name=name,
             position=position,
@@ -212,7 +221,7 @@ class NameVisitor(NodeVisitor):
             node=node,
             row_offset=len(node.decorator_list),
             column_offset=len(prefix) + 1)
-        self.occur(name=node.name, position=position)
+        self.occur(name=node.name, position=position, is_definition=True)
         return position
 
     def _position_from_node(self, node, column_offset=0, row_offset=0):
@@ -244,7 +253,7 @@ class NameVisitor(NodeVisitor):
             if arg.arg != self._name:
                 continue
             position = self._position_from_node(node=arg)
-            self.occur(name=arg.arg, position=position)
+            self.occur(name=arg.arg, position=position, is_definition=True)
 
     def _arg_position_from_value(self, value, name):
         position = self._position_from_node(node=value)
@@ -268,6 +277,7 @@ class State:
         self._rewrites = {}
         self._definitions = set()
         self._scopes = {}
+        self._base_classes = {}
 
     def get_occurrences(self, position):
         for occurrences in self._names.values():
@@ -276,23 +286,37 @@ class State:
         return []
 
     def post_process(self):
-        # from pprint import pprint;
-        # pprint(self._aliases);
-        # pprint(self._rewrites);
-        # pprint(self._definitions);
-        # pprint(self._names);
+        self.apply_rewrites()
+        self.apply_aliases()
+        self.find_definitions()
+
+    def apply_rewrites(self):
+        for name, rewrite in self._rewrites.items():
+            if name != rewrite and name in self._names:
+                self._names[rewrite] |= self._names[name]
+                del self._names[name]
+
+    def apply_aliases(self):
+        for long_form, alias in self._aliases.items():
+            for path in list(self._names.keys()):
+                if is_prefix(long_form, path):
+                    new_path = alias + path[len(long_form):]
+                    self._names[new_path] |= self._names[path]
+                    if path in self._definitions:
+                        self._definitions.remove(path)
+                        self._definitions.add(new_path)
+                    del self._names[path]
+
+    def find_definitions(self):
         for path, positions in self._names.copy().items():
-            alternative = (
-                self._rewrites.get(path) or self._shorten(path) or
-                self._get_definition(path))
+            if path in self._definitions:
+                continue
+            alternative = self._get_definition(path)
             if alternative and alternative != path:
                 self._names[alternative] |= positions
                 del self._names[path]
                 continue
-            if not alternative:
-                del self._names[path]
-        # from pprint import pprint;
-        # pprint(self._names);
+            del self._names[path]
 
     def occur(self, name, position, is_definition, scope):
         path = scope.path
@@ -308,10 +332,9 @@ class State:
     def add_rewrite(self, module, path, name):
         self._rewrites[path + (name,)] = (module, name)
 
-    def _shorten(self, path):
-        for long_form, alias in self._aliases.items():
-            if is_prefix(long_form, path):
-                return alias + path[len(long_form):]
+    def add_base_classes(self, scope, class_name, base_classes):
+        self._base_classes[scope.path + (class_name,)] = [
+            scope.path + (name.id,) for name in base_classes]
 
     def is_class_scope(self, path):
         scope = self._scopes.get(path)
@@ -331,6 +354,13 @@ class State:
                 shrunk = scope + name
                 if shrunk in self._definitions:
                     return shrunk
+        for sub_class, bases in self._base_classes.items():
+            if is_prefix(sub_class, path):
+                for base in bases:
+                    base_path = base + path[len(sub_class):]
+                    definition = self._get_definition(base_path)
+                    if definition:
+                        return definition
 
 
 class AttributeNames(NodeVisitor):
