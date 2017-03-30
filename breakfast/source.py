@@ -61,7 +61,7 @@ class Source:
     def find_after(self, name, start):
         while not self.get_string_starting_at(start).startswith(name):
             start = start + 1
-            if start.column > len(self.lines[start.row]):
+            if len(self.lines[start.row]) < start.column:
                 start = start.copy(row=start.row + 1, column=0)
 
         return start

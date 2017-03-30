@@ -81,7 +81,7 @@ class NameVisitor(NodeVisitor):
 
     def __init__(self, name):
         self._name = name
-        self._state = State()
+        self._names = Names()
         self._current_source = None
         self._scope = Scope()
 
@@ -104,10 +104,10 @@ class NameVisitor(NodeVisitor):
             self.visit(self._current_source.get_ast())
 
     def post_process(self):
-        self._state.post_process()
+        self._names.post_process()
 
     def get_occurrences(self, position):
-        return self._state.get_occurrences(position)
+        return self._names.get_occurrences(position)
 
     def visit_Name(self, node):  # noqa
         if node.id != self._name:
@@ -127,7 +127,7 @@ class NameVisitor(NodeVisitor):
             node=node,
             row_offset=len(node.decorator_list),
             column_offset=len(prefix) + 1)
-        self._state.add_base_classes(
+        self._names.add_base_classes(
             scope=self._scope,
             class_name=node.name,
             base_classes=node.bases)
@@ -165,14 +165,14 @@ class NameVisitor(NodeVisitor):
         values = names_from_node(node.value)
         if names:
             for name, value in zip(names, values):
-                self._state.add_alias(
+                self._names.add_alias(
                     scope=self._scope,
                     name=name,
                     alias=self._scope.path + (value,))
         self.generic_visit(node)
 
     def occur(self, name, position, is_definition=False):
-        self._state.occur(
+        self._names.occur(
             name=name,
             position=position,
             is_definition=is_definition,
@@ -200,7 +200,7 @@ class NameVisitor(NodeVisitor):
         start = position_from_node(source=self._current_source, node=node)
         for imported in node.names:
             name = imported.name
-            self._state.add_rewrite(node.module, self._scope.path, name)
+            self._names.add_rewrite(node.module, self._scope.path, name)
             if name != self._name:
                 continue
             position = self._current_source.find_after(
@@ -242,7 +242,7 @@ class NameVisitor(NodeVisitor):
                 name = arg.id
             else:
                 name = arg.arg
-            self._state.add_alias(self._scope, name, self._scope.parent.path)
+            self._names.add_alias(self._scope, name, self._scope.parent.path)
 
         for arg in args:
             if isinstance(arg, Name):
@@ -268,7 +268,7 @@ class NameVisitor(NodeVisitor):
             self.generic_visit(node)
 
 
-class State:
+class Names:
 
     def __init__(self):
         self._scope = tuple()
@@ -295,13 +295,10 @@ class State:
             if name != rewrite and name in self._names:
                 self.move_into(name, rewrite)
 
-    def replace_prefix(self, path, old_prefix, new_prefix):
-        return new_prefix + path[len(old_prefix):]
-
     def apply_aliases(self):
         for long_form, alias in self._aliases.items():
             for path in list(self._names.keys()):
-                if is_prefix(long_form, path):
+                if self.is_prefix(long_form, path):
                     new_path = self.replace_prefix(
                         path=path, old_prefix=long_form, new_prefix=alias)
                     self.move_into(path, new_path)
@@ -360,13 +357,25 @@ class State:
                 if shrunk in self._definitions:
                     return shrunk
         for sub_class, bases in self._base_classes.items():
-            if is_prefix(sub_class, path):
+            if self.is_prefix(sub_class, path):
                 for base in bases:
                     base_path = self.replace_prefix(
-                        path=path, old_prefix=sub_class, new_prefix=base)
+                        path=path,
+                        old_prefix=sub_class,
+                        new_prefix=self._rewrites.get(base, base))
                     definition = self._get_definition(base_path)
                     if definition:
                         return definition
+
+    @staticmethod
+    def replace_prefix(path, old_prefix, new_prefix):
+        return new_prefix + path[len(old_prefix):]
+
+    @staticmethod
+    def is_prefix(prefix, path):
+        return (
+            len(prefix) < len(path) and
+            all(a == b for a, b in zip(prefix, path)))
 
 
 class AttributeNames(NodeVisitor):
@@ -410,11 +419,3 @@ def position_from_node(source, node, column_offset=0, row_offset=0):
         row=(node.lineno - 1) + row_offset,
         column=node.col_offset + column_offset,
         node=node)
-
-
-def is_prefix(prefix, path):
-    return len(path) > len(prefix) and starts_with(path, prefix)
-
-
-def starts_with(longer, shorter):
-    return all(a == b for a, b in zip(shorter, longer))

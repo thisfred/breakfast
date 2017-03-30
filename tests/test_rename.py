@@ -638,12 +638,15 @@ def test_renames_method_but_not_function():
         """) == source.render()
 
 
-def test_renames_method_in_subclass():
+def test_rename_method_in_imported_subclass():
     source = make_source("""
     class A:
 
         def old(self):
             pass
+    """, module_name='foo')
+    other_source = make_source("""
+    from foo import A
 
     class B(A):
 
@@ -657,15 +660,20 @@ def test_renames_method_in_subclass():
 
         def bar(self):
             self.old()
-    """)
+    """, module_name='bar')
 
-    source.rename(row=3, column=8, new_name='new')
+    source.rename(
+        row=3, column=8, new_name='new', additional_sources=[other_source])
 
     assert dedent("""
     class A:
 
         def new(self):
             pass
+    """) == source.render()
+
+    assert dedent("""
+    from foo import A
 
     class B(A):
 
@@ -679,7 +687,7 @@ def test_renames_method_in_subclass():
 
         def bar(self):
             self.old()
-    """) == source.render()
+    """) == other_source.render()
 
 # TODO: rename @properties
 # TODO: rename class variables
