@@ -293,28 +293,33 @@ class State:
     def apply_rewrites(self):
         for name, rewrite in self._rewrites.items():
             if name != rewrite and name in self._names:
-                self._names[rewrite] |= self._names[name]
-                del self._names[name]
+                self.move_into(name, rewrite)
+
+    def replace_prefix(self, path, old_prefix, new_prefix):
+        return new_prefix + path[len(old_prefix):]
 
     def apply_aliases(self):
         for long_form, alias in self._aliases.items():
             for path in list(self._names.keys()):
                 if is_prefix(long_form, path):
-                    new_path = alias + path[len(long_form):]
-                    self._names[new_path] |= self._names[path]
-                    if path in self._definitions:
-                        self._definitions.remove(path)
-                        self._definitions.add(new_path)
-                    del self._names[path]
+                    new_path = self.replace_prefix(
+                        path=path, old_prefix=long_form, new_prefix=alias)
+                    self.move_into(path, new_path)
+
+    def move_into(self, old_path, new_path):
+        self._names[new_path] |= self._names[old_path]
+        del self._names[old_path]
+        if old_path in self._definitions:
+            self._definitions.remove(old_path)
+            self._definitions.add(new_path)
 
     def find_definitions(self):
-        for path, positions in self._names.copy().items():
+        for path in list(self._names.keys()):
             if path in self._definitions:
                 continue
             alternative = self._get_definition(path)
             if alternative and alternative != path:
-                self._names[alternative] |= positions
-                del self._names[path]
+                self.move_into(path, alternative)
                 continue
             del self._names[path]
 
@@ -357,7 +362,8 @@ class State:
         for sub_class, bases in self._base_classes.items():
             if is_prefix(sub_class, path):
                 for base in bases:
-                    base_path = base + path[len(sub_class):]
+                    base_path = self.replace_prefix(
+                        path=path, old_prefix=sub_class, new_prefix=base)
                     definition = self._get_definition(base_path)
                     if definition:
                         return definition
@@ -398,13 +404,11 @@ def name_from_node(node):
         return node.id
 
 
-def position_from_node(source, node, column_offset=0, row_offset=0,
-                       is_definition=False):
+def position_from_node(source, node, column_offset=0, row_offset=0):
     return Position(
         source=source,
         row=(node.lineno - 1) + row_offset,
         column=node.col_offset + column_offset,
-        is_definition=is_definition,
         node=node)
 
 
