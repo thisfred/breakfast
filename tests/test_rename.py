@@ -689,7 +689,6 @@ def test_rename_method_in_imported_subclass():
             self.old()
     """) == other_source.render()
 
-# TODO: rename @properties
-# TODO: rename class variables
+
 # TODO: recognize 'cls' argument in @classmethods
 # TODO: rename 'global' variables

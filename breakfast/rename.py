@@ -273,8 +273,8 @@ class Names:
     def __init__(self):
         self._scope = tuple()
         self._names = defaultdict(set)
-        self._aliases = {}
         self._rewrites = {}
+        self._aliases = {}
         self._definitions = set()
         self._scopes = {}
         self._base_classes = {}
@@ -286,29 +286,22 @@ class Names:
         return []
 
     def post_process(self):
-        self.apply_rewrites()
         self.apply_aliases()
+        self.apply_rewrites()
         self.find_definitions()
 
-    def apply_rewrites(self):
-        for name, rewrite in self._rewrites.items():
-            if name != rewrite and name in self._names:
-                self.move_into(name, rewrite)
-
     def apply_aliases(self):
-        for long_form, alias in self._aliases.items():
+        for name, alias in self._aliases.items():
+            if name in self._names:
+                self.move_into(name, alias)
+
+    def apply_rewrites(self):
+        for long_form, rewrite in self._rewrites.items():
             for path in list(self._names.keys()):
                 if self.is_prefix(long_form, path):
                     new_path = self.replace_prefix(
-                        path=path, old_prefix=long_form, new_prefix=alias)
+                        path=path, old_prefix=long_form, new_prefix=rewrite)
                     self.move_into(path, new_path)
-
-    def move_into(self, old_path, new_path):
-        self._names[new_path] |= self._names[old_path]
-        del self._names[old_path]
-        if old_path in self._definitions:
-            self._definitions.remove(old_path)
-            self._definitions.add(new_path)
 
     def find_definitions(self):
         for path in list(self._names.keys()):
@@ -320,6 +313,13 @@ class Names:
                 continue
             del self._names[path]
 
+    def move_into(self, old_path, new_path):
+        self._names[new_path] |= self._names[old_path]
+        del self._names[old_path]
+        if old_path in self._definitions:
+            self._definitions.remove(old_path)
+            self._definitions.add(new_path)
+
     def occur(self, name, position, is_definition, scope):
         path = scope.path
         self._scopes[path] = scope
@@ -329,10 +329,10 @@ class Names:
             self._definitions.add(path + (name,))
 
     def add_alias(self, scope, name, alias):
-        self._aliases[scope.path + (name,)] = alias
+        self._rewrites[scope.path + (name,)] = alias
 
     def add_rewrite(self, module, path, name):
-        self._rewrites[path + (name,)] = (module, name)
+        self._aliases[path + (name,)] = (module, name)
 
     def add_base_classes(self, scope, class_name, base_classes):
         self._base_classes[scope.path + (class_name,)] = [
@@ -362,7 +362,7 @@ class Names:
                     base_path = self.replace_prefix(
                         path=path,
                         old_prefix=sub_class,
-                        new_prefix=self._rewrites.get(base, base))
+                        new_prefix=self._aliases.get(base, base))
                     definition = self._get_definition(base_path)
                     if definition:
                         return definition
