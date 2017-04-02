@@ -1,5 +1,6 @@
 """Tests for rename refactoring."""
 
+import pytest
 
 from breakfast.rename import AttributeNames
 from breakfast.source import Source
@@ -720,6 +721,24 @@ def test_renames_method_in_renamed_instance_of_subclass():
     b = B()
     c = b
     c.new()
+    """) == source.render()
+
+
+@pytest.mark.skip()
+def test_does_not_rename_random_attributes():
+
+    source = make_source("""
+    import os
+
+    path = os.path.dirname(__file__)
+    """)
+
+    source.rename(row=3, column=0, new_name='root')
+
+    assert dedent("""
+    import os
+
+    root = os.path.dirname(__file__)
     """) == source.render()
 
 # TODO: rename methods on super calls

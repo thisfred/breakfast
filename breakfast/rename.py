@@ -175,20 +175,20 @@ class NameVisitor(NodeVisitor):
 
     def occur(self, name, position, is_definition=False):
         self._names.occur(
+            scope=self._scope,
             name=name,
             position=position,
-            is_definition=is_definition,
-            scope=self._scope)
+            is_definition=is_definition)
 
     def visit_Call(self, node):  # noqa
         names = AttributeNames().collect(node.func)
-        with self.scope(
-                names,
-                position=position_from_node(source=self._current_source,
-                                            node=node)):
+        with self.scope(names,
+                        position=position_from_node(
+                            source=self._current_source, node=node)):
             for keyword in node.keywords:
                 if keyword.arg != self._name:
                     continue
+
                 position = self._arg_position_from_value(
                     value=keyword.value,
                     name=keyword.arg)
@@ -299,13 +299,13 @@ class Names:
                 self.move_into(name, alias)
 
     def apply_rewrites(self):
-        previous = None
-        # TODO: optimize
-        while previous != self._names:
-            previous = self._names.copy()
+        done = False
+        while not done:
+            done = True
             for long_form, rewrite in self._rewrites.items():
                 for path in list(self._names.keys()):
                     if self.is_prefix(long_form, path):
+                        done = False
                         new_path = self.replace_prefix(
                             path=path,
                             old_prefix=long_form,
@@ -330,7 +330,7 @@ class Names:
             self._definitions.remove(old_path)
             self._definitions.add(new_path)
 
-    def occur(self, name, position, is_definition, scope):
+    def occur(self, scope, name, position, is_definition):
         path = scope.path
         self._scopes[path] = scope
         self._names.setdefault(path + (name,), set()).add(position)
