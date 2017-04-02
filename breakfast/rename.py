@@ -2,8 +2,7 @@
 
 from ast import (
     Attribute, Call, ClassDef, Name, NodeVisitor, Param, Store, Tuple)
-from collections import defaultdict
-from collections import namedtuple
+from collections import OrderedDict, namedtuple
 from contextlib import contextmanager
 
 from breakfast.position import Position
@@ -12,6 +11,7 @@ ScopedPosition = namedtuple('ScopedPosition', ['scope', 'position'])
 
 
 class Rename:
+    """Refactoring to name any variable, function, method or class."""
 
     def __init__(self, name, position, new_name):
         self._additional_sources = []
@@ -43,6 +43,7 @@ class Rename:
 
 
 class Scope:
+    """Tree of nested scopes."""
 
     def __init__(self, name=None, parent=None, position=None):
         self.name = name
@@ -78,6 +79,7 @@ class Scope:
 
 
 class NameVisitor(NodeVisitor):
+    """Visitor that collects name and scope information from the AST."""
 
     def __init__(self, name):
         self._name = name
@@ -165,10 +167,10 @@ class NameVisitor(NodeVisitor):
         values = names_from_node(node.value)
         if names:
             for name, value in zip(names, values):
-                self._names.add_alias(
+                self._names.add_rewrite(
                     scope=self._scope,
                     name=name,
-                    alias=self._scope.path + (value,))
+                    alternative=self._scope.path + (value,))
         self.generic_visit(node)
 
     def occur(self, name, position, is_definition=False):
@@ -200,7 +202,7 @@ class NameVisitor(NodeVisitor):
         start = position_from_node(source=self._current_source, node=node)
         for imported in node.names:
             name = imported.name
-            self._names.add_rewrite(node.module, self._scope.path, name)
+            self._names.add_import(node.module, self._scope.path, name)
             if name != self._name:
                 continue
             position = self._current_source.find_after(
@@ -242,7 +244,7 @@ class NameVisitor(NodeVisitor):
                 name = arg.id
             else:
                 name = arg.arg
-            self._names.add_alias(self._scope, name, self._scope.parent.path)
+            self._names.add_rewrite(self._scope, name, self._scope.parent.path)
 
         for arg in args:
             if isinstance(arg, Name):
@@ -269,15 +271,16 @@ class NameVisitor(NodeVisitor):
 
 
 class Names:
+    """Collector for names found by NameVisitor."""
 
     def __init__(self):
         self._scope = tuple()
-        self._names = defaultdict(set)
-        self._rewrites = {}
-        self._aliases = {}
+        self._names = OrderedDict()
+        self._rewrites = OrderedDict()
+        self._imports = OrderedDict()
         self._definitions = set()
-        self._scopes = {}
-        self._base_classes = {}
+        self._scopes = OrderedDict()
+        self._base_classes = OrderedDict()
 
     def get_occurrences(self, position):
         for occurrences in self._names.values():
@@ -286,26 +289,32 @@ class Names:
         return []
 
     def post_process(self):
-        self.apply_aliases()
+        self.apply_imports()
         self.apply_rewrites()
         self.find_definitions()
 
-    def apply_aliases(self):
-        for name, alias in self._aliases.items():
+    def apply_imports(self):
+        for name, alias in self._imports.items():
             if name in self._names:
                 self.move_into(name, alias)
 
     def apply_rewrites(self):
-        for long_form, rewrite in self._rewrites.items():
-            for path in list(self._names.keys()):
-                if self.is_prefix(long_form, path):
-                    new_path = self.replace_prefix(
-                        path=path, old_prefix=long_form, new_prefix=rewrite)
-                    self.move_into(path, new_path)
+        previous = None
+        # TODO: optimize
+        while previous != self._names:
+            previous = self._names.copy()
+            for long_form, rewrite in self._rewrites.items():
+                for path in list(self._names.keys()):
+                    if self.is_prefix(long_form, path):
+                        new_path = self.replace_prefix(
+                            path=path,
+                            old_prefix=long_form,
+                            new_prefix=rewrite)
+                        self.move_into(path, new_path)
 
     def find_definitions(self):
         for path in list(self._names.keys()):
-            if path in self._definitions:
+            if path in sorted(self._definitions):
                 continue
             alternative = self._get_definition(path)
             if alternative and alternative != path:
@@ -314,7 +323,8 @@ class Names:
             del self._names[path]
 
     def move_into(self, old_path, new_path):
-        self._names[new_path] |= self._names[old_path]
+        self._names[new_path] = (
+            self._names.get(new_path, set()) | self._names[old_path])
         del self._names[old_path]
         if old_path in self._definitions:
             self._definitions.remove(old_path)
@@ -323,16 +333,17 @@ class Names:
     def occur(self, name, position, is_definition, scope):
         path = scope.path
         self._scopes[path] = scope
-        self._names[path + (name,)].add(position)
+        self._names.setdefault(path + (name,), set()).add(position)
 
         if is_definition:
             self._definitions.add(path + (name,))
 
-    def add_alias(self, scope, name, alias):
-        self._rewrites[scope.path + (name,)] = alias
+    def add_rewrite(self, scope, name, alternative):
+        path = scope.path + (name,)
+        self._rewrites[path] = alternative
 
-    def add_rewrite(self, module, path, name):
-        self._aliases[path + (name,)] = (module, name)
+    def add_import(self, module, path, name):
+        self._imports[path + (name,)] = (module, name)
 
     def add_base_classes(self, scope, class_name, base_classes):
         self._base_classes[scope.path + (class_name,)] = [
@@ -362,7 +373,7 @@ class Names:
                     base_path = self.replace_prefix(
                         path=path,
                         old_prefix=sub_class,
-                        new_prefix=self._aliases.get(base, base))
+                        new_prefix=self._imports.get(base, base))
                     definition = self._get_definition(base_path)
                     if definition:
                         return definition

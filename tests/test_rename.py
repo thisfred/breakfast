@@ -638,7 +638,7 @@ def test_renames_method_but_not_function():
         """) == source.render()
 
 
-def test_rename_method_in_imported_subclass():
+def test_renames_method_in_imported_subclass():
     source = make_source("""
     class A:
 
@@ -690,5 +690,39 @@ def test_rename_method_in_imported_subclass():
     """) == other_source.render()
 
 
+def test_renames_method_in_renamed_instance_of_subclass():
+
+    source = make_source("""
+    class A:
+
+        def old(self):
+            pass
+
+    class B(A):
+        pass
+
+    b = B()
+    c = b
+    c.old()
+    """)
+
+    source.rename(row=3, column=8, new_name='new')
+
+    assert dedent("""
+    class A:
+
+        def new(self):
+            pass
+
+    class B(A):
+        pass
+
+    b = B()
+    c = b
+    c.new()
+    """) == source.render()
+
+# TODO: rename methods on super calls
 # TODO: recognize 'cls' argument in @classmethods
 # TODO: rename 'global' variables
+# TODO: import as
