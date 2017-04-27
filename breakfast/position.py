@@ -1,7 +1,11 @@
+from functools import total_ordering
+
+
 class IllegalPosition(Exception):
     pass
 
 
+@total_ordering
 class Position:
 
     def __init__(self, source, row, column, node=None):
@@ -11,6 +15,9 @@ class Position:
         self.row = row
         self.column = column
         self.node = node
+
+    def to_tuple(self):
+        return (self.row, self.column)
 
     def get_name(self):
         return self.source.get_name_at(self)
@@ -32,17 +39,32 @@ class Position:
         return self._add_offset(-column_offset)
 
     def __eq__(self, other):
-        return self.row == other.row and self.column == other.column
+        return (
+            self.source is other.source and
+            self.row == other.row and
+            self.column == other.column)
 
     def __lt__(self, other):
-        return self.row < other.row or (
-            self.row == other.row and self.column < other.column)
+        return (
+            self.source < other.source or (
+                self.source is other.source and (
+                    self.row < other.row or (
+                        self.row == other.row and
+                        self.column < other.column))))
+
+    def __gt__(self, other):
+        return (
+            other.source < self.source or (
+                other.source is self.source and (
+                    other.row < self.row or (
+                        other.row == self.row and
+                        other.column < self.column))))
 
     def __repr__(self):
         return 'Position(row=%s, column=%s%s)' % (
             self.row,
             self.column,
-            ' %s' % (type(self.node),) if self.node else '')
+            ', node=%s' % (repr(self.node),) if self.node else '')
 
     def __hash__(self):
-        return self.row * 100 + self.column
+        return hash((self.source, self.row, self.column))

@@ -1,10 +1,10 @@
 """Tests for rename refactoring."""
 
-import pytest
-
 from breakfast.rename import AttributeNames
 from breakfast.source import Source
 from tests import dedent, make_source
+
+import pytest
 
 
 def test_renames_local_variable_in_function():
@@ -724,7 +724,7 @@ def test_renames_method_in_renamed_instance_of_subclass():
     """) == source.render()
 
 
-@pytest.mark.skip()
+@pytest.mark.skip
 def test_does_not_rename_random_attributes():
 
     source = make_source("""
@@ -741,7 +741,10 @@ def test_does_not_rename_random_attributes():
     root = os.path.dirname(__file__)
     """) == source.render()
 
+
 # TODO: rename methods on super calls
 # TODO: recognize 'cls' argument in @classmethods
 # TODO: rename 'global' variables
+# TODO: rename 'nonlocal' variables
+# TODO: rename property setters
 # TODO: import as

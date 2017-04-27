@@ -11,7 +11,7 @@ ScopedPosition = namedtuple('ScopedPosition', ['scope', 'position'])
 
 
 class Rename:
-    """Refactoring to name any variable, function, method or class."""
+    """A refactoring to rename any variable, function, method or class."""
 
     def __init__(self, name, position, new_name):
         self._additional_sources = []
@@ -151,26 +151,32 @@ class NameVisitor(NodeVisitor):
 
     def visit_Attribute(self, node):  # noqa
         name = node.attr
-        if name == self._name:
-            start = self._position_from_node(node=node)
-            with self.scope(names=node.value.id, position=start):
+        start = self._position_from_node(node=node)
+        with self.scope(names=self.get_id(node), position=start):
+            if name == self._name:
                 position = self._current_source.find_after(
                     name, start).copy(node=node)
                 self.occur(
                     name=name,
                     position=position,
                     is_definition=self._is_definition(node))
-        self.generic_visit(node)
+            self.generic_visit(node)
+
+    def get_id(self, node):
+        try:
+            return node.value.id
+
+        except AttributeError:
+            return self.get_id(node.value)
 
     def visit_Assign(self, node):  # noqa
         names = names_from_node(node.targets[0])
         values = names_from_node(node.value)
-        if names:
-            for name, value in zip(names, values):
-                self._names.add_rewrite(
-                    scope=self._scope,
-                    name=name,
-                    alternative=self._scope.path + (value,))
+        for name, value in zip(names, values):
+            self._names.add_rewrite(
+                scope=self._scope,
+                name=name,
+                alternative=self._scope.path + (value,))
         self.generic_visit(node)
 
     def occur(self, name, position, is_definition=False):
@@ -235,7 +241,7 @@ class NameVisitor(NodeVisitor):
 
     @staticmethod
     def _is_definition(node):
-        return isinstance(node.ctx, Store) or isinstance(node.ctx, Param)
+        return isinstance(node.ctx, (Param, Store))
 
     def _process_args(self, args, is_method):
         if args and is_method:
