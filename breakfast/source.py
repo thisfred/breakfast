@@ -1,5 +1,5 @@
 import re
-from ast import Name, NodeVisitor, Param, Store, parse
+from ast import Attribute, Call, Name, NodeVisitor, Param, Store, Tuple, parse
 from collections import defaultdict
 from contextlib import contextmanager
 from functools import total_ordering
@@ -8,13 +8,16 @@ from breakfast.position import IllegalPosition, Position
 from breakfast.rename import Rename
 
 
-class Tree:
+class Tree(object):
+
+    is_class = False
 
     def __init__(self):
         self.parent = None
         self.children = {}
         self.names = defaultdict(list)
         self.definitions = {}
+        self.aliases = {}
 
     def add_child(self, name, child):
         self.children[name] = child
@@ -25,7 +28,7 @@ class Tree:
         return self.add_child(name, Function())
 
     def add_class(self, name):
-        return self.add_child(name, Class())
+        return self.add_child(name, Class(name))
 
     def add_definition(self, name, position):
         self.names[name].append(position)
@@ -35,6 +38,9 @@ class Tree:
             self.names[name].append(position)
         else:
             self.parent.add_name(name, position)
+
+    def get_alias(self, name):
+        return self.aliases.get(name, self.parent.get_alias(name))
 
     def define_variable(self, name, position):
         self.definitions[name] = position
@@ -56,13 +62,19 @@ class Tree:
                 yield node
 
     def add_namespace(self, name):
-        self.add_child(name, Namespace())
+        return self.add_child(name, Namespace())
 
     def get_namespace(self, name):
         return self.children.get(name, self.parent.get_namespace(name))
 
+    def add_alias(self, alias, name):
+        self.aliases[alias] = name
+
 
 class Root(Tree):
+
+    def get_alias(self, name):
+        return None
 
     def add_name(self, name, position):
         self.names[name].append(position)
@@ -76,23 +88,36 @@ class Root(Tree):
 
 class Namespace(Tree):
 
-    def add_name(self, name, position):
-        self.names[name].append(position)
-
     def get_namespace(self, name):
         return self.children.get(name, self.add_namespace(name))
 
+    def add_name(self, name, position):
+        self.names[name].append(position)
+
+
+class Comprehension(Tree):
+    pass
+
 
 class Module(Tree):
-    pass
+
+    def get_alias(self, name):
+        return self.aliases.get(name)
 
 
 class Class(Tree):
-    pass
+
+    def __init__(self, name):
+        self.name = name
+        super(Class, self).__init__()
+
+    is_class = True
 
 
 class Function(Tree):
-    pass
+
+    def get_alias(self, name):
+        return self.aliases.get(name)
 
 
 class Names(NodeVisitor):
@@ -101,15 +126,13 @@ class Names(NodeVisitor):
         self.root = Root()
         self.current_source = None
         self.current = self.root
-        self.names = defaultdict(list)
-        self.prefix = ''
 
     def visit_source(self, source):
         self.current_source = source
         self.visit(self.current_source.get_ast())
 
-    def get_occurrences(self, position):
-        return self.root.get_occurrences(position)
+    def get_occurrences(self, to_rename, position):
+        return sorted(self.root.get_occurrences(position))
 
     def visit_Module(self, node):  # noqa
         self.current = self.current.add_module('module')
@@ -117,14 +140,15 @@ class Names(NodeVisitor):
         self.current = self.current.parent
 
     def visit_Name(self, node):  # noqa
-        position = self.position_from_node(node)
-        name = node.id
         if self._is_definition(node):
             method = self.current.add_definition
         else:
             method = self.current.add_name
-        method(name=name, position=position)
-        return self.current.get_namespace(name)
+        position = self.position_from_node(node)
+        name = node.id
+        method(name, position=position)
+        alias = self.current.get_alias(name)
+        return self.current.get_namespace(alias or name)
 
     def visit_ClassDef(self, node):  # noqa
         position = self.position_from_node(
@@ -146,8 +170,17 @@ class Names(NodeVisitor):
             name=node.name,
             position=position)
         added = self.current.add_function(node.name)
+        in_class = self.current.is_class and self.current
         with self.namespace(added):
-            for arg in node.args.args:
+            for i, arg in enumerate(node.args.args):
+                if i == 0 and in_class:
+                    # this is 'self' in a method definition
+                    if isinstance(arg, Name):
+                        alias = arg.id
+                    else:
+                        alias = arg.arg
+                    self.current.add_alias(alias, in_class.name)
+
                 if isinstance(arg, Name):
                     # python 2: these will be caught by generic_visit
                     continue
@@ -163,14 +196,15 @@ class Names(NodeVisitor):
         ns = self.visit(node.func) or self.current
         with self.namespace(ns):
             start = self.position_from_node(node)
-            for arg in node.args:
-                self.visit(arg)
             for keyword in node.keywords:
                 position = self.current_source.find_after(keyword.arg, start)
                 self.current.add_name(
                     name=keyword.arg,
                     position=position)
-                self.visit(keyword.value)
+        for arg in node.args:
+            self.visit(arg)
+        for keyword in node.keywords:
+            self.visit(keyword.value)
 
     def visit_Import(self, node):  # noqa
         start = self.position_from_node(node)
@@ -188,6 +222,39 @@ class Names(NodeVisitor):
         namespace.add_name(name, position)
         return namespace.get_namespace(node.attr)
 
+    def visit_Assign(self, node):  # noqa
+        target_names = self.get_names(node.targets[0])
+        value_names = self.get_names(node.value)
+        for target, value in zip(target_names, value_names):
+            if target and value:
+                self.current.add_alias(target, value)
+        # for name, value in zip(names, values):
+        #     self.current.add_alias(name, value)
+        self.generic_visit(node)
+
+    def visit_DictComp(self, node):  # noqa
+        self._comp_visit(node, node.key, node.value)
+
+    def visit_SetComp(self, node):  # noqa
+        self._comp_visit(node, node.elt)
+
+    def visit_ListComp(self, node):  # noqa
+        self._comp_visit(node, node.elt)
+
+    def _comp_visit(self, node, *rest):
+        position = self.position_from_node(node)
+        # The dashes make sure it can never clash with an actual Python name.
+        name = 'comprehension-%s-%s' % (position.row, position.column)
+        ns = self.current.add_child(name, Tree())
+        with self.namespace(ns):
+            # visit the generators *before* the expression that uses the
+            # generated values, to make sure the generator expression is
+            # defined before use.
+            for generator in node.generators:
+                self.visit(generator)
+            for sub_node in rest:
+                self.visit(sub_node)
+
     @contextmanager
     def namespace(self, namespace):
         previous = self.current
@@ -204,6 +271,27 @@ class Names(NodeVisitor):
     @staticmethod
     def _is_definition(node):
         return isinstance(node.ctx, (Param, Store))
+
+    def get_names(self, value):
+        if isinstance(value, Tuple):
+            return [self.get_value_name(v) for v in value.elts]
+
+        return [self.get_value_name(value)]
+
+    def get_value_name(self, value):
+        if isinstance(value, Tuple):
+            return [self.get_value_name(v) for v in value.elts]
+
+        if isinstance(value, Attribute):
+            return value.attr
+
+        if isinstance(value, Name):
+            return value.id
+
+        if isinstance(value, Call):
+            return self.get_value_name(value.func)
+
+        return None
 
 
 @total_ordering

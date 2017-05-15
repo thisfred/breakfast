@@ -224,6 +224,13 @@ class NameVisitor(NodeVisitor):
     def visit_ListComp(self, node):  # noqa
         self._comp_visit(node)
 
+    def _comp_visit(self, node):
+        position = position_from_node(source=self._current_source, node=node)
+        # The dashes make sure it can never clash with an actual Python name.
+        name = 'comprehension-%s-%s' % (position.row, position.column)
+        with self.scope(names=name, position=position):
+            self.generic_visit(node)
+
     def _occur_definition(self, node, prefix):
         position = self._position_from_node(
             node=node,
@@ -267,13 +274,6 @@ class NameVisitor(NodeVisitor):
         position = self._position_from_node(node=value)
         start = self._current_source.find_before('=', position)
         return self._current_source.find_before(name, start)
-
-    def _comp_visit(self, node):
-        position = position_from_node(source=self._current_source, node=node)
-        # The dashes make sure it can never clash with an actual Python name.
-        name = 'comprehension-%s-%s' % (position.row, position.column)
-        with self.scope(names=name, position=position):
-            self.generic_visit(node)
 
 
 class Names:
