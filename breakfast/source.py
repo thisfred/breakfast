@@ -10,40 +10,62 @@ from breakfast.rename import Rename
 
 class Tree(object):
 
-    is_class = False
-
     def __init__(self):
         self.parent = None
         self.children = {}
         self.names = defaultdict(list)
         self.definitions = {}
         self.aliases = {}
+        self.class_name = None
 
-    def add_child(self, name, child):
+    def add_child(self, name, child, inherit_namespace_from=None):
+        if inherit_namespace_from is not None:
+            child.names = inherit_namespace_from.names.copy()
         self.children[name] = child
         child.parent = self
         return child
 
     def add_function(self, name):
-        return self.add_child(name, Function())
+        return self.add_child(
+            name=name, child=Tree(), inherit_namespace_from=self)
+
+    def add_method(self, name):
+        return self.add_child(
+            name=name, child=Tree(), inherit_namespace_from=self.parent)
 
     def add_class(self, name):
-        return self.add_child(name, Class(name))
+        return self.add_child(
+            name=name, child=Class(name), inherit_namespace_from=self)
 
     def add_definition(self, name, position):
+        """Add point of definition of the name in the current namespace.
+
+        If the name was not previously defined in this namespace, treat
+        it as distinct from the same name in enclosing namespaces:
+
+        in:
+            def foo():
+                a = 1
+                a = 2
+
+        we consider both `a`s to be the same variable, but in:
+
+            a = 1
+            def foo():
+                a = 2
+
+        we don't.
+        """
+        if name not in self.definitions:
+            self.names[name] = []
+            self.definitions[name] = position
         self.names[name].append(position)
 
     def add_name(self, name, position):
-        if name in self.names:
-            self.names[name].append(position)
-        else:
-            self.parent.add_name(name, position)
+        self.names[name].append(position)
 
     def get_alias(self, name):
         return self.aliases.get(name, self.parent.get_alias(name))
-
-    def define_variable(self, name, position):
-        self.definitions[name] = position
 
     def get_occurrences(self, position):
         for positions in self.names.values():
@@ -62,7 +84,7 @@ class Tree(object):
                 yield node
 
     def add_namespace(self, name):
-        return self.add_child(name, Namespace())
+        return self.add_child(name, Tree(), self)
 
     def get_namespace(self, name):
         return self.children.get(name, self.parent.get_namespace(name))
@@ -76,48 +98,18 @@ class Root(Tree):
     def get_alias(self, name):
         return None
 
-    def add_name(self, name, position):
-        self.names[name].append(position)
-
     def add_module(self, name):
-        return self.add_child(name, Module())
+        return self.add_child(name, Tree())
 
     def get_namespace(self, name):
         return self
 
 
-class Namespace(Tree):
-
-    def get_namespace(self, name):
-        return self.children.get(name, self.add_namespace(name))
-
-    def add_name(self, name, position):
-        self.names[name].append(position)
-
-
-class Comprehension(Tree):
-    pass
-
-
-class Module(Tree):
-
-    def get_alias(self, name):
-        return self.aliases.get(name)
-
-
 class Class(Tree):
 
     def __init__(self, name):
-        self.name = name
         super(Class, self).__init__()
-
-    is_class = True
-
-
-class Function(Tree):
-
-    def get_alias(self, name):
-        return self.aliases.get(name)
+        self.class_name = name
 
 
 class Names(NodeVisitor):
@@ -130,23 +122,24 @@ class Names(NodeVisitor):
     def visit_source(self, source):
         self.current_source = source
         self.visit(self.current_source.get_ast())
+        self.current = self.root
 
-    def get_occurrences(self, to_rename, position):
+    def get_occurrences(self, _, position):
         return sorted(self.root.get_occurrences(position))
 
     def visit_Module(self, node):  # noqa
-        self.current = self.current.add_module('module')
+        self.current = self.current.add_module(self.current_source.module_name)
         self.generic_visit(node)
         self.current = self.current.parent
 
     def visit_Name(self, node):  # noqa
         if self._is_definition(node):
-            method = self.current.add_definition
+            action = self.current.add_definition
         else:
-            method = self.current.add_name
+            action = self.current.add_name
         position = self.position_from_node(node)
         name = node.id
-        method(name, position=position)
+        action(name, position=position)
         alias = self.current.get_alias(name)
         return self.current.get_namespace(alias or name)
 
@@ -158,6 +151,7 @@ class Names(NodeVisitor):
         self.current.add_definition(
             name=node.name,
             position=position)
+        # TODO: walk up inheritance tree (node.bases)
         with self.namespace(self.current.add_class(node.name)):
             self.generic_visit(node)
 
@@ -169,17 +163,18 @@ class Names(NodeVisitor):
         self.current.add_definition(
             name=node.name,
             position=position)
-        added = self.current.add_function(node.name)
-        in_class = self.current.is_class and self.current
-        with self.namespace(added):
+        class_name = self.current.class_name
+        with self.namespace(self.current.add_method(node.name)
+                            if class_name is not None
+                            else self.current.add_function(node.name)):
             for i, arg in enumerate(node.args.args):
-                if i == 0 and in_class:
+                if i == 0 and class_name:
                     # this is 'self' in a method definition
                     if isinstance(arg, Name):
                         alias = arg.id
                     else:
                         alias = arg.arg
-                    self.current.add_alias(alias, in_class.name)
+                    self.current.add_alias(alias, class_name)
 
                 if isinstance(arg, Name):
                     # python 2: these will be caught by generic_visit
@@ -214,6 +209,15 @@ class Names(NodeVisitor):
             position = self.current_source.find_after(name, start)
             self.current.add_name(name, position)
 
+    def visit_ImportFrom(self, node):  # noqa
+        start = self.position_from_node(node)
+        for imported in node.names:
+            name = imported.name
+            position = self.current_source.find_after(name, start)
+            self.current.names[name] = self.root.children[
+                node.module].names[name]
+            self.current.add_name(name, position)
+
     def visit_Attribute(self, node):  # noqa
         start = self.position_from_node(node)
         name = node.attr
@@ -245,7 +249,7 @@ class Names(NodeVisitor):
         position = self.position_from_node(node)
         # The dashes make sure it can never clash with an actual Python name.
         name = 'comprehension-%s-%s' % (position.row, position.column)
-        ns = self.current.add_child(name, Tree())
+        ns = self.current.add_namespace(name)
         with self.namespace(ns):
             # visit the generators *before* the expression that uses the
             # generated values, to make sure the generator expression is
@@ -295,7 +299,7 @@ class Names(NodeVisitor):
 
 
 @total_ordering
-class Source:
+class Source(object):
 
     word = re.compile(r'\w+|\W+')
 
