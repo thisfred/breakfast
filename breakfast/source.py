@@ -8,17 +8,25 @@ from breakfast.position import IllegalPosition, Position
 from breakfast.rename import Rename
 
 
-class Tree(object):
+class Occurrences:
+    def __init__(self, namespace):
+        self.positions = []
+        self.definitions = []
+        self.namespace = namespace
 
-    def __init__(self):
+
+class Tree:
+
+    def __init__(self, class_name=None, base_classes=None):
         self.parent = None
         self.children = {}
-        self.names = defaultdict(list)
-        self.definitions = {}
+        self.names = {}
         self.aliases = {}
-        self.class_name = None
+        self.class_name = class_name
+        self.base_classes = base_classes or []
 
-    def add_child(self, name, child, inherit_namespace_from=None):
+    def add_namespace(self, name, inherit_namespace_from, child=None):
+        child = child or Tree()
         if inherit_namespace_from is not None:
             child.names = inherit_namespace_from.names.copy()
         self.children[name] = child
@@ -26,16 +34,16 @@ class Tree(object):
         return child
 
     def add_function(self, name):
-        return self.add_child(
-            name=name, child=Tree(), inherit_namespace_from=self)
+        return self.add_namespace(name=name, inherit_namespace_from=self)
 
     def add_method(self, name):
-        return self.add_child(
-            name=name, child=Tree(), inherit_namespace_from=self.parent)
+        return self.add_namespace(name=name, inherit_namespace_from=self.parent)
 
-    def add_class(self, name):
-        return self.add_child(
-            name=name, child=Class(name), inherit_namespace_from=self)
+    def add_class(self, name, base_classes):
+        return self.add_namespace(
+            name=name,
+            inherit_namespace_from=self,
+            child=Tree(class_name=name, base_classes=base_classes))
 
     def add_definition(self, name, position):
         """Add point of definition of the name in the current namespace.
@@ -48,7 +56,9 @@ class Tree(object):
                 a = 1
                 a = 2
 
-        we consider both `a`s to be the same variable, but in:
+        we consider both `a`s to be the same variable.
+
+        But in:
 
             a = 1
             def foo():
@@ -56,21 +66,26 @@ class Tree(object):
 
         we don't.
         """
-        if name not in self.definitions:
-            self.names[name] = []
-            self.definitions[name] = position
-        self.names[name].append(position)
+        occurrences = self.names.get(name)
+        if not occurrences or occurrences.namespace is not self:
+            occurrences = Occurrences(self)
+            self.names[name] = occurrences
+        occurrences.positions.append(position)
+        occurrences.definitions.append(position)
 
     def add_name(self, name, position):
-        self.names[name].append(position)
+        if name not in self.names:
+            occurrences = Occurrences(self)
+            self.names[name] = occurrences
+        self.names[name].positions.append(position)
 
     def get_alias(self, name):
         return self.aliases.get(name, self.parent.get_alias(name))
 
     def get_occurrences(self, position):
-        for positions in self.names.values():
-            if any([p == position for p in positions]):
-                return positions
+        for occurrences in self.names.values():
+            if any([p == position for p in occurrences.positions]):
+                return occurrences.positions
 
         for child in self.children.values():
             positions = child.get_occurrences(position)
@@ -82,9 +97,6 @@ class Tree(object):
         for child in self.children.values():
             for node in child.walk():
                 yield node
-
-    def add_namespace(self, name):
-        return self.add_child(name, Tree(), self)
 
     def get_namespace(self, name):
         return self.children.get(name, self.parent.get_namespace(name))
@@ -99,17 +111,11 @@ class Root(Tree):
         return None
 
     def add_module(self, name):
-        return self.add_child(name, Tree())
+        return self.add_namespace(
+            name=name, child=Tree(), inherit_namespace_from=None)
 
     def get_namespace(self, name):
         return self
-
-
-class Class(Tree):
-
-    def __init__(self, name):
-        super(Class, self).__init__()
-        self.class_name = name
 
 
 class Names(NodeVisitor):
@@ -151,8 +157,9 @@ class Names(NodeVisitor):
         self.current.add_definition(
             name=node.name,
             position=position)
-        # TODO: walk up inheritance tree (node.bases)
-        with self.namespace(self.current.add_class(node.name)):
+        namespace = self.current.add_class(
+            node.name, base_classes=[base.id for base in node.bases])
+        with self.namespace(namespace):
             self.generic_visit(node)
 
     def visit_FunctionDef(self, node):  # noqa
@@ -205,7 +212,8 @@ class Names(NodeVisitor):
         start = self.position_from_node(node)
         for alias in node.names:
             name = alias.name
-            self.current.add_namespace(name)
+            self.current.add_namespace(
+                name, inherit_namespace_from=self.current)
             position = self.current_source.find_after(name, start)
             self.current.add_name(name, position)
 
@@ -223,8 +231,18 @@ class Names(NodeVisitor):
         name = node.attr
         position = self.current_source.find_after(name, start)
         namespace = self.visit(node.value)
+        if name not in namespace.names:
+            for class_name in namespace.base_classes:
+                base_occurrences = namespace.names.get(class_name)
+                parent_space = base_occurrences.namespace
+                base_space = parent_space.get_namespace(class_name)
+
+                if name in base_space.names:
+                    base_space.add_name(name, position)
+                    return base_space.get_namespace(name)
+
         namespace.add_name(name, position)
-        return namespace.get_namespace(node.attr)
+        return namespace.get_namespace(name)
 
     def visit_Assign(self, node):  # noqa
         target_names = self.get_names(node.targets[0])
@@ -232,8 +250,6 @@ class Names(NodeVisitor):
         for target, value in zip(target_names, value_names):
             if target and value:
                 self.current.add_alias(target, value)
-        # for name, value in zip(names, values):
-        #     self.current.add_alias(name, value)
         self.generic_visit(node)
 
     def visit_DictComp(self, node):  # noqa
@@ -249,7 +265,8 @@ class Names(NodeVisitor):
         position = self.position_from_node(node)
         # The dashes make sure it can never clash with an actual Python name.
         name = 'comprehension-%s-%s' % (position.row, position.column)
-        ns = self.current.add_namespace(name)
+        ns = self.current.add_namespace(
+            name, inherit_namespace_from=self.current)
         with self.namespace(ns):
             # visit the generators *before* the expression that uses the
             # generated values, to make sure the generator expression is
@@ -303,10 +320,11 @@ class Source(object):
 
     word = re.compile(r'\w+|\W+')
 
-    def __init__(self, lines, module_name='module'):
+    def __init__(self, lines, module_name='module', file_name=None):
         self.lines = lines
         self.changes = {}  # type: Dict[int, str]
         self.module_name = module_name
+        self.file_name = file_name
 
     def __hash__(self):
         return hash(self.module_name)

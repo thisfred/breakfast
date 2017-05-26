@@ -7,5 +7,8 @@ def dedent(code):
     return '\n'.join(l[indentation:] for l in lines)
 
 
-def make_source(code, module_name=''):
-    return Source(dedent(code).split('\n'), module_name=module_name)
+def make_source(code, module_name='', file_name=None):
+    return Source(
+        dedent(code).split('\n'),
+        module_name=module_name,
+        file_name=file_name)
