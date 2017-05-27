@@ -2,7 +2,7 @@ import re
 from ast import parse
 from functools import total_ordering
 
-from breakfast.position import IllegalPosition, Position
+from breakfast.position import Position
 from breakfast.names import Names
 
 
@@ -16,9 +16,6 @@ class Source(object):
         self.changes = {}  # type: Dict[int, str]
         self.module_name = module_name
         self.file_name = file_name
-
-    def __hash__(self):
-        return hash(self.module_name)
 
     def rename(self, row, column, new_name, additional_sources=None):
         position = Position(self, row=row, column=column)
@@ -59,15 +56,6 @@ class Source(object):
         modified_line = line[:start.column] + new + line[end.column:]
         self.changes[line_number] = modified_line
 
-    def find_before(self, name, start):
-        while not self.get_string_starting_at(start).startswith(name):
-            try:
-                start = start - 1
-            except IllegalPosition:
-                start = self.get_last_column(start.row - 1)
-
-        return start
-
     def find_after(self, name, start):
         while not self.get_string_starting_at(start).startswith(name):
             start = start + 1
@@ -78,10 +66,6 @@ class Source(object):
 
     def get_string_starting_at(self, position):
         return self.lines[position.row][position.column:]
-
-    def get_last_column(self, row):
-        return Position(
-            source=self, row=row, column=len(self.lines[row]) - 1)
 
     def __eq__(self, other):
         return self is other

@@ -16,9 +16,6 @@ class Position:
         self.column = column
         self.node = node
 
-    def to_tuple(self):
-        return (self.row, self.column)
-
     def get_name(self):
         return self.source.get_name_at(self)
 
@@ -65,6 +62,3 @@ class Position:
             self.row,
             self.column,
             ', node=%s' % (repr(self.node),) if self.node else '')
-
-    def __hash__(self):
-        return hash((self.source, self.row, self.column))

@@ -92,12 +92,6 @@ class Tree:
 
         return []
 
-    def walk(self):
-        yield self
-        for child in self.children.values():
-            for node in child.walk():
-                yield node
-
     def get_namespace(self, name):
         return self.children.get(name, self.parent.get_namespace(name))
 
@@ -244,10 +238,7 @@ class Names(NodeVisitor):
                 base_space = parent_space.get_namespace(class_name)
 
                 if name in base_space.names:
-                    if self._is_definition(node):
-                        base_space.add_definition(name, position)
-                    else:
-                        base_space.add_name(name, position)
+                    base_space.add_name(name, position)
                     return base_space.get_namespace(name)
 
         if self._is_definition(node):
@@ -312,9 +303,6 @@ class Names(NodeVisitor):
         return [self.get_value_name(value)]
 
     def get_value_name(self, value):
-        if isinstance(value, Tuple):
-            return [self.get_value_name(v) for v in value.elts]
-
         if isinstance(value, Attribute):
             return value.attr
 
