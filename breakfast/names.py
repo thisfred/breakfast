@@ -5,6 +5,7 @@ from breakfast.position import Position
 
 
 class Occurrences:
+
     def __init__(self, namespace):
         self.positions = []
         self.definitions = []

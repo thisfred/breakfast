@@ -17,9 +17,18 @@ class Source(object):
         self.module_name = module_name
         self.file_name = file_name
 
+    def __eq__(self, other):
+        return self is other
+
+    def __lt__(self, other):
+        return self.module_name < other.module_name
+
+    def __gt__(self, other):
+        return other.module_name < self.module_name
+
     def rename(self, row, column, new_name, additional_sources=None):
         position = Position(self, row=row, column=column)
-        old_name = position.get_name()
+        old_name = self.get_name_at(position)
         visitor = Names()
         visitor.visit_source(self)
         for source in additional_sources or []:
@@ -66,12 +75,3 @@ class Source(object):
 
     def get_string_starting_at(self, position):
         return self.lines[position.row][position.column:]
-
-    def __eq__(self, other):
-        return self is other
-
-    def __lt__(self, other):
-        return self.module_name < other.module_name
-
-    def __gt__(self, other):
-        return other.module_name < self.module_name

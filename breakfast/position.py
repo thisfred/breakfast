@@ -16,9 +16,6 @@ class Position:
         self.column = column
         self.node = node
 
-    def get_name(self):
-        return self.source.get_name_at(self)
-
     def copy(self, source=None, row=None, column=None, node=None):
         return Position(
             source=source if source is not None else self.source,
