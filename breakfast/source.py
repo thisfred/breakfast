@@ -1,11 +1,9 @@
 import re
 from ast import Attribute, Call, Name, NodeVisitor, Param, Store, Tuple, parse
-from collections import defaultdict
 from contextlib import contextmanager
 from functools import total_ordering
 
 from breakfast.position import IllegalPosition, Position
-from breakfast.rename import Rename
 
 
 class Occurrences:
@@ -37,7 +35,8 @@ class Tree:
         return self.add_namespace(name=name, inherit_namespace_from=self)
 
     def add_method(self, name):
-        return self.add_namespace(name=name, inherit_namespace_from=self.parent)
+        return self.add_namespace(
+            name=name, inherit_namespace_from=self.parent)
 
     def add_class(self, name, base_classes):
         return self.add_namespace(
@@ -84,13 +83,16 @@ class Tree:
 
     def get_occurrences(self, position):
         for occurrences in self.names.values():
-            if any([p == position for p in occurrences.positions]):
+            if (any([p == position for p in occurrences.positions]) and
+                    occurrences.definitions):
                 return occurrences.positions
 
         for child in self.children.values():
             positions = child.get_occurrences(position)
             if positions:
                 return positions
+
+        return []
 
     def walk(self):
         yield self
@@ -146,8 +148,14 @@ class Names(NodeVisitor):
         position = self.position_from_node(node)
         name = node.id
         action(name, position=position)
-        alias = self.current.get_alias(name)
-        return self.current.get_namespace(alias or name)
+        aliases = []
+        alias = name
+        while True:
+            alias = self.current.get_alias(alias)
+            if alias in aliases or not alias:
+                break
+            aliases.append(alias)
+        return self.current.get_namespace(aliases[-1] if aliases else name)
 
     def visit_ClassDef(self, node):  # noqa
         position = self.position_from_node(
@@ -238,10 +246,16 @@ class Names(NodeVisitor):
                 base_space = parent_space.get_namespace(class_name)
 
                 if name in base_space.names:
-                    base_space.add_name(name, position)
+                    if self._is_definition(node):
+                        base_space.add_definition(name, position)
+                    else:
+                        base_space.add_name(name, position)
                     return base_space.get_namespace(name)
 
-        namespace.add_name(name, position)
+        if self._is_definition(node):
+            namespace.add_definition(name, position)
+        else:
+            namespace.add_name(name, position)
         return namespace.get_namespace(name)
 
     def visit_Assign(self, node):  # noqa
@@ -332,13 +346,16 @@ class Source(object):
     def rename(self, row, column, new_name, additional_sources=None):
         position = Position(self, row=row, column=column)
         old_name = position.get_name()
-        refactoring = Rename(
-            name=old_name,
-            position=position,
-            new_name=new_name)
+        visitor = Names()
+        visitor.visit_source(self)
         for source in additional_sources or []:
-            refactoring.add_source(source)
-        refactoring.apply()
+            visitor.visit_source(source)
+
+        for occurrence in reversed(visitor.get_occurrences(old_name, position)):
+            occurrence.source.replace(
+                position=occurrence,
+                old=old_name,
+                new=new_name)
 
     def get_name_at(self, position):
         return self.word.search(self.get_string_starting_at(position)).group()
