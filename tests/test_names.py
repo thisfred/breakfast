@@ -1,7 +1,18 @@
-from breakfast.source import Source
-from breakfast.names import Names, Root
+from breakfast.names import Names, is_prefix
 from breakfast.position import Position
 from tests import make_source
+
+
+def test_is_prefix_fails_when_paths_are_equal():
+    assert not is_prefix((1, 2), (1, 2))
+
+
+def test_is_prefix_fails_when_path_is_shorter_than_prefix():
+    assert not is_prefix((1, 2), (1,))
+
+
+def test_is_prefix_succeeds_when_prefix_prefixes_the_path():
+    assert is_prefix((1, 2), (1, 2, 3))
 
 
 def test_visit_source_adds_name():
@@ -23,21 +34,11 @@ def test_does_not_rename_random_attributes():
 
     visitor.visit_source(source)
 
-    assert [Position(source, 3, 0)] == visitor.get_occurrences(
+    occurrences = visitor.get_occurrences(
         'path',
         Position(source, 3, 0))
 
-
-def test_gets_occurrences():
-    tree = Root()
-    source = Source(lines=[])
-    tree.add_name('foo', Position(source=source, row=0, column=1))
-    tree.add_name('bar', Position(source=source, row=0, column=3))
-    tree.add_definition('foo', Position(source=source, row=8, column=0))
-    assert [(0, 1), (8, 0)] == [
-        (o.row, o.column)
-        for o in tree.get_occurrences(
-            Position(source=source, row=8, column=0))]
+    assert [Position(source, 3, 0)] == occurrences
 
 
 def test_finds_local_variable():
@@ -77,12 +78,14 @@ def test_finds_non_local_variable():
 
     visitor.visit_source(source)
 
+    occurrences = visitor.get_occurrences(
+        'old',
+        Position(source, 1, 0))
+
     assert [
         Position(source, 1, 0),
         Position(source, 4, 13),
-        Position(source, 7, 0)] == visitor.get_occurrences(
-            'old',
-            Position(source, 1, 0))
+        Position(source, 7, 0)] == occurrences
 
 
 def test_finds_method_names():
@@ -97,12 +100,13 @@ def test_finds_method_names():
     visitor = Names()
 
     visitor.visit_source(source)
+    occurrences = visitor.get_occurrences(
+        'old',
+        Position(source, 3, 8))
 
     assert [
         Position(source, 3, 8),
-        Position(source, 6, 12)] == visitor.get_occurrences(
-            'old',
-            Position(source, 3, 8))
+        Position(source, 6, 12)] == occurrences
 
 
 def test_finds_parameters():
@@ -115,12 +119,13 @@ def test_finds_parameters():
 
     visitor.visit_source(source)
 
+    occurrences = visitor.get_occurrences(
+        'arg',
+        Position(source, 1, 8))
     assert [
         Position(source, 1, 8),
         Position(source, 2, 11),
-        Position(source, 3, 4)] == visitor.get_occurrences(
-            'arg',
-            Position(source, 1, 8))
+        Position(source, 3, 4)] == occurrences
 
 
 def test_only_finds_parameter():
@@ -247,12 +252,14 @@ def test_does_not_find_method_of_unrelated_class():
 
     visitor.visit_source(source)
 
+    occurrences = visitor.get_occurrences(
+        'old',
+        Position(source, 3, 8))
+
     assert [
         Position(source, 3, 8),
         Position(source, 7, 13),
-        Position(source, 20, 2)] == visitor.get_occurrences(
-            'old',
-            Position(source, 3, 8))
+        Position(source, 20, 2)] == occurrences
 
 
 def test_finds_definition_from_call():
@@ -287,12 +294,13 @@ def test_finds_attribute_assignments():
     visitor = Names()
 
     visitor.visit_source(source)
+    occurrences = visitor.get_occurrences(
+        'property',
+        Position(source, 7, 20))
 
     assert [
         Position(source, 4, 13),
-        Position(source, 7, 20)] == visitor.get_occurrences(
-            'property',
-            Position(source, 7, 20))
+        Position(source, 7, 20)] == occurrences
 
 
 def test_finds_dict_comprehension_variables():
@@ -420,12 +428,13 @@ def test_finds_enclosing_scope_variable_from_comprehension():
     visitor = Names()
 
     visitor.visit_source(source)
+    occurrences = visitor.get_occurrences(
+        'old',
+        Position(source, 2, 42))
 
     assert [
         Position(source, 1, 0),
-        Position(source, 2, 42)] == visitor.get_occurrences(
-            'old',
-            Position(source, 2, 42))
+        Position(source, 2, 42)] == occurrences
 
 
 def test_finds_across_files():
@@ -520,6 +529,7 @@ def test_finds_argument():
     visitor = Names()
 
     visitor.visit_source(source)
+
     assert [
         Position(source, 3, 18),
         Position(source, 4, 14),
@@ -551,7 +561,7 @@ def test_finds_method_but_not_function():
     assert [
         Position(source, 3, 8),
         Position(source, 7, 13)] == visitor.get_occurrences(
-            'arg',
+            'old',
             Position(source, 3, 8))
 
 
@@ -597,11 +607,12 @@ def test_renames_method_in_imported_subclass():
     visitor.visit_source(source)
     visitor.visit_source(other_source)
 
+    occurrences = visitor.get_occurrences(
+        'old',
+        Position(source, 3, 8))
     assert [
         Position(other_source, 6, 13),
-        Position(source, 3, 8)] == visitor.get_occurrences(
-            'old',
-            Position(source, 3, 8))
+        Position(source, 3, 8)] == occurrences
 
 
 def test_renames_method_in_renamed_instance_of_subclass():
@@ -623,14 +634,17 @@ def test_renames_method_in_renamed_instance_of_subclass():
     visitor = Names()
 
     visitor.visit_source(source)
+    occurrences = visitor.get_occurrences(
+        'old',
+        Position(source, 3, 8))
 
     assert [
         Position(source, 3, 8),
-        Position(source, 11, 2)] == visitor.get_occurrences(
-            'old',
-            Position(source, 3, 8))
+        Position(source, 11, 2)] == occurrences
 
+# TODO: rename variable from global scope in method
 # TODO: rename methods on super calls
+# TODO: rename methods from multiple inheritance
 # TODO: recognize 'cls' argument in @classmethods
 # TODO: rename 'global' variables
 # TODO: rename 'nonlocal' variables

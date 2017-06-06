@@ -16,16 +16,6 @@ class Position:
         self.column = column
         self.node = node
 
-    def copy(self, source=None, row=None, column=None, node=None):
-        return Position(
-            source=source if source is not None else self.source,
-            row=row if row is not None else self.row,
-            column=column if column is not None else self.column,
-            node=node if node is not None else self.node)
-
-    def _add_offset(self, offset):
-        return self.copy(column=self.column + offset)
-
     def __add__(self, column_offset):
         return self._add_offset(column_offset)
 
@@ -59,3 +49,13 @@ class Position:
             self.row,
             self.column,
             ', node=%s' % (repr(self.node),) if self.node else '')
+
+    def copy(self, source=None, row=None, column=None, node=None):
+        return Position(
+            source=source if source is not None else self.source,
+            row=row if row is not None else self.row,
+            column=column if column is not None else self.column,
+            node=node if node is not None else self.node)
+
+    def _add_offset(self, offset):
+        return self.copy(column=self.column + offset)

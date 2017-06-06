@@ -2,4 +2,5 @@ astunparse
 coverage
 flake8
 pytest
+pytest-xdist
 rerun
