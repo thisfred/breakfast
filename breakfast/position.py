@@ -11,6 +11,7 @@ class Position:
     def __init__(self, source, row, column, node=None):
         if row < 0 or column < 0:
             raise IllegalPosition
+
         self.source = source
         self.row = row
         self.column = column

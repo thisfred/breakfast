@@ -1,4 +1,5 @@
-from ast import Attribute, Call, Name, NodeVisitor, Param, Store, Tuple
+from ast import (
+    Attribute, Call, Name, NodeVisitor, Param, Store, Subscript, Tuple)
 from collections import defaultdict
 from contextlib import contextmanager
 
@@ -20,6 +21,7 @@ class Collector:
         self._scopes = set()
         self._method_scopes = set()
         self._in_class = False
+        self._rewrites = {}
 
     @contextmanager
     def namespaces(self, names):
@@ -63,6 +65,10 @@ class Collector:
                 return sorted(positions)
         return []
 
+    def add_global(self, name):
+        full_name = self.get_namespaced(name)
+        self._rewrites[full_name] = full_name[:1] + full_name[-1:]
+
     def add_scope(self, name, is_method=False):
         if is_method:
             self._method_scopes.add(self.get_namespaced(name))
@@ -103,6 +109,12 @@ class Collector:
     def _post_process(self):
         self._rewrite_selves()
         for name in self._occurrences.copy():
+            if name in self._rewrites:
+                new_name = self._rewrites[name]
+                self._occurrences[new_name] += self._occurrences[name]
+                del self._occurrences[name]
+                continue
+
             if name not in self._definitions:
                 rewritten = self._rewrite(name)
                 if rewritten in self._definitions:
@@ -118,6 +130,10 @@ class Collector:
         for scope in self._scopes:
             if is_prefix(scope, name):
                 return scope[:-1] + name[len(scope):]
+
+        for scope in self._method_scopes:
+            if is_prefix(scope, name):
+                return scope[:-2] + name[len(scope):]
 
     def _enter_namespace(self, name):
         self._current_namespace = self.get_namespaced(name)
@@ -233,9 +249,10 @@ class Names(NodeVisitor):
         self.collector.add_definition(
             name=node.name,
             position=position)
+        is_static = is_staticmethod(node)
         with self.collector.enter_function(node.name):
             for i, arg in enumerate(node.args.args):
-                if i == 0 and self.collector.in_method:
+                if i == 0 and self.collector.in_method and not is_static:
                     # this is 'self' in a method definition
                     self._add_self(arg)
                 self._add_parameter(arg)
@@ -301,6 +318,15 @@ class Names(NodeVisitor):
     def visit_ListComp(self, node):  # noqa
         self._comp_visit(node, node.elt)
 
+    def visit_Global(self, node):  # noqa
+        start = self._position_from_node(node)
+        for name in node.names:
+            position = self.current_source.find_after(name, start)
+            self.collector.add_occurrence(name, position)
+            self.collector.add_global(name)
+
+        self.generic_visit(node)
+
     def _comp_visit(self, node, *rest):
         position = self._position_from_node(node)
         # The dashes make sure it can never clash with an actual Python name.
@@ -343,6 +369,11 @@ class Names(NodeVisitor):
         if isinstance(node, Attribute):
             return self._names_from(node.value) + (node.attr,)
 
+        if isinstance(node, Subscript):
+            return self._names_from(node.value)
+
+        return tuple()
+
     def _position_from_node(self, node, row_offset=0, column_offset=0):
         return Position(
             source=self.current_source,
@@ -370,6 +401,10 @@ class Names(NodeVisitor):
             return self._get_value_name(value.func)
 
         return None
+
+
+def is_staticmethod(node):
+    return any(n.id == 'staticmethod' for n in node.decorator_list)
 
 
 def is_prefix(prefix, full_name):

@@ -1,5 +1,8 @@
+import os
+
 from breakfast.names import Names, is_prefix
 from breakfast.position import Position
+from breakfast.source import Source
 from tests import make_source
 
 
@@ -616,7 +619,6 @@ def test_renames_method_in_imported_subclass():
 
 
 def test_renames_method_in_renamed_instance_of_subclass():
-
     source = make_source("""
     class A:
 
@@ -642,11 +644,114 @@ def test_renames_method_in_renamed_instance_of_subclass():
         Position(source, 3, 8),
         Position(source, 11, 2)] == occurrences
 
-# TODO: rename variable from global scope in method
+
+def test_renames_global_variable_in_method_scope():
+    source = make_source("""
+    b = 12
+
+    class Foo:
+
+        def bar(self):
+            return b
+    """)
+
+    visitor = Names()
+
+    visitor.visit_source(source)
+    occurrences = visitor.get_occurrences(
+        'b',
+        Position(source, 1, 0))
+
+    assert [
+        Position(source, 1, 0),
+        Position(source, 6, 15)] == occurrences
+
+
+def test_treats_staticmethod_args_correctly():
+    source = make_source("""
+    class ClassName:
+
+        def old(self):
+            pass
+
+        @staticmethod
+        def foo(whatever):
+            whatever.old()
+    """)
+    visitor = Names()
+
+    visitor.visit_source(source)
+    occurrences = visitor.get_occurrences(
+        'old',
+        Position(source, 3, 8))
+
+    assert [Position(source, 3, 8)] == occurrences
+
+
+def test_renames_global_variable():
+    source = make_source("""
+    b = 12
+
+    def bar(self):
+        global b
+        b = 20
+    """)
+    visitor = Names()
+
+    visitor.visit_source(source)
+    occurrences = visitor.get_occurrences(
+        'b',
+        Position(source, 1, 0))
+
+    assert [
+        Position(source, 1, 0),
+        Position(source, 4, 11),
+        Position(source, 5, 4)] == occurrences
+
+
+def test_dogfooding():
+    """Make sure we can read and process a realistic file."""
+    with open(os.path.join('breakfast', 'names.py'), 'r') as source_file:
+        source = Source(
+            lines=[l[:-1] for l in source_file.readlines()],
+            module_name='breakfast.names',
+            file_name='breakfast/names.py')
+
+    visitor = Names()
+
+    visitor.visit_source(source)
+    assert visitor.get_occurrences(
+        'whatever',
+        Position(source, 3, 8)) == []
+
 # TODO: rename methods on super calls
-# TODO: rename methods from multiple inheritance
-# TODO: recognize 'cls' argument in @classmethods
+# TODO: calls in the middle of an attribute: foo.bar().qux
+# def test_renames_method_in_super_call():
+#     source = make_source("""
+#     class Foo:
+
+#         def bar(self):
+#             pass
+
+
+#     class Bar(Foo):
+
+#         def bar(self):
+#             super(Bar, self).bar()
+#     """)
+
+#     visitor = Names()
+
+#     visitor.visit_source(source)
+#     occurrences = visitor.get_occurrences(
+#         'bar',
+#         Position(source, 3, 8))
+
+#     assert [
+#         Position(source, 3, 8),
+#         Position(source, 10, 26)] == occurrences
+
 # TODO: rename 'global' variables
 # TODO: rename 'nonlocal' variables
-# TODO: rename property setters
+# TODO: rename property getters setters and deleters
 # TODO: import as

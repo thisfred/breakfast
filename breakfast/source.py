@@ -66,12 +66,15 @@ class Source(object):
         self.changes[line_number] = modified_line
 
     def find_after(self, name, start):
-        while not self.get_string_starting_at(start).startswith(name):
-            start = start + 1
-            if len(self.lines[start.row]) < start.column:
-                start = start.copy(row=start.row + 1, column=0)
+        regex = re.compile('\\b{}\\b'.format(name))
+        match = regex.search(self.get_string_starting_at(start))
+        lines = len(self.lines)
+        while start.row <= lines and not match:
+            start = start.copy(row=start.row + 1, column=0)
+            match = regex.search(self.get_string_starting_at(start))
 
-        return start
+        if match:
+            return start.copy(column=start.column + match.span()[0])
 
     def get_string_starting_at(self, position):
         return self.lines[position.row][position.column:]
