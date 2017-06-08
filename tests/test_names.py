@@ -1,4 +1,7 @@
 import os
+import sys
+
+import pytest
 
 from breakfast.names import Names, is_prefix
 from breakfast.position import Position
@@ -582,7 +585,7 @@ def test_fails_to_rename_builtins():
     assert [] == visitor.get_occurrences('print', Position(source, 4, 8))
 
 
-def test_renames_method_in_imported_subclass():
+def test_finds_method_in_imported_subclass():
     source = make_source("""
     class A:
 
@@ -618,7 +621,7 @@ def test_renames_method_in_imported_subclass():
         Position(source, 3, 8)] == occurrences
 
 
-def test_renames_method_in_renamed_instance_of_subclass():
+def test_finds_method_in_renamed_instance_of_subclass():
     source = make_source("""
     class A:
 
@@ -645,7 +648,7 @@ def test_renames_method_in_renamed_instance_of_subclass():
         Position(source, 11, 2)] == occurrences
 
 
-def test_renames_global_variable_in_method_scope():
+def test_finds_global_variable_in_method_scope():
     source = make_source("""
     b = 12
 
@@ -688,11 +691,11 @@ def test_treats_staticmethod_args_correctly():
     assert [Position(source, 3, 8)] == occurrences
 
 
-def test_renames_global_variable():
+def test_finds_global_variable():
     source = make_source("""
     b = 12
 
-    def bar(self):
+    def bar():
         global b
         b = 20
     """)
@@ -707,6 +710,73 @@ def test_renames_global_variable():
         Position(source, 1, 0),
         Position(source, 4, 11),
         Position(source, 5, 4)] == occurrences
+
+
+@pytest.mark.skipif(sys.version_info < (3, 0),
+                    reason="requires python 3.0 or higher")
+def test_finds_nonlocal_variable():
+    source = make_source("""
+    b = 12
+
+    def foo():
+        b = 20
+        def bar():
+            nonlocal b
+            b = 20
+        return b
+        b = 1
+
+    print(b)
+    """)
+    visitor = Names()
+
+    visitor.visit_source(source)
+    occurrences = visitor.get_occurrences(
+        'b',
+        Position(source, 4, 4))
+
+    assert [
+        Position(source, 4, 4),
+        Position(source, 6, 17),
+        Position(source, 7, 8),
+        Position(source, 8, 11),
+        Position(source, 9, 4)] == occurrences
+
+
+def test_finds_method_in_aliased_imported_subclass():
+    source = make_source("""
+    class A:
+
+        def old(self):
+            pass
+    """, module_name='foo')
+    other_source = make_source("""
+    from foo import A as D
+
+    class B(D):
+
+        def foo(self):
+            self.old()
+
+    class C(D):
+
+        def old(self):
+            pass
+
+        def bar(self):
+            self.old()
+    """, module_name='bar')
+    visitor = Names()
+
+    visitor.visit_source(source)
+    visitor.visit_source(other_source)
+
+    occurrences = visitor.get_occurrences(
+        'old',
+        Position(source, 3, 8))
+    assert [
+        Position(other_source, 6, 13),
+        Position(source, 3, 8)] == occurrences
 
 
 def test_dogfooding():
@@ -724,9 +794,10 @@ def test_dogfooding():
         'whatever',
         Position(source, 3, 8)) == []
 
+
 # TODO: rename methods on super calls
 # TODO: calls in the middle of an attribute: foo.bar().qux
-# def test_renames_method_in_super_call():
+# def test_finds_method_in_super_call():
 #     source = make_source("""
 #     class Foo:
 
@@ -751,7 +822,4 @@ def test_dogfooding():
 #         Position(source, 3, 8),
 #         Position(source, 10, 26)] == occurrences
 
-# TODO: rename 'global' variables
-# TODO: rename 'nonlocal' variables
-# TODO: rename property getters setters and deleters
 # TODO: import as

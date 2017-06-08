@@ -69,6 +69,10 @@ class Collector:
         full_name = self.get_namespaced(name)
         self._rewrites[full_name] = full_name[:1] + full_name[-1:]
 
+    def add_nonlocal(self, name):
+        full_name = self.get_namespaced(name)
+        self._rewrites[full_name] = full_name[:-2] + full_name[-1:]
+
     def add_scope(self, name, is_method=False):
         if is_method:
             self._method_scopes.add(self.get_namespaced(name))
@@ -284,10 +288,15 @@ class Names(NodeVisitor):
         start = self._position_from_node(node)
         for imported in node.names:
             name = imported.name
+            alias = imported.asname
             full_name = (node.module, name)
-            self.collector.add_import(name, full_name)
+            self.collector.add_import(alias or name, full_name)
             position = self.current_source.find_after(name, start)
             self.collector.add_occurrence(name, position)
+            if alias:
+                position = self.current_source.find_after(alias, start)
+                self.collector.add_definition(alias, position)
+
 
     def visit_Attribute(self, node):  # noqa
         start = self._position_from_node(node)
@@ -326,6 +335,13 @@ class Names(NodeVisitor):
             self.collector.add_global(name)
 
         self.generic_visit(node)
+
+    def visit_Nonlocal(self, node):  # noqa
+        start = self._position_from_node(node)
+        for name in node.names:
+            position = self.current_source.find_after(name, start)
+            self.collector.add_occurrence(name, position)
+            self.collector.add_nonlocal(name)
 
     def _comp_visit(self, node, *rest):
         position = self._position_from_node(node)
