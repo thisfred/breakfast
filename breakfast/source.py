@@ -2,9 +2,6 @@ import re
 from ast import parse
 from functools import total_ordering
 
-from breakfast.position import Position
-from breakfast.names import Names
-
 
 @total_ordering
 class Source(object):
@@ -25,21 +22,6 @@ class Source(object):
 
     def __gt__(self, other):
         return other.module_name < self.module_name
-
-    def rename(self, row, column, new_name, additional_sources=None):
-        position = Position(self, row=row, column=column)
-        old_name = self.get_name_at(position)
-        visitor = Names()
-        visitor.visit_source(self)
-        for source in additional_sources or []:
-            visitor.visit_source(source)
-
-        for occurrence in reversed(visitor.get_occurrences(old_name,
-                                                           position)):
-            occurrence.source.replace(
-                position=occurrence,
-                old=old_name,
-                new=new_name)
 
     def get_name_at(self, position):
         return self.word.search(self.get_string_starting_at(position)).group()

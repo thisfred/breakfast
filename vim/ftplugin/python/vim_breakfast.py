@@ -1,9 +1,11 @@
+from breakfast.main import Application
 from breakfast.source import Source
 
 
 def do_rename(buffer_contents, row, column, new_name):
     source = Source(buffer_contents, module_name='module')
-    source.rename(
+    application = Application(source)
+    application.rename(
         row=row,
         column=column,
         new_name=new_name)
