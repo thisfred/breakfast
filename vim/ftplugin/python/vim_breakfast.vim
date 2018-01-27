@@ -18,9 +18,11 @@ vim.command('up')
 move_to_start_of_word(vim)
 
 old_name = vim.eval('expand("<cword>")')
+cwd = vim.eval('getcwd()')
 new_name = user_input(vim, "rename {} to".format(old_name))
 (row, column) = vim.current.window.cursor
-for i, line in do_rename(buffer_contents=current,
+for i, line in do_rename(root=cwd,
+                         buffer_contents=current,
                          row=row-1,
                          column=column,
                          new_name=new_name):

@@ -126,8 +126,8 @@ class Collector:
                 else:
                     definition = self._get_from_outer_scope(name)
                     if definition and definition in self._definitions:
-                        self._occurrences[
-                            definition] += self._occurrences[name]
+                        self._occurrences[definition] += self._occurrences[
+                            name]
                 del self._occurrences[name]
 
     def _get_from_outer_scope(self, name):
@@ -211,7 +211,8 @@ class Names(NodeVisitor):
 
     def visit_source(self, source):
         self.current_source = source
-        self.visit(self.current_source.get_ast())
+        parsed = self.current_source.get_ast()
+        self.visit(parsed)
 
     def get_occurrences(self, _, position):
         return self.collector.get_positions(position)
@@ -235,9 +236,7 @@ class Names(NodeVisitor):
             row_offset=len(node.decorator_list),
             column_offset=len("class "))
         self.collector.add_class(node.name)
-        self.collector.add_definition(
-            name=node.name,
-            position=position)
+        self.collector.add_definition(name=node.name, position=position)
         for base in node.bases:
             self.collector.add_superclass(node.name, base.id)
             self.visit(base)
@@ -250,9 +249,7 @@ class Names(NodeVisitor):
             node=node,
             row_offset=len(node.decorator_list),
             column_offset=len("def "))
-        self.collector.add_definition(
-            name=node.name,
-            position=position)
+        self.collector.add_definition(name=node.name, position=position)
         is_static = is_staticmethod(node)
         with self.collector.enter_function(node.name):
             for i, arg in enumerate(node.args.args):
@@ -270,8 +267,7 @@ class Names(NodeVisitor):
             for keyword in node.keywords:
                 position = self.current_source.find_after(keyword.arg, start)
                 self.collector.add_occurrence(
-                    name=keyword.arg,
-                    position=position)
+                    name=keyword.arg, position=position)
         for arg in node.args:
             self.visit(arg)
         for keyword in node.keywords:
@@ -296,7 +292,6 @@ class Names(NodeVisitor):
             if alias:
                 position = self.current_source.find_after(alias, start)
                 self.collector.add_definition(alias, position)
-
 
     def visit_Attribute(self, node):  # noqa
         start = self._position_from_node(node)
@@ -374,9 +369,7 @@ class Names(NodeVisitor):
 
         # python 3
         position = self._position_from_node(arg)
-        self.collector.add_definition(
-            name=arg.arg,
-            position=position)
+        self.collector.add_definition(name=arg.arg, position=position)
 
     def _names_from(self, node):
         if isinstance(node, Name):

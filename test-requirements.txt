@@ -1,6 +1,7 @@
-astunparse
 coverage
 flake8
+isort
 pytest
 pytest-xdist
 rerun
+yapf

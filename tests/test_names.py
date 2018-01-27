@@ -2,11 +2,11 @@ import os
 import sys
 
 import pytest
+from tests import make_source
 
 from breakfast.names import Names, is_prefix
 from breakfast.position import Position
 from breakfast.source import Source
-from tests import make_source
 
 
 def test_is_prefix_fails_when_paths_are_equal():
@@ -779,6 +779,27 @@ def test_finds_method_in_aliased_imported_subclass():
         Position(source, 3, 8)] == occurrences
 
 
+def test_finds_multiple_definitions():
+    source = make_source("""
+    a = 12
+    if a > 10:
+        b = a + 100
+    else:
+        b = 3 - a
+    print(b)
+    """)
+    visitor = Names()
+
+    visitor.visit_source(source)
+    occurrences = visitor.get_occurrences(
+        'b',
+        Position(source, 3, 4))
+    assert [
+        Position(source, 3, 4),
+        Position(source, 5, 4),
+        Position(source, 6, 6)] == occurrences
+
+
 def test_dogfooding():
     """Make sure we can read and process a realistic file."""
     with open(os.path.join('breakfast', 'names.py'), 'r') as source_file:
@@ -795,31 +816,32 @@ def test_dogfooding():
         Position(source, 3, 8)) == []
 
 
+@pytest.mark.skip()
+def test_finds_method_in_super_call():
+    source = make_source("""
+    class Foo:
+
+        def bar(self):
+            pass
+
+
+    class Bar(Foo):
+
+        def bar(self):
+            super(Bar, self).bar()
+    """)
+
+    visitor = Names()
+
+    visitor.visit_source(source)
+    occurrences = visitor.get_occurrences(
+        'bar',
+        Position(source, 3, 8))
+
+    assert [
+        Position(source, 3, 8),
+        Position(source, 10, 26)] == occurrences
+
 # TODO: rename methods on super calls
 # TODO: calls in the middle of an attribute: foo.bar().qux
-# def test_finds_method_in_super_call():
-#     source = make_source("""
-#     class Foo:
-
-#         def bar(self):
-#             pass
-
-
-#     class Bar(Foo):
-
-#         def bar(self):
-#             super(Bar, self).bar()
-#     """)
-
-#     visitor = Names()
-
-#     visitor.visit_source(source)
-#     occurrences = visitor.get_occurrences(
-#         'bar',
-#         Position(source, 3, 8))
-
-#     assert [
-#         Position(source, 3, 8),
-#         Position(source, 10, 26)] == occurrences
-
 # TODO: import as
