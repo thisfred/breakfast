@@ -35,10 +35,13 @@ class NameSpace:
             child = self._children[name]
             if position in child.occurrences:
                 return child.occurrences
+
         for child in self._children.values():
             occurrences = child.find_occurrences(name, position)
             if occurrences is not None:
                 return occurrences
+
+        return []
 
 
 class NameVisitor(NodeVisitor):
@@ -68,6 +71,12 @@ class NameVisitor(NodeVisitor):
             name=node.name,
             position=position,
             is_definition=True)
+        for arg in node.args.args:
+            position = self._position_from_node(arg)
+            self.current.add_name(
+                name=arg.arg,
+                position=position,
+                is_definition=True)
         self.generic_visit(node)
         self.current = old
 
@@ -98,6 +107,23 @@ class NameVisitor(NodeVisitor):
             is_definition=self._is_definition(node),
             force=True)
         self.current = old
+
+    def visit_Call(self, node):  # noqa
+        self.visit(node.func)
+        old = self.current
+        for name in self._names_from(node.func):
+            self.current = self.current.get_name(name)
+        start = self._position_from_node(node)
+        for keyword in node.keywords:
+            position = self.current_source.find_after(keyword.arg, start)
+            self.current.add_name(
+                name=keyword.arg,
+                position=position)
+        self.current = old
+        for arg in node.args:
+            self.visit(arg)
+        for keyword in node.keywords:
+            self.visit(keyword.value)
 
     @staticmethod
     def _is_definition(node):
@@ -236,4 +262,22 @@ def test_finds_method_names():
                 pass
 
         unbound = A.new
+        """)
+
+
+def test_finds_parameters():
+    assert_renames(
+        row=1,
+        column=8,
+        old_name='arg',
+        old_source="""
+        def fun(arg, arg2):
+            return arg + arg2
+        fun(arg=1, arg2=2)
+        """,
+        new_name='new',
+        new_source="""
+        def fun(new, arg2):
+            return new + arg2
+        fun(new=1, arg2=2)
         """)
