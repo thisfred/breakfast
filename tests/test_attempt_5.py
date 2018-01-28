@@ -16,27 +16,27 @@ class NameSpace:
         self.points_to = None
         self._aliases = []
 
-    def add_name(self, name, position, force=False):
-        return self._add_name(name, position, force=force)
+    def add_occurrence(self, name, position, force=False):
+        return self.add_name(name, position, force=force)
 
     def add_definition(self, name, position):
-        return self._add_name(name, position, force=True)
+        return self.add_name(name, position, force=True)
 
     def add_function_definition(self, name, position):
-        return self._add_name(
+        return self.add_name(
             name,
             position,
             force=True,
             cls=self if self._is_class else None)
 
     def add_static_method(self, name, position):
-        return self._add_name(name, position, force=True)
+        return self.add_name(name, position, force=True)
 
     def add_class_definition(self, name, position):
-        return self._add_name(name, position, force=True, is_class=True)
+        return self.add_name(name, position, force=True, is_class=True)
 
     def add_parameter(self, name, number, position):
-        parameter = self._add_name(name, position, force=True)
+        parameter = self.add_name(name, position, force=True)
         if number == 0 and self._enclosing_class:
             self._enclosing_class.add_alias(parameter)
         return parameter
@@ -70,18 +70,18 @@ class NameSpace:
 
         return []
 
-    def add_occurrence(self, position):
-        self.occurrences.append(position)
+    def _add_child(self, name, position, is_class, cls):
+        new = NameSpace(self, is_class=is_class, cls=cls)
+        self._children[name] = new
+        self._add_child_occurrence(name, position)
 
-    def _add_name(self, name, position, force, is_class=False, cls=None):
+    def add_name(self, name, position, force, is_class=False, cls=None):
         if name in self._children:
-            self._children[name].add_occurrence(position)
+            self._add_child_occurrence(name, position)
         elif force or self._parent is None:
-            new = NameSpace(self, is_class=is_class, cls=cls)
-            self._children[name] = new
-            self._children[name].add_occurrence(position)
+            self._add_child(name, position, is_class=is_class, cls=cls)
         else:
-            return self._parent._add_name(
+            return self._parent.add_name(
                 name,
                 position,
                 force=force,
@@ -89,6 +89,9 @@ class NameSpace:
                 cls=cls)
 
         return self._children[name]
+
+    def _add_child_occurrence(self, name, position):
+        self._children[name].occurrences.append(position)
 
 
 class NameVisitor(NodeVisitor):
@@ -108,7 +111,7 @@ class NameVisitor(NodeVisitor):
         if self._is_definition(node):
             self.current.add_definition(node.id, position)
         else:
-            self.current.add_name(node.id, position)
+            self.current.add_occurrence(node.id, position)
 
     def visit_FunctionDef(self, node):  # noqa
         position = self._position_from_node(
@@ -160,7 +163,7 @@ class NameVisitor(NodeVisitor):
                 name=name,
                 position=position)
         else:
-            self.current.add_name(
+            self.current.add_occurrence(
                 name=name,
                 position=position,
                 force=True)
@@ -174,7 +177,7 @@ class NameVisitor(NodeVisitor):
         start = self._position_from_node(node)
         for keyword in node.keywords:
             position = self.current_source.find_after(keyword.arg, start)
-            self.current.add_name(
+            self.current.add_occurrence(
                 name=keyword.arg,
                 position=position)
         self.current = old
@@ -216,7 +219,7 @@ class NameVisitor(NodeVisitor):
         # never clash with an actual Python name.
         name = 'comprehension-%s-%s' % (position.row, position.column)
         old = self.current
-        self.current = self.current.add_name(
+        self.current = self.current.add_occurrence(
             name=name,
             position=position)
         for generator in node.generators:
