@@ -49,7 +49,10 @@ class NameSpace:
         self.points_to = cls
 
     def get_namespace(self, name):
-        ns = self._children[name]
+        ns = self._children.get(name)
+        if ns is None:
+            # TODO this is naive and will break
+            ns = self._parent.get_namespace(name)
         while ns.points_to:
             ns = ns.points_to
         return ns
@@ -62,7 +65,7 @@ class NameSpace:
 
         for child in self._children.values():
             occurrences = child.find_occurrences(name, position)
-            if occurrences is not None:
+            if occurrences:
                 return occurrences
 
         return []
@@ -190,6 +193,30 @@ class NameVisitor(NodeVisitor):
             value = value.get_namespace(name)
         value.add_alias(target)
 
+    def visit_DictComp(self, node):  # noqa
+        self._comp_visit(node, node.key, node.value)
+
+    def visit_SetComp(self, node):  # noqa
+        self._comp_visit(node, node.elt)
+
+    def visit_ListComp(self, node):  # noqa
+        self._comp_visit(node, node.elt)
+
+    def _comp_visit(self, node, *rest):
+        position = self._position_from_node(node)
+        # Invent a name for the ad hoc scope. The dashes make sure it can
+        # never clash with an actual Python name.
+        name = 'comprehension-%s-%s' % (position.row, position.column)
+        old = self.current
+        self.current = self.current.add_name(
+            name=name,
+            position=position)
+        for generator in node.generators:
+            self.visit(generator)
+        for sub_node in rest:
+            self.visit(sub_node)
+        self.current = old
+
     @staticmethod
     def _is_definition(node):
         return isinstance(node.ctx, (Param, Store))
@@ -217,13 +244,13 @@ class NameVisitor(NodeVisitor):
         return tuple()
 
 
-def find_occurrences(*, source, old_name, position):
+def find_occurrences(source, old_name, position):
     visitor = NameVisitor()
     visitor.visit_source(source)
     return visitor.top.find_occurrences(old_name, position)
 
 
-def rename(*, source, old_name, new_name, position):
+def rename(source, old_name, new_name, position):
     for occurrence in find_occurrences(source=source,
                                        old_name=old_name,
                                        position=position):
@@ -231,7 +258,7 @@ def rename(*, source, old_name, new_name, position):
     return source.render()
 
 
-def assert_renames(*, row, column, old_name, old_source, new_name, new_source):
+def assert_renames(row, column, old_name, old_source, new_name, new_source):
     source = make_source(old_source)
     renamed = rename(
         source=source,
@@ -477,4 +504,77 @@ def test_does_not_find_method_of_unrelated_class():
         """)
 
 
+def test_finds_definition_from_call():
+    assert_renames(
+        row=5,
+        column=4,
+        old_name='old',
+        old_source="""
+        def old():
+            pass
+
+        def bar():
+            old()
+        """,
+        new_name='new',
+        new_source="""
+        def new():
+            pass
+
+        def bar():
+            new()
+        """)
+
+
+def test_finds_attribute_assignments():
+    assert_renames(
+        row=7,
+        column=20,
+        old_name='property',
+        old_source="""
+        class ClassName:
+
+            def __init__(self, property):
+                self.property = property
+
+            def get_property(self):
+                return self.property
+        """,
+        new_name='new_property',
+        new_source="""
+        class ClassName:
+
+            def __init__(self, property):
+                self.new_property = property
+
+            def get_property(self):
+                return self.new_property
+        """)
+
+
+def test_finds_dict_comprehension_variables():
+    assert_renames(
+        row=2,
+        column=42,
+        old_name='old',
+        old_source="""
+        old = 100
+        foo = {old: None for old in range(100) if old % 3}
+        """,
+        new_name='new',
+        new_source="""
+        old = 100
+        foo = {new: None for new in range(100) if new % 3}
+        """
+        )
+
+# TODO: calls in the middle of an attribute: foo.bar().qux
+# TODO: import as
 # TODO: rename parameter default value
+# TODO: rename something in a function body that is defined after the function:
+#
+# def bar():
+#     old()
+#
+# def old():
+#     pass
