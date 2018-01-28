@@ -1,4 +1,4 @@
-from ast import Attribute, Call, Name, NodeVisitor, Param, Store
+from ast import Attribute, Call, Name, NodeVisitor, Param, Store, Tuple
 
 from tests import make_source
 
@@ -185,13 +185,21 @@ class NameVisitor(NodeVisitor):
 
     def visit_Assign(self, node):  # noqa
         self.generic_visit(node)
-        target = self.current
-        for name in self._names_from(node.targets[0]):
-            target = target.get_namespace(name)
-        value = self.current
-        for name in self._names_from(node.value):
-            value = value.get_namespace(name)
-        value.add_alias(target)
+        if isinstance(node.value, Tuple):
+            # multiple assignment
+            values = [v for v in node.value.elts]
+            targets = [t for t in node.targets[0].elts]
+        else:
+            values = [node.value]
+            targets = [node.targets[0]]
+        for target, value in zip(targets, values):
+            target_ns = self.current
+            for name in self._names_from(target):
+                target_ns = target_ns.get_namespace(name)
+            value_ns = self.current
+            for name in self._names_from(value):
+                value_ns = value_ns.get_namespace(name)
+            value_ns.add_alias(target_ns)
 
     def visit_DictComp(self, node):  # noqa
         self._comp_visit(node, node.key, node.value)
@@ -565,8 +573,117 @@ def test_finds_dict_comprehension_variables():
         new_source="""
         old = 100
         foo = {new: None for new in range(100) if new % 3}
-        """
-        )
+        """)
+
+
+def test_finds_list_comprehension_variables():
+    assert_renames(
+        row=3,
+        column=12,
+        old_name='old',
+        old_source="""
+        old = 100
+        foo = [
+            old for old in range(100) if old % 3]
+        """,
+        new_name='new',
+        new_source="""
+        old = 100
+        foo = [
+            new for new in range(100) if new % 3]
+        """)
+
+
+def test_finds_set_comprehension_variables():
+    assert_renames(
+        row=2,
+        column=7,
+        old_name='old',
+        old_source="""
+        old = 100
+        foo = {old for old in range(100) if old % 3}
+        """,
+        new_name='new',
+        new_source="""
+        old = 100
+        foo = {new for new in range(100) if new % 3}
+        """)
+
+
+def test_finds_for_loop_variables():
+    # Note that we could have chosen to treat the top level 'old' variable as
+    # distinct from the loop variable, but since loop variables live on after
+    # the loop, that would potentially change the behavior of the code.
+    assert_renames(
+        row=2,
+        column=7,
+        old_name='old',
+        old_source="""
+        old = None
+        for i, old in enumerate(['foo']):
+            print(i)
+            print(old)
+        print(old)
+        """,
+        new_name='new',
+        new_source="""
+        new = None
+        for i, new in enumerate(['foo']):
+            print(i)
+            print(new)
+        print(new)
+        """)
+
+
+def test_finds_tuple_unpack():
+    assert_renames(
+        row=1,
+        column=5,
+        old_name='old',
+        old_source="""
+        foo, old = 1, 2
+        print(old)
+        """,
+        new_name='new',
+        new_source="""
+        foo, new = 1, 2
+        print(new)
+        """)
+
+
+def test_recognizes_multiple_assignments():
+    assert_renames(
+        row=2,
+        column=8,
+        old_name='old',
+        old_source="""
+        class A:
+            def old(self):
+                pass
+
+        class B:
+            def old(self):
+                pass
+
+        foo, bar = A(), B()
+        foo.old()
+        bar.old()
+        """,
+        new_name='new',
+        new_source="""
+        class A:
+            def new(self):
+                pass
+
+        class B:
+            def old(self):
+                pass
+
+        foo, bar = A(), B()
+        foo.new()
+        bar.old()
+        """)
+
 
 # TODO: calls in the middle of an attribute: foo.bar().qux
 # TODO: import as
