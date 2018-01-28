@@ -1,4 +1,4 @@
-from ast import Attribute, Name, NodeVisitor, Param, Store
+from ast import Attribute, Call, Name, NodeVisitor, Param, Store
 
 from tests import make_source
 
@@ -7,28 +7,52 @@ from breakfast.position import Position
 
 class NameSpace:
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, is_class=False, cls=None):
         self._parent = parent
         self._children = {}
         self.occurrences = []
+        self._is_class = is_class
+        self._enclosing_class = cls
+        self.points_to = None
+        self._aliases = []
 
-    def add_name(self, name, position, is_definition=False, force=False):
-        if name in self._children:
-            self._children[name].add_occurrence(position)
-        elif is_definition or force or self._parent is None:
-            new = NameSpace(self)
-            self._children[name] = new
-            self._children[name].add_occurrence(position)
-        else:
-            return self._parent.add_name(name, position, is_definition)
+    def add_name(self, name, position, force=False):
+        return self._add_name(name, position, force=force)
 
-        return self._children[name]
+    def add_definition(self, name, position):
+        return self._add_name(name, position, force=True)
 
-    def get_name(self, name):
-        return self._children[name]
+    def add_function_definition(self, name, position):
+        return self._add_name(
+            name,
+            position,
+            force=True,
+            cls=self if self._is_class else None)
 
-    def add_occurrence(self, position):
-        self.occurrences.append(position)
+    def add_static_method(self, name, position):
+        return self._add_name(name, position, force=True)
+
+    def add_class_definition(self, name, position):
+        return self._add_name(name, position, force=True, is_class=True)
+
+    def add_parameter(self, name, number, position):
+        parameter = self._add_name(name, position, force=True)
+        if number == 0 and self._enclosing_class:
+            self._enclosing_class.add_alias(parameter)
+        return parameter
+
+    def add_alias(self, alias):
+        self._aliases.append(alias)
+        alias.set_points_to(self)
+
+    def set_points_to(self, cls):
+        self.points_to = cls
+
+    def get_namespace(self, name):
+        ns = self._children[name]
+        while ns.points_to:
+            ns = ns.points_to
+        return ns
 
     def find_occurrences(self, name, position):
         if name in self._children:
@@ -42,6 +66,26 @@ class NameSpace:
                 return occurrences
 
         return []
+
+    def add_occurrence(self, position):
+        self.occurrences.append(position)
+
+    def _add_name(self, name, position, force, is_class=False, cls=None):
+        if name in self._children:
+            self._children[name].add_occurrence(position)
+        elif force or self._parent is None:
+            new = NameSpace(self, is_class=is_class, cls=cls)
+            self._children[name] = new
+            self._children[name].add_occurrence(position)
+        else:
+            return self._parent._add_name(
+                name,
+                position,
+                force=force,
+                is_class=is_class,
+                cls=cls)
+
+        return self._children[name]
 
 
 class NameVisitor(NodeVisitor):
@@ -58,8 +102,10 @@ class NameVisitor(NodeVisitor):
 
     def visit_Name(self, node):  # noqa
         position = self._position_from_node(node)
-        self.current.add_name(
-            node.id, position, is_definition=self._is_definition(node))
+        if self._is_definition(node):
+            self.current.add_definition(node.id, position)
+        else:
+            self.current.add_name(node.id, position)
 
     def visit_FunctionDef(self, node):  # noqa
         position = self._position_from_node(
@@ -67,16 +113,22 @@ class NameVisitor(NodeVisitor):
             row_offset=len(node.decorator_list),
             column_offset=len("def "))
         old = self.current
-        self.current = self.current.add_name(
-            name=node.name,
-            position=position,
-            is_definition=True)
-        for arg in node.args.args:
+        if self._is_staticmethod(node):
+            self.current = self.current.add_static_method(
+                name=node.name,
+                position=position)
+        else:
+            self.current = self.current.add_function_definition(
+                name=node.name,
+                position=position)
+        for i, arg in enumerate(node.args.args):
             position = self._position_from_node(arg)
-            self.current.add_name(
+            self.current.add_parameter(
                 name=arg.arg,
-                position=position,
-                is_definition=True)
+                number=i,
+                position=position)
+            # if i == 0 and in_method and not is_static:
+            #     self._add_class_alias(arg)
         self.generic_visit(node)
         self.current = old
 
@@ -86,10 +138,9 @@ class NameVisitor(NodeVisitor):
             row_offset=len(node.decorator_list),
             column_offset=len("class "))
         old = self.current
-        self.current = self.current.add_name(
+        self.current = self.current.add_class_definition(
             name=node.name,
-            position=position,
-            is_definition=True)
+            position=position)
         self.generic_visit(node)
         self.current = old
 
@@ -97,22 +148,26 @@ class NameVisitor(NodeVisitor):
         self.visit(node.value)
         old = self.current
         for name in self._names_from(node.value):
-            self.current = self.current.get_name(name)
+            self.current = self.current.get_namespace(name)
         name = node.attr
         start = self._position_from_node(node)
         position = self.current_source.find_after(name, start)
-        self.current.add_name(
-            name=name,
-            position=position,
-            is_definition=self._is_definition(node),
-            force=True)
+        if self._is_definition(node):
+            self.current.add_definition(
+                name=name,
+                position=position)
+        else:
+            self.current.add_name(
+                name=name,
+                position=position,
+                force=True)
         self.current = old
 
     def visit_Call(self, node):  # noqa
         self.visit(node.func)
         old = self.current
         for name in self._names_from(node.func):
-            self.current = self.current.get_name(name)
+            self.current = self.current.get_namespace(name)
         start = self._position_from_node(node)
         for keyword in node.keywords:
             position = self.current_source.find_after(keyword.arg, start)
@@ -125,9 +180,23 @@ class NameVisitor(NodeVisitor):
         for keyword in node.keywords:
             self.visit(keyword.value)
 
+    def visit_Assign(self, node):  # noqa
+        self.generic_visit(node)
+        target = self.current
+        for name in self._names_from(node.targets[0]):
+            target = target.get_namespace(name)
+        value = self.current
+        for name in self._names_from(node.value):
+            value = value.get_namespace(name)
+        value.add_alias(target)
+
     @staticmethod
     def _is_definition(node):
         return isinstance(node.ctx, (Param, Store))
+
+    @staticmethod
+    def _is_staticmethod(node):
+        return any(n.id == 'staticmethod' for n in node.decorator_list)
 
     def _position_from_node(self, node, row_offset=0, column_offset=0):
         return Position(
@@ -141,6 +210,9 @@ class NameVisitor(NodeVisitor):
 
         if isinstance(node, Attribute):
             return self._names_from(node.value) + (node.attr,)
+
+        if isinstance(node, Call):
+            return self._names_from(node.func)
 
         return tuple()
 
@@ -273,11 +345,136 @@ def test_finds_parameters():
         old_source="""
         def fun(arg, arg2):
             return arg + arg2
+
         fun(arg=1, arg2=2)
         """,
         new_name='new',
         new_source="""
         def fun(new, arg2):
             return new + arg2
+
         fun(new=1, arg2=2)
         """)
+
+
+def test_finds_function():
+    assert_renames(
+        row=1,
+        column=4,
+        old_name='fun_old',
+        old_source="""
+        def fun_old():
+            return 'result'
+
+        result = fun_old()
+        """,
+        new_name='fun_new',
+        new_source="""
+        def fun_new():
+            return 'result'
+
+        result = fun_new()
+        """)
+
+
+def test_finds_class():
+    assert_renames(
+        row=1,
+        column=6,
+        old_name='OldClass',
+        old_source="""
+        class OldClass:
+            pass
+
+        instance = OldClass()
+        """,
+        new_name='NewClass',
+        new_source="""
+        class NewClass:
+            pass
+
+        instance = NewClass()
+        """)
+
+
+def test_finds_passed_argument():
+    assert_renames(
+        row=1,
+        column=0,
+        old_name='old',
+        old_source="""
+        old = 2
+
+        def fun(arg: int, arg2: int) -> int:
+            return arg + arg2
+
+        fun(1, old)
+        """,
+        new_name='new',
+        new_source="""
+        new = 2
+
+        def fun(arg: int, arg2: int) -> int:
+            return arg + arg2
+
+        fun(1, new)
+        """)
+
+
+def test_does_not_find_method_of_unrelated_class():
+    assert_renames(
+        row=3,
+        column=8,
+        old_name='old',
+        new_name='new',
+        old_source="""
+        class ClassThatShouldHaveMethodRenamed:
+
+            def old(self, arg):
+                pass
+
+            def foo(self):
+                self.old('whatever')
+
+
+        class UnrelatedClass:
+
+            def old(self, arg):
+                pass
+
+            def foo(self):
+                self.old('whatever')
+
+
+        a = ClassThatShouldHaveMethodRenamed()
+        a.old()
+        b = UnrelatedClass()
+        b.old()
+        """,
+        new_source="""
+        class ClassThatShouldHaveMethodRenamed:
+
+            def new(self, arg):
+                pass
+
+            def foo(self):
+                self.new('whatever')
+
+
+        class UnrelatedClass:
+
+            def old(self, arg):
+                pass
+
+            def foo(self):
+                self.old('whatever')
+
+
+        a = ClassThatShouldHaveMethodRenamed()
+        a.new()
+        b = UnrelatedClass()
+        b.old()
+        """)
+
+
+# TODO: rename parameter default value
