@@ -1,8 +1,7 @@
 from ast import Attribute, Call, Name, NodeVisitor, Param, Store, Tuple
 
-from tests import make_source
-
 from breakfast.position import Position
+from tests import make_source
 
 
 class NameSpace:
@@ -15,6 +14,11 @@ class NameSpace:
         self._enclosing_class = cls
         self.points_to = None
         self._aliases = []
+
+    def add_module(self, name):
+        new = NameSpace(self)
+        self._children[name] = new
+        return self._children[name]
 
     def add_occurrence(self, name, position, force=False):
         return self.add_name(name, position, force=force)
@@ -41,9 +45,9 @@ class NameSpace:
             self._enclosing_class.add_alias(parameter)
         return parameter
 
-    def add_alias(self, alias):
-        self._aliases.append(alias)
-        alias.set_points_to(self)
+    def add_alias(self, alias_namespace):
+        self._aliases.append(alias_namespace)
+        alias_namespace.set_points_to(self)
 
     def set_points_to(self, cls):
         self.points_to = cls
@@ -51,7 +55,6 @@ class NameSpace:
     def get_namespace(self, name):
         ns = self._children.get(name)
         if ns is None:
-            # TODO this is naive and will break
             ns = self._parent.get_namespace(name)
         while ns.points_to:
             ns = ns.points_to
@@ -72,8 +75,11 @@ class NameSpace:
 
     def _add_child(self, name, position, is_class, cls):
         new = NameSpace(self, is_class=is_class, cls=cls)
-        self._children[name] = new
+        self.set_namespace(name, new)
         self._add_child_occurrence(name, position)
+
+    def set_namespace(self, name, namespace):
+        self._children[name] = namespace
 
     def add_name(self, name, position, force, is_class=False, cls=None):
         if name in self._children:
@@ -105,6 +111,32 @@ class NameVisitor(NodeVisitor):
         self.current_source = source
         parsed = self.current_source.get_ast()
         self.visit(parsed)
+
+    def visit_Module(self, node):  # noqa
+        old = self.current
+        self.current = self.current.add_module(self.current_source.module_name)
+        self.generic_visit(node)
+        self.current = old
+
+    def visit_ImportFrom(self, node):  # noqa
+        start = self._position_from_node(node)
+        import_path = node.module.split('.')
+        import_namespace = self.top
+        for path in import_path:
+            import_namespace = import_namespace.get_namespace(path)
+        for imported in node.names:
+            name = imported.name
+            position = self.current_source.find_after(name, start)
+            original = import_namespace.add_occurrence(
+                name, position, force=True)
+            self.current.set_namespace(name, original)
+            alias = imported.asname
+            if alias:
+                alias_position = self.current_source.find_after(alias, start)
+                alias_namespace = self.current.add_definition(
+                    alias, alias_position)
+                original.add_alias(alias_namespace)
+                self.current.add_definition(alias, alias_position)
 
     def visit_Name(self, node):  # noqa
         position = self._position_from_node(node)
@@ -219,7 +251,7 @@ class NameVisitor(NodeVisitor):
         # never clash with an actual Python name.
         name = 'comprehension-%s-%s' % (position.row, position.column)
         old = self.current
-        self.current = self.current.add_occurrence(
+        self.current = self.current.add_definition(
             name=name,
             position=position)
         for generator in node.generators:
@@ -255,28 +287,40 @@ class NameVisitor(NodeVisitor):
         return tuple()
 
 
-def find_occurrences(source, old_name, position):
+def find_occurrences(sources, old_name, position):
     visitor = NameVisitor()
-    visitor.visit_source(source)
+    for source in sources:
+        visitor.visit_source(source)
     return visitor.top.find_occurrences(old_name, position)
 
 
-def rename(source, old_name, new_name, position):
-    for occurrence in find_occurrences(source=source,
+def rename(sources, old_name, new_name, position):
+    for occurrence in find_occurrences(sources=sources,
                                        old_name=old_name,
                                        position=position):
-        source.replace(occurrence, old_name, new_name)
-    return source.render()
+        occurrence.source.replace(occurrence, old_name, new_name)
+    return sources
 
 
 def assert_renames(row, column, old_name, old_source, new_name, new_source):
     source = make_source(old_source)
     renamed = rename(
-        source=source,
+        sources=[source],
         old_name=old_name,
         new_name=new_name,
         position=Position(source, row, column))
-    assert make_source(new_source).render() == renamed
+    assert make_source(new_source).render() == renamed[0].render()
+
+
+def assert_renames_multi_source(position, old_name, old_sources, new_name,
+                                new_sources):
+    renamed = rename(
+        sources=old_sources,
+        old_name=old_name,
+        new_name=new_name,
+        position=position)
+    for actual, expected in zip(renamed, new_sources):
+        assert make_source(expected).render() == actual.render()
 
 
 def test_does_not_rename_random_attributes():
@@ -638,6 +682,22 @@ def test_finds_for_loop_variables():
         """)
 
 
+def test_finds_enclosing_scope_variable_from_comprehension():
+    assert_renames(
+        row=2,
+        column=42,
+        old_name='old',
+        old_source="""
+        old = 3
+        res = [foo for foo in range(100) if foo % old]
+        """,
+        new_name='new',
+        new_source="""
+        new = 3
+        res = [foo for foo in range(100) if foo % new]
+        """)
+
+
 def test_finds_tuple_unpack():
     assert_renames(
         row=1,
@@ -686,6 +746,36 @@ def test_recognizes_multiple_assignments():
         foo.new()
         bar.old()
         """)
+
+
+def test_finds_across_sources():
+    source1 = make_source(
+        """
+        def old():
+            pass
+        """,
+        module_name='foo')
+    source2 = make_source(
+        """
+        from foo import old
+        old()
+        """,
+        module_name='bar')
+
+    assert_renames_multi_source(
+        position=Position(source=source2, row=2, column=0),
+        old_name='old',
+        old_sources=(source1, source2),
+        new_name='new',
+        new_sources=[
+            """
+            def new():
+                pass
+            """,
+            """
+            from foo import new
+            new()
+            """])
 
 
 # TODO: calls in the middle of an attribute: foo.bar().qux
