@@ -87,7 +87,11 @@ class NameSpace:
         elif force or self._parent is None:
             self._add_child(name, position, is_class=is_class, cls=cls)
         else:
-            return self._parent.add_name(
+            enclosing_scope = self._parent
+            # method bodies have no direct access to class namespace
+            if enclosing_scope._is_class:
+                enclosing_scope = enclosing_scope._parent
+            return enclosing_scope.add_name(
                 name,
                 position,
                 force=force,
@@ -559,6 +563,100 @@ def test_does_not_find_method_of_unrelated_class():
         """)
 
 
+def test_finds_static_method():
+    assert_renames(
+        row=4,
+        column=8,
+        old_name='old',
+        old_source="""
+        class A:
+
+            @staticmethod
+            def old(arg):
+                pass
+
+        a = A()
+        a.old('foo')
+        """,
+        new_name='new',
+        new_source="""
+        class A:
+
+            @staticmethod
+            def new(arg):
+                pass
+
+        a = A()
+        a.new('foo')
+        """)
+
+
+def test_finds_argument():
+    assert_renames(
+        row=8,
+        column=17,
+        old_name='arg',
+        old_source="""
+        class A:
+
+            def foo(self, arg):
+                print(arg)
+
+            def bar(self):
+                arg = "1"
+                self.foo(arg=arg)
+        """,
+        new_name='new_arg',
+        new_source="""
+        class A:
+
+            def foo(self, new_arg):
+                print(new_arg)
+
+            def bar(self):
+                arg = "1"
+                self.foo(new_arg=arg)
+        """)
+
+
+def test_finds_method_but_not_function():
+    assert_renames(
+        row=3,
+        column=8,
+        old_name='old',
+        old_source="""
+        class A:
+
+            def old(self):
+                pass
+
+            def foo(self):
+                self.old()
+
+            def bar(self):
+                old()
+
+        def old():
+            pass
+        """,
+        new_name='new',
+        new_source="""
+        class A:
+
+            def new(self):
+                pass
+
+            def foo(self):
+                self.new()
+
+            def bar(self):
+                old()
+
+        def old():
+            pass
+        """)
+
+
 def test_finds_definition_from_call():
     assert_renames(
         row=5,
@@ -778,13 +876,45 @@ def test_finds_across_sources():
             """])
 
 
+def test_finds_multiple_imports_on_one_line():
+    source1 = make_source(
+        """
+        def old():
+            pass
+
+        def bar():
+            pass
+        """,
+        module_name='foo')
+    source2 = make_source(
+        """
+        from foo import bar, old
+        old()
+        bar()
+        """,
+        module_name='bar')
+
+    assert_renames_multi_source(
+        position=Position(source=source2, row=2, column=0),
+        old_name='old',
+        old_sources=(source1, source2),
+        new_name='new',
+        new_sources=[
+            """
+            def new():
+                pass
+
+            def bar():
+                pass
+            """,
+            """
+            from foo import bar, new
+            new()
+            bar()
+            """])
+
+
 # TODO: calls in the middle of an attribute: foo.bar().qux
 # TODO: import as
 # TODO: rename parameter default value
 # TODO: rename something in a function body that is defined after the function:
-#
-# def bar():
-#     old()
-#
-# def old():
-#     pass
