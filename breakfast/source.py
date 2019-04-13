@@ -1,6 +1,7 @@
 import re
 from ast import parse
 from functools import total_ordering
+from typing import Dict
 
 
 @total_ordering
@@ -10,7 +11,7 @@ class Source(object):
 
     def __init__(self, lines, module_name='module', file_name=None):
         self.lines = lines
-        self.changes = {}  # type: Dict[int, str]
+        self.changes: Dict[int, str] = {}
         self.module_name = module_name
         self.file_name = file_name
 
