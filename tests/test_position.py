@@ -28,24 +28,24 @@ def test_substract():
 
 def test_compare():
     source = Source(lines=None)
-    assert (
-        Position(source=source, row=12, column=4) >
-        Position(source=source, row=11, column=4))
-    assert (
-        Position(source=source, row=12, column=4) >=
-        Position(source=source, row=11, column=4))
-    assert (
-        Position(source=source, row=12, column=4) !=
-        Position(source=source, row=11, column=4))
-    assert (
-        Position(source=source, row=12, column=4) !=
-        Position(source=source, row=11, column=4))
-    assert (
-        Position(source=source, row=12, column=4) ==
-        Position(source=source, row=12, column=4))
-    assert (
-        Position(source=source, row=12, column=3) <=
-        Position(source=source, row=12, column=4))
-    assert (
-        Position(source=source, row=12, column=3) <
-        Position(source=source, row=12, column=4))
+    assert Position(source=source, row=12, column=4) > Position(
+        source=source, row=11, column=4
+    )
+    assert Position(source=source, row=12, column=4) >= Position(
+        source=source, row=11, column=4
+    )
+    assert Position(source=source, row=12, column=4) != Position(
+        source=source, row=11, column=4
+    )
+    assert Position(source=source, row=12, column=4) != Position(
+        source=source, row=11, column=4
+    )
+    assert Position(source=source, row=12, column=4) == Position(
+        source=source, row=12, column=4
+    )
+    assert Position(source=source, row=12, column=3) <= Position(
+        source=source, row=12, column=4
+    )
+    assert Position(source=source, row=12, column=3) < Position(
+        source=source, row=12, column=4
+    )

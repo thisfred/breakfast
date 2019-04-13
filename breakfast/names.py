@@ -1,5 +1,13 @@
 from ast import (
-    Attribute, Call, Name, NodeVisitor, Param, Store, Subscript, Tuple)
+    Attribute,
+    Call,
+    Name,
+    NodeVisitor,
+    Param,
+    Store,
+    Subscript,
+    Tuple,
+)
 from collections import defaultdict
 from contextlib import contextmanager
 
@@ -7,7 +15,6 @@ from breakfast.position import Position
 
 
 class Collector:
-
     def __init__(self):
         self.in_method = False
         self._occurrences = defaultdict(list)
@@ -60,8 +67,9 @@ class Collector:
     def get_positions(self, position):
         self._post_process()
         for name, positions in self._occurrences.items():
-            if (name in self._definitions and
-                    any(position == p for p in positions)):
+            if name in self._definitions and any(
+                position == p for p in positions
+            ):
                 return sorted(positions)
         return []
 
@@ -126,18 +134,17 @@ class Collector:
                 else:
                     definition = self._get_from_outer_scope(name)
                     if definition and definition in self._definitions:
-                        self._occurrences[definition] += self._occurrences[
-                            name]
+                        self._occurrences[definition] += self._occurrences[name]
                 del self._occurrences[name]
 
     def _get_from_outer_scope(self, name):
         for scope in self._scopes:
             if is_prefix(scope, name):
-                return scope[:-1] + name[len(scope):]
+                return scope[:-1] + name[len(scope) :]
 
         for scope in self._method_scopes:
             if is_prefix(scope, name):
-                return scope[:-2] + name[len(scope):]
+                return scope[:-2] + name[len(scope) :]
 
     def _enter_namespace(self, name):
         self._current_namespace = self.get_namespaced(name)
@@ -157,8 +164,10 @@ class Collector:
             full_name = self._aliases[prefix] + full_name[-1:]
             prefix = full_name[:-1]
 
-        if (full_name not in self._definitions and
-                full_name[:-1] in self._classes):
+        if (
+            full_name not in self._definitions
+            and full_name[:-1] in self._classes
+        ):
             inherited = self._get_inherited_definition(full_name)
             if inherited:
                 return inherited
@@ -169,12 +178,13 @@ class Collector:
         for name in self._occurrences.copy():
             for alias in self._class_aliases:
                 if is_prefix(alias, name):
-                    new_name = (self._class_aliases[alias] + name[len(alias):])
+                    new_name = self._class_aliases[alias] + name[len(alias) :]
                     self._occurrences[new_name].extend(self._occurrences[name])
                     del self._occurrences[name]
                     if name in self._definitions:
                         self._definitions[new_name].extend(
-                            self._definitions[name])
+                            self._definitions[name]
+                        )
                         del self._definitions[name]
 
     def _get_inherited_definition(self, full_name):
@@ -204,7 +214,6 @@ class Collector:
 
 
 class Names(NodeVisitor):
-
     def __init__(self):
         self.current_source = None
         self.collector = Collector()
@@ -234,7 +243,8 @@ class Names(NodeVisitor):
         position = self._position_from_node(
             node=node,
             row_offset=len(node.decorator_list),
-            column_offset=len("class "))
+            column_offset=len("class "),
+        )
         self.collector.add_class(node.name)
         self.collector.add_definition(name=node.name, position=position)
         for base in node.bases:
@@ -248,7 +258,8 @@ class Names(NodeVisitor):
         position = self._position_from_node(
             node=node,
             row_offset=len(node.decorator_list),
-            column_offset=len("def "))
+            column_offset=len("def "),
+        )
         self.collector.add_definition(name=node.name, position=position)
         is_static = is_staticmethod(node)
         with self.collector.enter_function(node.name):
@@ -267,7 +278,8 @@ class Names(NodeVisitor):
             for keyword in node.keywords:
                 position = self.current_source.find_after(keyword.arg, start)
                 self.collector.add_occurrence(
-                    name=keyword.arg, position=position)
+                    name=keyword.arg, position=position
+                )
         for arg in node.args:
             self.visit(arg)
         for keyword in node.keywords:
@@ -341,7 +353,7 @@ class Names(NodeVisitor):
     def _comp_visit(self, node, *rest):
         position = self._position_from_node(node)
         # The dashes make sure it can never clash with an actual Python name.
-        name = 'comprehension-%s-%s' % (position.row, position.column)
+        name = "comprehension-%s-%s" % (position.row, position.column)
         # ns = self.current.add_namespace(
         #     name, inherit_namespace_from=self.current)
         self.collector.add_scope(name)
@@ -387,7 +399,8 @@ class Names(NodeVisitor):
         return Position(
             source=self.current_source,
             row=(node.lineno - 1) + row_offset,
-            column=node.col_offset + column_offset)
+            column=node.col_offset + column_offset,
+        )
 
     @staticmethod
     def _is_definition(node):
@@ -413,11 +426,11 @@ class Names(NodeVisitor):
 
 
 def is_staticmethod(node):
-    return any(n.id == 'staticmethod' for n in node.decorator_list)
+    return any(n.id == "staticmethod" for n in node.decorator_list)
 
 
 def is_prefix(prefix, full_name):
     if len(full_name) <= len(prefix):
         return False
 
-    return full_name[:len(prefix)] == prefix
+    return full_name[: len(prefix)] == prefix

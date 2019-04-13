@@ -1,0 +1,10 @@
+black
+coverage
+flake8
+flake8-bugbear
+isort
+mypy
+pytest
+pytest-testmon
+rerun
+typeshed

@@ -1,4 +1,5 @@
 import os
+
 from breakfast import modules
 
 ROOT = os.path.sep.join(os.path.dirname(__file__).split(os.path.sep)[:-1])
@@ -6,13 +7,15 @@ ROOT = os.path.sep.join(os.path.dirname(__file__).split(os.path.sep)[:-1])
 
 def test_reports_empty_importees():
     module = modules.Module(
-        path=os.path.join(ROOT, 'tests', 'data', 'module2.py'),
-        module_path='data.module2')
+        path=os.path.join(ROOT, "tests", "data", "module2.py"),
+        module_path="data.module2",
+    )
     assert module.get_imported_modules() == []
 
 
 def test_reports_importees():
     module = modules.Module(
-        path=os.path.join(ROOT, 'tests', 'data', 'module1.py'),
-        module_path='data.module1')
-    assert module.get_imported_modules() == ['tests.data.module2']
+        path=os.path.join(ROOT, "tests", "data", "module1.py"),
+        module_path="data.module1",
+    )
+    assert module.get_imported_modules() == ["tests.data.module2"]

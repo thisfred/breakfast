@@ -5,7 +5,6 @@ from tests import make_source
 
 
 class NameSpace:
-
     def __init__(self, parent=None, is_class=False, cls=None):
         self._parent = parent
         self._children = {}
@@ -28,10 +27,8 @@ class NameSpace:
 
     def add_function_definition(self, name, position):
         return self.add_name(
-            name,
-            position,
-            force=True,
-            cls=self if self._is_class else None)
+            name, position, force=True, cls=self if self._is_class else None
+        )
 
     def add_static_method(self, name, position):
         return self.add_name(name, position, force=True)
@@ -92,11 +89,8 @@ class NameSpace:
             if enclosing_scope._is_class:
                 enclosing_scope = enclosing_scope._parent
             return enclosing_scope.add_name(
-                name,
-                position,
-                force=force,
-                is_class=is_class,
-                cls=cls)
+                name, position, force=force, is_class=is_class, cls=cls
+            )
 
         return self._children[name]
 
@@ -105,7 +99,6 @@ class NameSpace:
 
 
 class NameVisitor(NodeVisitor):
-
     def __init__(self):
         self.current_source = None
         self.top = NameSpace()
@@ -124,7 +117,7 @@ class NameVisitor(NodeVisitor):
 
     def visit_ImportFrom(self, node):  # noqa
         start = self._position_from_node(node)
-        import_path = node.module.split('.')
+        import_path = node.module.split(".")
         import_namespace = self.top
         for path in import_path:
             import_namespace = import_namespace.get_namespace(path)
@@ -132,13 +125,15 @@ class NameVisitor(NodeVisitor):
             name = imported.name
             position = self.current_source.find_after(name, start)
             original = import_namespace.add_occurrence(
-                name, position, force=True)
+                name, position, force=True
+            )
             self.current.set_namespace(name, original)
             alias = imported.asname
             if alias:
                 alias_position = self.current_source.find_after(alias, start)
                 alias_namespace = self.current.add_definition(
-                    alias, alias_position)
+                    alias, alias_position
+                )
                 original.add_alias(alias_namespace)
                 self.current.add_definition(alias, alias_position)
 
@@ -153,22 +148,22 @@ class NameVisitor(NodeVisitor):
         position = self._position_from_node(
             node=node,
             row_offset=len(node.decorator_list),
-            column_offset=len("def "))
+            column_offset=len("def "),
+        )
         old = self.current
         if self._is_staticmethod(node):
             self.current = self.current.add_static_method(
-                name=node.name,
-                position=position)
+                name=node.name, position=position
+            )
         else:
             self.current = self.current.add_function_definition(
-                name=node.name,
-                position=position)
+                name=node.name, position=position
+            )
         for i, arg in enumerate(node.args.args):
             position = self._position_from_node(arg)
             self.current.add_parameter(
-                name=arg.arg,
-                number=i,
-                position=position)
+                name=arg.arg, number=i, position=position
+            )
             # if i == 0 and in_method and not is_static:
             #     self._add_class_alias(arg)
         self.generic_visit(node)
@@ -178,11 +173,12 @@ class NameVisitor(NodeVisitor):
         position = self._position_from_node(
             node=node,
             row_offset=len(node.decorator_list),
-            column_offset=len("class "))
+            column_offset=len("class "),
+        )
         old = self.current
         self.current = self.current.add_class_definition(
-            name=node.name,
-            position=position)
+            name=node.name, position=position
+        )
         self.generic_visit(node)
         self.current = old
 
@@ -195,14 +191,11 @@ class NameVisitor(NodeVisitor):
         start = self._position_from_node(node)
         position = self.current_source.find_after(name, start)
         if self._is_definition(node):
-            self.current.add_definition(
-                name=name,
-                position=position)
+            self.current.add_definition(name=name, position=position)
         else:
             self.current.add_occurrence(
-                name=name,
-                position=position,
-                force=True)
+                name=name, position=position, force=True
+            )
         self.current = old
 
     def visit_Call(self, node):  # noqa
@@ -213,9 +206,7 @@ class NameVisitor(NodeVisitor):
         start = self._position_from_node(node)
         for keyword in node.keywords:
             position = self.current_source.find_after(keyword.arg, start)
-            self.current.add_occurrence(
-                name=keyword.arg,
-                position=position)
+            self.current.add_occurrence(name=keyword.arg, position=position)
         self.current = old
         for arg in node.args:
             self.visit(arg)
@@ -253,11 +244,9 @@ class NameVisitor(NodeVisitor):
         position = self._position_from_node(node)
         # Invent a name for the ad hoc scope. The dashes make sure it can
         # never clash with an actual Python name.
-        name = 'comprehension-%s-%s' % (position.row, position.column)
+        name = "comprehension-%s-%s" % (position.row, position.column)
         old = self.current
-        self.current = self.current.add_definition(
-            name=name,
-            position=position)
+        self.current = self.current.add_definition(name=name, position=position)
         for generator in node.generators:
             self.visit(generator)
         for sub_node in rest:
@@ -270,13 +259,14 @@ class NameVisitor(NodeVisitor):
 
     @staticmethod
     def _is_staticmethod(node):
-        return any(n.id == 'staticmethod' for n in node.decorator_list)
+        return any(n.id == "staticmethod" for n in node.decorator_list)
 
     def _position_from_node(self, node, row_offset=0, column_offset=0):
         return Position(
             source=self.current_source,
             row=(node.lineno - 1) + row_offset,
-            column=node.col_offset + column_offset)
+            column=node.col_offset + column_offset,
+        )
 
     def _names_from(self, node):
         if isinstance(node, Name):
@@ -299,9 +289,9 @@ def find_occurrences(sources, old_name, position):
 
 
 def rename(sources, old_name, new_name, position):
-    for occurrence in find_occurrences(sources=sources,
-                                       old_name=old_name,
-                                       position=position):
+    for occurrence in find_occurrences(
+        sources=sources, old_name=old_name, position=position
+    ):
         occurrence.source.replace(occurrence, old_name, new_name)
     return sources
 
@@ -312,17 +302,20 @@ def assert_renames(row, column, old_name, old_source, new_name, new_source):
         sources=[source],
         old_name=old_name,
         new_name=new_name,
-        position=Position(source, row, column))
+        position=Position(source, row, column),
+    )
     assert make_source(new_source).render() == renamed[0].render()
 
 
-def assert_renames_multi_source(position, old_name, old_sources, new_name,
-                                new_sources):
+def assert_renames_multi_source(
+    position, old_name, old_sources, new_name, new_sources
+):
     renamed = rename(
         sources=old_sources,
         old_name=old_name,
         new_name=new_name,
-        position=position)
+        position=position,
+    )
     for actual, expected in zip(renamed, new_sources):
         assert make_source(expected).render() == actual.render()
 
@@ -331,25 +324,26 @@ def test_does_not_rename_random_attributes():
     assert_renames(
         row=3,
         column=0,
-        old_name='path',
+        old_name="path",
         old_source="""
         import os
 
         path = os.path.dirname(__file__)
         """,
-        new_name='new_name',
+        new_name="new_name",
         new_source="""
         import os
 
         new_name = os.path.dirname(__file__)
-        """)
+        """,
+    )
 
 
 def test_finds_local_variable():
     assert_renames(
         row=2,
         column=4,
-        old_name='old',
+        old_name="old",
         old_source="""
         def fun():
             old = 12
@@ -360,7 +354,7 @@ def test_finds_local_variable():
 
         old = 20
         """,
-        new_name='new',
+        new_name="new",
         new_source="""
         def fun():
             new = 12
@@ -370,14 +364,15 @@ def test_finds_local_variable():
             return result
 
         old = 20
-        """)
+        """,
+    )
 
 
 def test_finds_variable_in_closure():
     assert_renames(
         row=1,
         column=0,
-        old_name='old',
+        old_name="old",
         old_source="""
         old = 12
 
@@ -387,7 +382,7 @@ def test_finds_variable_in_closure():
 
         old = 20
         """,
-        new_name='new',
+        new_name="new",
         new_source="""
         new = 12
 
@@ -396,14 +391,15 @@ def test_finds_variable_in_closure():
             return result
 
         new = 20
-        """)
+        """,
+    )
 
 
 def test_finds_method_names():
     assert_renames(
         row=3,
         column=8,
-        old_name='old',
+        old_name="old",
         old_source="""
         class A:
 
@@ -412,7 +408,7 @@ def test_finds_method_names():
 
         unbound = A.old
         """,
-        new_name='new',
+        new_name="new",
         new_source="""
         class A:
 
@@ -420,74 +416,78 @@ def test_finds_method_names():
                 pass
 
         unbound = A.new
-        """)
+        """,
+    )
 
 
 def test_finds_parameters():
     assert_renames(
         row=1,
         column=8,
-        old_name='arg',
+        old_name="arg",
         old_source="""
         def fun(arg, arg2):
             return arg + arg2
 
         fun(arg=1, arg2=2)
         """,
-        new_name='new',
+        new_name="new",
         new_source="""
         def fun(new, arg2):
             return new + arg2
 
         fun(new=1, arg2=2)
-        """)
+        """,
+    )
 
 
 def test_finds_function():
     assert_renames(
         row=1,
         column=4,
-        old_name='fun_old',
+        old_name="fun_old",
         old_source="""
         def fun_old():
             return 'result'
 
         result = fun_old()
         """,
-        new_name='fun_new',
+        new_name="fun_new",
         new_source="""
         def fun_new():
             return 'result'
 
         result = fun_new()
-        """)
+        """,
+    )
 
 
 def test_finds_class():
     assert_renames(
         row=1,
         column=6,
-        old_name='OldClass',
+        old_name="OldClass",
         old_source="""
         class OldClass:
             pass
 
         instance = OldClass()
         """,
-        new_name='NewClass',
+        new_name="NewClass",
         new_source="""
         class NewClass:
             pass
 
         instance = NewClass()
-        """)
+        """,
+    )
 
 
 def test_finds_passed_argument():
     assert_renames(
         row=1,
         column=0,
-        old_name='old',
+        old_name="old",
         old_source="""
         old = 2
 
@@ -496,7 +496,7 @@ def test_finds_passed_argument():
 
         fun(1, old)
         """,
-        new_name='new',
+        new_name="new",
         new_source="""
         new = 2
 
@@ -504,15 +504,16 @@ def test_finds_passed_argument():
             return arg + arg2
 
         fun(1, new)
-        """)
+        """,
+    )
 
 
 def test_does_not_find_method_of_unrelated_class():
     assert_renames(
         row=3,
         column=8,
-        old_name='old',
-        new_name='new',
+        old_name="old",
+        new_name="new",
         old_source="""
         class ClassThatShouldHaveMethodRenamed:
 
@@ -560,14 +561,15 @@ def test_does_not_find_method_of_unrelated_class():
         a.new()
         b = UnrelatedClass()
         b.old()
-        """)
+        """,
+    )
 
 
 def test_finds_static_method():
     assert_renames(
         row=4,
         column=8,
-        old_name='old',
+        old_name="old",
         old_source="""
         class A:
 
@@ -578,7 +580,7 @@ def test_finds_static_method():
         a = A()
         a.old('foo')
         """,
-        new_name='new',
+        new_name="new",
         new_source="""
         class A:
 
@@ -588,14 +590,15 @@ def test_finds_static_method():
 
         a = A()
         a.new('foo')
-        """)
+        """,
+    )
 
 
 def test_finds_argument():
     assert_renames(
         row=8,
         column=17,
-        old_name='arg',
+        old_name="arg",
         old_source="""
         class A:
 
@@ -606,7 +609,7 @@ def test_finds_argument():
                 arg = "1"
                 self.foo(arg=arg)
         """,
-        new_name='new_arg',
+        new_name="new_arg",
         new_source="""
         class A:
 
@@ -616,14 +619,15 @@ def test_finds_argument():
             def bar(self):
                 arg = "1"
                 self.foo(new_arg=arg)
-        """)
+        """,
+    )
 
 
 def test_finds_method_but_not_function():
     assert_renames(
         row=3,
         column=8,
-        old_name='old',
+        old_name="old",
         old_source="""
         class A:
 
@@ -639,7 +643,7 @@ def test_finds_method_but_not_function():
         def old():
             pass
         """,
-        new_name='new',
+        new_name="new",
         new_source="""
         class A:
 
@@ -654,14 +658,15 @@ def test_finds_method_but_not_function():
 
         def old():
             pass
-        """)
+        """,
+    )
 
 
 def test_finds_definition_from_call():
     assert_renames(
         row=5,
         column=4,
-        old_name='old',
+        old_name="old",
         old_source="""
         def old():
             pass
@@ -669,21 +674,22 @@ def test_finds_definition_from_call():
         def bar():
             old()
         """,
-        new_name='new',
+        new_name="new",
         new_source="""
         def new():
             pass
 
         def bar():
             new()
-        """)
+        """,
+    )
 
 
 def test_finds_attribute_assignments():
     assert_renames(
         row=7,
         column=20,
-        old_name='property',
+        old_name="property",
         old_source="""
         class ClassName:
 
@@ -693,7 +699,7 @@ def test_finds_attribute_assignments():
             def get_property(self):
                 return self.property
         """,
-        new_name='new_property',
+        new_name="new_property",
         new_source="""
         class ClassName:
 
@@ -702,57 +708,61 @@ def test_finds_attribute_assignments():
 
             def get_property(self):
                 return self.new_property
-        """)
+        """,
+    )
 
 
 def test_finds_dict_comprehension_variables():
     assert_renames(
         row=2,
         column=42,
-        old_name='old',
+        old_name="old",
         old_source="""
         old = 100
         foo = {old: None for old in range(100) if old % 3}
         """,
-        new_name='new',
+        new_name="new",
         new_source="""
         old = 100
         foo = {new: None for new in range(100) if new % 3}
-        """)
+        """,
+    )
 
 
 def test_finds_list_comprehension_variables():
     assert_renames(
         row=3,
         column=12,
-        old_name='old',
+        old_name="old",
         old_source="""
         old = 100
         foo = [
             old for old in range(100) if old % 3]
         """,
-        new_name='new',
+        new_name="new",
         new_source="""
         old = 100
         foo = [
             new for new in range(100) if new % 3]
-        """)
+        """,
+    )
 
 
 def test_finds_set_comprehension_variables():
     assert_renames(
         row=2,
         column=7,
-        old_name='old',
+        old_name="old",
         old_source="""
         old = 100
         foo = {old for old in range(100) if old % 3}
         """,
-        new_name='new',
+        new_name="new",
         new_source="""
         old = 100
         foo = {new for new in range(100) if new % 3}
-        """)
+        """,
+    )
 
 
 def test_finds_for_loop_variables():
@@ -762,7 +772,7 @@ def test_finds_for_loop_variables():
     assert_renames(
         row=2,
         column=7,
-        old_name='old',
+        old_name="old",
         old_source="""
         old = None
         for i, old in enumerate(['foo']):
@@ -770,53 +780,56 @@ def test_finds_for_loop_variables():
             print(old)
         print(old)
         """,
-        new_name='new',
+        new_name="new",
         new_source="""
         new = None
         for i, new in enumerate(['foo']):
             print(i)
             print(new)
         print(new)
-        """)
+        """,
+    )
 
 
 def test_finds_enclosing_scope_variable_from_comprehension():
     assert_renames(
         row=2,
         column=42,
-        old_name='old',
+        old_name="old",
         old_source="""
         old = 3
         res = [foo for foo in range(100) if foo % old]
         """,
-        new_name='new',
+        new_name="new",
         new_source="""
         new = 3
         res = [foo for foo in range(100) if foo % new]
-        """)
+        """,
+    )
 
 
 def test_finds_tuple_unpack():
     assert_renames(
         row=1,
         column=5,
-        old_name='old',
+        old_name="old",
         old_source="""
         foo, old = 1, 2
         print(old)
         """,
-        new_name='new',
+        new_name="new",
         new_source="""
         foo, new = 1, 2
         print(new)
-        """)
+        """,
+    )
 
 
 def test_recognizes_multiple_assignments():
     assert_renames(
         row=2,
         column=8,
-        old_name='old',
+        old_name="old",
         old_source="""
         class A:
             def old(self):
@@ -830,7 +843,7 @@ def test_recognizes_multiple_assignments():
         foo.old()
         bar.old()
         """,
-        new_name='new',
+        new_name="new",
         new_source="""
         class A:
             def new(self):
@@ -843,7 +856,8 @@ def test_recognizes_multiple_assignments():
         foo, bar = A(), B()
         foo.new()
         bar.old()
-        """)
+        """,
+    )
 
 
 def test_finds_across_sources():
@@ -852,19 +866,21 @@ def test_finds_across_sources():
         def old():
             pass
         """,
-        module_name='foo')
+        module_name="foo",
+    )
     source2 = make_source(
         """
         from foo import old
         old()
         """,
-        module_name='bar')
+        module_name="bar",
+    )
 
     assert_renames_multi_source(
         position=Position(source=source2, row=2, column=0),
-        old_name='old',
+        old_name="old",
         old_sources=(source1, source2),
-        new_name='new',
+        new_name="new",
         new_sources=[
             """
             def new():
@@ -873,7 +889,9 @@ def test_finds_across_sources():
             """
             from foo import new
             new()
-            """])
+            """,
+        ],
+    )
 
 
 def test_finds_multiple_imports_on_one_line():
@@ -885,20 +903,22 @@ def test_finds_multiple_imports_on_one_line():
         def bar():
             pass
         """,
-        module_name='foo')
+        module_name="foo",
+    )
     source2 = make_source(
         """
         from foo import bar, old
         old()
         bar()
         """,
-        module_name='bar')
+        module_name="bar",
+    )
 
     assert_renames_multi_source(
         position=Position(source=source2, row=2, column=0),
-        old_name='old',
+        old_name="old",
         old_sources=(source1, source2),
-        new_name='new',
+        new_name="new",
         new_sources=[
             """
             def new():
@@ -911,7 +931,9 @@ def test_finds_multiple_imports_on_one_line():
             from foo import bar, new
             new()
             bar()
-            """])
+            """,
+        ],
+    )
 
 
 # TODO: calls in the middle of an attribute: foo.bar().qux
