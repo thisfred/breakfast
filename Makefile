@@ -13,10 +13,8 @@ test: .venv requirements.txt test-requirements.txt
 	.venv/bin/pip-compile -v --output-file $@ $<
 
 autoformat: .venv
-	.venv/bin/black -l 80 setup.py breakfast tests vim
+	.venv/bin/black setup.py breakfast tests vim
 	.venv/bin/isort -rc setup.py breakfast tests vim
 
-test-continually: .venv requirements.txt test-requirements.txt
-	.venv/bin/rerun -i =*.egg-info -i=.coverage* -i=.cache -i=neomake.log -i=.mypy_cache -i=.tox \
-		-i=.coverage -i=.venv --verbose \
-		".venv/bin/pytest --testmon -rf -l -s -x breakfast tests vim/ftplugin/python/tests"
+test-changed: .venv requirements.txt test-requirements.txt
+	.venv/bin/pytest --testmon -rf -l -s -x tests

@@ -1,13 +1,4 @@
-from ast import (
-    Attribute,
-    Call,
-    Name,
-    NodeVisitor,
-    Param,
-    Store,
-    Subscript,
-    Tuple,
-)
+from ast import Attribute, Call, Name, NodeVisitor, Param, Store, Subscript, Tuple
 from collections import defaultdict
 from contextlib import contextmanager
 
@@ -67,9 +58,7 @@ class Collector:
     def get_positions(self, position):
         self._post_process()
         for name, positions in self._occurrences.items():
-            if name in self._definitions and any(
-                position == p for p in positions
-            ):
+            if name in self._definitions and any(position == p for p in positions):
                 return sorted(positions)
         return []
 
@@ -164,10 +153,7 @@ class Collector:
             full_name = self._aliases[prefix] + full_name[-1:]
             prefix = full_name[:-1]
 
-        if (
-            full_name not in self._definitions
-            and full_name[:-1] in self._classes
-        ):
+        if full_name not in self._definitions and full_name[:-1] in self._classes:
             inherited = self._get_inherited_definition(full_name)
             if inherited:
                 return inherited
@@ -182,9 +168,7 @@ class Collector:
                     self._occurrences[new_name].extend(self._occurrences[name])
                     del self._occurrences[name]
                     if name in self._definitions:
-                        self._definitions[new_name].extend(
-                            self._definitions[name]
-                        )
+                        self._definitions[new_name].extend(self._definitions[name])
                         del self._definitions[name]
 
     def _get_inherited_definition(self, full_name):
@@ -241,9 +225,7 @@ class Names(NodeVisitor):
 
     def visit_ClassDef(self, node):  # noqa
         position = self._position_from_node(
-            node=node,
-            row_offset=len(node.decorator_list),
-            column_offset=len("class "),
+            node=node, row_offset=len(node.decorator_list), column_offset=len("class ")
         )
         self.collector.add_class(node.name)
         self.collector.add_definition(name=node.name, position=position)
@@ -256,9 +238,7 @@ class Names(NodeVisitor):
 
     def visit_FunctionDef(self, node):  # noqa
         position = self._position_from_node(
-            node=node,
-            row_offset=len(node.decorator_list),
-            column_offset=len("def "),
+            node=node, row_offset=len(node.decorator_list), column_offset=len("def ")
         )
         self.collector.add_definition(name=node.name, position=position)
         is_static = is_staticmethod(node)
@@ -277,9 +257,7 @@ class Names(NodeVisitor):
         with self.collector.namespaces(names):
             for keyword in node.keywords:
                 position = self.current_source.find_after(keyword.arg, start)
-                self.collector.add_occurrence(
-                    name=keyword.arg, position=position
-                )
+                self.collector.add_occurrence(name=keyword.arg, position=position)
         for arg in node.args:
             self.visit(arg)
         for keyword in node.keywords:

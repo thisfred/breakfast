@@ -7,9 +7,7 @@ ROOT = os.path.sep.join(os.path.dirname(__file__).split(os.path.sep)[:-1])
 
 
 def test_renames_function_from_lines():
-    source = Source(
-        ["def fun_old():", "    return 'result'", "result = fun_old()"]
-    )
+    source = Source(["def fun_old():", "    return 'result'", "result = fun_old()"])
     application = Application(source, root=".")
 
     application.rename(row=0, column=4, new_name="fun_new")
@@ -23,8 +21,7 @@ def test_renames_function_from_lines():
 def test_returns_paths():
     application = Application(source=Source(""), root=ROOT)
     found = list(
-        "/".join(f.path.split(os.path.sep)[-3:])
-        for f in application.find_modules()
+        "/".join(f.path.split(os.path.sep)[-3:]) for f in application.find_modules()
     )
     assert "tests/data/__init__.py" in found
     assert "tests/data/module1.py" in found

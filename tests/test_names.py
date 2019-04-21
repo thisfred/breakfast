@@ -171,10 +171,9 @@ def test_finds_function():
 
     visitor.visit_source(source)
 
-    assert [
-        Position(source, 1, 4),
-        Position(source, 3, 9),
-    ] == visitor.get_occurrences("fun_old", Position(source, 1, 4))
+    assert [Position(source, 1, 4), Position(source, 3, 9)] == visitor.get_occurrences(
+        "fun_old", Position(source, 1, 4)
+    )
 
 
 def test_finds_class():
@@ -190,10 +189,9 @@ def test_finds_class():
 
     visitor.visit_source(source)
 
-    assert [
-        Position(source, 1, 6),
-        Position(source, 4, 11),
-    ] == visitor.get_occurrences("OldClass", Position(source, 1, 6))
+    assert [Position(source, 1, 6), Position(source, 4, 11)] == visitor.get_occurrences(
+        "OldClass", Position(source, 1, 6)
+    )
 
 
 def test_finds_passed_argument():
@@ -209,10 +207,9 @@ def test_finds_passed_argument():
 
     visitor.visit_source(source)
 
-    assert [
-        Position(source, 1, 0),
-        Position(source, 4, 7),
-    ] == visitor.get_occurrences("old", Position(source, 1, 0))
+    assert [Position(source, 1, 0), Position(source, 4, 7)] == visitor.get_occurrences(
+        "old", Position(source, 1, 0)
+    )
 
 
 def test_finds_parameter_with_unusual_indentation():
@@ -291,10 +288,9 @@ def test_finds_definition_from_call():
 
     visitor.visit_source(source)
 
-    assert [
-        Position(source, 1, 4),
-        Position(source, 5, 4),
-    ] == visitor.get_occurrences("old", Position(source, 5, 4))
+    assert [Position(source, 1, 4), Position(source, 5, 4)] == visitor.get_occurrences(
+        "old", Position(source, 5, 4)
+    )
 
 
 def test_finds_attribute_assignments():
@@ -408,10 +404,9 @@ def test_finds_tuple_unpack():
 
     visitor.visit_source(source)
 
-    assert [
-        Position(source, 1, 5),
-        Position(source, 2, 6),
-    ] == visitor.get_occurrences("old", Position(source, 1, 5))
+    assert [Position(source, 1, 5), Position(source, 2, 6)] == visitor.get_occurrences(
+        "old", Position(source, 1, 5)
+    )
 
 
 def test_recognizes_multiple_assignments():
@@ -434,10 +429,9 @@ def test_recognizes_multiple_assignments():
 
     visitor.visit_source(source)
 
-    assert [
-        Position(source, 2, 8),
-        Position(source, 10, 4),
-    ] == visitor.get_occurrences("old", Position(source, 2, 8))
+    assert [Position(source, 2, 8), Position(source, 10, 4)] == visitor.get_occurrences(
+        "old", Position(source, 2, 8)
+    )
 
 
 def test_finds_enclosing_scope_variable_from_comprehension():
@@ -530,10 +524,9 @@ def test_finds_static_method():
 
     visitor.visit_source(source)
 
-    assert [
-        Position(source, 4, 8),
-        Position(source, 8, 2),
-    ] == visitor.get_occurrences("old", Position(source, 4, 8))
+    assert [Position(source, 4, 8), Position(source, 8, 2)] == visitor.get_occurrences(
+        "old", Position(source, 4, 8)
+    )
 
 
 def test_finds_argument():
@@ -582,10 +575,9 @@ def test_finds_method_but_not_function():
 
     visitor.visit_source(source)
 
-    assert [
-        Position(source, 3, 8),
-        Position(source, 7, 13),
-    ] == visitor.get_occurrences("old", Position(source, 3, 8))
+    assert [Position(source, 3, 8), Position(source, 7, 13)] == visitor.get_occurrences(
+        "old", Position(source, 3, 8)
+    )
 
 
 def test_fails_to_rename_builtins():
@@ -639,10 +631,7 @@ def test_finds_method_in_imported_subclass():
     visitor.visit_source(other_source)
 
     occurrences = visitor.get_occurrences("old", Position(source, 3, 8))
-    assert [
-        Position(other_source, 6, 13),
-        Position(source, 3, 8),
-    ] == occurrences
+    assert [Position(other_source, 6, 13), Position(source, 3, 8)] == occurrences
 
 
 def test_finds_method_in_renamed_instance_of_subclass():
@@ -733,9 +722,7 @@ def test_finds_global_variable():
     ] == occurrences
 
 
-@pytest.mark.skipif(
-    sys.version_info < (3, 0), reason="requires python 3.0 or higher"
-)
+@pytest.mark.skipif(sys.version_info < (3, 0), reason="requires python 3.0 or higher")
 def test_finds_nonlocal_variable():
     source = make_source(
         """
@@ -801,10 +788,7 @@ def test_finds_method_in_aliased_imported_subclass():
     visitor.visit_source(other_source)
 
     occurrences = visitor.get_occurrences("old", Position(source, 3, 8))
-    assert [
-        Position(other_source, 6, 13),
-        Position(source, 3, 8),
-    ] == occurrences
+    assert [Position(other_source, 6, 13), Position(source, 3, 8)] == occurrences
 
 
 def test_finds_multiple_definitions():

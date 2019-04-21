@@ -19,9 +19,7 @@ class Application:
             visitor.visit_source(module.source)
 
         for occurrence in reversed(visitor.get_occurrences(old_name, position)):
-            occurrence.source.replace(
-                position=occurrence, old=old_name, new=new_name
-            )
+            occurrence.source.replace(position=occurrence, old=old_name, new=new_name)
 
     def get_additional_sources(self):
         return []
@@ -38,6 +36,5 @@ class Application:
                     continue
                 name = "" if filename == "__init__.py" else "." + filename[:-3]
                 yield Module(
-                    path=os.path.join(dirpath, filename),
-                    module_path=module_path + name,
+                    path=os.path.join(dirpath, filename), module_path=module_path + name
                 )

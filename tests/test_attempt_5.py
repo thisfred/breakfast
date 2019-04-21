@@ -50,12 +50,12 @@ class NameSpace:
         self.points_to = cls
 
     def get_namespace(self, name):
-        ns = self._children.get(name)
-        if ns is None:
-            ns = self._parent.get_namespace(name)
-        while ns.points_to:
-            ns = ns.points_to
-        return ns
+        namespace = self._children.get(name)
+        if namespace is None:
+            namespace = self._parent.get_namespace(name)
+        while namespace.points_to:
+            namespace = namespace.points_to
+        return namespace
 
     def find_occurrences(self, name, position):
         if name in self._children:
@@ -124,16 +124,12 @@ class NameVisitor(NodeVisitor):
         for imported in node.names:
             name = imported.name
             position = self.current_source.find_after(name, start)
-            original = import_namespace.add_occurrence(
-                name, position, force=True
-            )
+            original = import_namespace.add_occurrence(name, position, force=True)
             self.current.set_namespace(name, original)
             alias = imported.asname
             if alias:
                 alias_position = self.current_source.find_after(alias, start)
-                alias_namespace = self.current.add_definition(
-                    alias, alias_position
-                )
+                alias_namespace = self.current.add_definition(alias, alias_position)
                 original.add_alias(alias_namespace)
                 self.current.add_definition(alias, alias_position)
 
@@ -146,9 +142,7 @@ class NameVisitor(NodeVisitor):
 
     def visit_FunctionDef(self, node):  # noqa
         position = self._position_from_node(
-            node=node,
-            row_offset=len(node.decorator_list),
-            column_offset=len("def "),
+            node=node, row_offset=len(node.decorator_list), column_offset=len("def ")
         )
         old = self.current
         if self._is_staticmethod(node):
@@ -161,9 +155,7 @@ class NameVisitor(NodeVisitor):
             )
         for i, arg in enumerate(node.args.args):
             position = self._position_from_node(arg)
-            self.current.add_parameter(
-                name=arg.arg, number=i, position=position
-            )
+            self.current.add_parameter(name=arg.arg, number=i, position=position)
             # if i == 0 and in_method and not is_static:
             #     self._add_class_alias(arg)
         self.generic_visit(node)
@@ -171,9 +163,7 @@ class NameVisitor(NodeVisitor):
 
     def visit_ClassDef(self, node):  # noqa
         position = self._position_from_node(
-            node=node,
-            row_offset=len(node.decorator_list),
-            column_offset=len("class "),
+            node=node, row_offset=len(node.decorator_list), column_offset=len("class ")
         )
         old = self.current
         self.current = self.current.add_class_definition(
@@ -193,9 +183,7 @@ class NameVisitor(NodeVisitor):
         if self._is_definition(node):
             self.current.add_definition(name=name, position=position)
         else:
-            self.current.add_occurrence(
-                name=name, position=position, force=True
-            )
+            self.current.add_occurrence(name=name, position=position, force=True)
         self.current = old
 
     def visit_Call(self, node):  # noqa
@@ -307,14 +295,9 @@ def assert_renames(row, column, old_name, old_source, new_name, new_source):
     assert make_source(new_source).render() == renamed[0].render()
 
 
-def assert_renames_multi_source(
-    position, old_name, old_sources, new_name, new_sources
-):
+def assert_renames_multi_source(position, old_name, old_sources, new_name, new_sources):
     renamed = rename(
-        sources=old_sources,
-        old_name=old_name,
-        new_name=new_name,
-        position=position,
+        sources=old_sources, old_name=old_name, new_name=new_name, position=position
     )
     for actual, expected in zip(renamed, new_sources):
         assert make_source(expected).render() == actual.render()

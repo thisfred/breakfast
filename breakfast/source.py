@@ -31,9 +31,7 @@ class Source(object):
         return parse("\n".join(self.lines))
 
     def render(self):
-        return "\n".join(
-            self.changes.get(i, line) for i, line in enumerate(self.lines)
-        )
+        return "\n".join(self.changes.get(i, line) for i, line in enumerate(self.lines))
 
     def get_changes(self):
         for change in sorted(self.changes.items()):
