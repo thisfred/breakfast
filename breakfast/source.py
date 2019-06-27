@@ -5,7 +5,7 @@ from typing import Dict
 
 
 @total_ordering
-class Source(object):
+class Source:
 
     word = re.compile(r"\w+|\W+")
 
@@ -49,8 +49,7 @@ class Source(object):
     def find_after(self, name, start):
         regex = re.compile("\\b{}\\b".format(name))
         match = regex.search(self.get_string_starting_at(start))
-        lines = len(self.lines)
-        while start.row <= lines and not match:
+        while start.row <= len(self.lines) and not match:
             start = start.copy(row=start.row + 1, column=0)
             match = regex.search(self.get_string_starting_at(start))
 

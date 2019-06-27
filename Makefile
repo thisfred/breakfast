@@ -1,5 +1,4 @@
-.PHONY: clean test test-continually
-
+.PHONY: test
 test: .venv requirements.txt test-requirements.txt
 	tox
 
@@ -12,9 +11,11 @@ test: .venv requirements.txt test-requirements.txt
 %.txt: %.in
 	.venv/bin/pip-compile -v --output-file $@ $<
 
+.PHONY: autoformat
 autoformat: .venv
 	.venv/bin/black setup.py breakfast tests vim
 	.venv/bin/isort -rc setup.py breakfast tests vim
 
+.PHONY: test-changed
 test-changed: .venv requirements.txt test-requirements.txt
 	.venv/bin/pytest --testmon -rf -l -s -x tests

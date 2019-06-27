@@ -1,18 +1,21 @@
 from ast import Attribute, Call, Name, NodeVisitor, Param, Store, Tuple
+from typing import Dict, List, Optional
 
 from breakfast.position import Position
 from tests import make_source
 
 
 class NameSpace:
-    def __init__(self, parent=None, is_class=False, cls=None):
+    def __init__(
+        self, parent: Optional["NameSpace"] = None, is_class: bool = False, cls=None
+    ):
         self._parent = parent
-        self._children = {}
-        self.occurrences = []
+        self._children: Dict[str, "NameSpace"] = {}
+        self.occurrences: List[Position] = []
         self._is_class = is_class
         self._enclosing_class = cls
         self.points_to = None
-        self._aliases = []
+        self._aliases: List["NameSpace"] = []
 
     def add_module(self, name):
         new = NameSpace(self)
@@ -276,7 +279,7 @@ def find_occurrences(sources, old_name, position):
     return visitor.top.find_occurrences(old_name, position)
 
 
-def rename(sources, old_name, new_name, position):
+def rename(*, sources, old_name, new_name, position):
     for occurrence in find_occurrences(
         sources=sources, old_name=old_name, position=position
     ):
@@ -284,7 +287,7 @@ def rename(sources, old_name, new_name, position):
     return sources
 
 
-def assert_renames(row, column, old_name, old_source, new_name, new_source):
+def assert_renames(*, row, column, old_name, old_source, new_name, new_source):
     source = make_source(old_source)
     renamed = rename(
         sources=[source],
@@ -919,7 +922,105 @@ def test_finds_multiple_imports_on_one_line():
     )
 
 
-# TODO: calls in the middle of an attribute: foo.bar().qux
+def test_finds_calls_in_the_middle_of_an_attribute_chain():
+    assert_renames(
+        row=5,
+        column=8,
+        old_name="old",
+        old_source="""
+        class Bar:
+            baz = 'whatever'
+
+        class Foo:
+            def old():
+                return Bar()
+
+        foo = Foo()
+        result = foo.old().baz
+        """,
+        new_name="new",
+        new_source="""
+        class Bar:
+            baz = 'whatever'
+
+        class Foo:
+            def new():
+                return Bar()
+
+        foo = Foo()
+        result = foo.new().baz
+        """,
+    )
+
+
+def test_finds_renamed_imports():
+    source1 = make_source(
+        """
+        def bar():
+            pass
+        """,
+        module_name="foo",
+    )
+    source2 = make_source(
+        """
+        from foo import bar as old
+        old()
+        """,
+        module_name="bar",
+    )
+
+    assert_renames_multi_source(
+        position=Position(source=source2, row=2, column=0),
+        old_name="old",
+        old_sources=(source1, source2),
+        new_name="new",
+        new_sources=[
+            """
+            def bar():
+                pass
+            """,
+            """
+            from foo import bar as new
+            new()
+            """,
+        ],
+    )
+
+
+def test_finds_properties_of_renamed_imports():
+    source1 = make_source(
+        """
+        def bar():
+            pass
+        """,
+        module_name="foo",
+    )
+    source2 = make_source(
+        """
+        from foo import bar as old
+        old()
+        """,
+        module_name="bar",
+    )
+
+    assert_renames_multi_source(
+        position=Position(source=source2, row=2, column=0),
+        old_name="old",
+        old_sources=(source1, source2),
+        new_name="new",
+        new_sources=[
+            """
+            def bar():
+                pass
+            """,
+            """
+            from foo import bar as new
+            new()
+            """,
+        ],
+    )
+
+
 # TODO: import as
 # TODO: rename parameter default value
 # TODO: rename something in a function body that is defined after the function:
