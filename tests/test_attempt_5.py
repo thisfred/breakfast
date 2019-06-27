@@ -1021,6 +1021,26 @@ def test_finds_properties_of_renamed_imports():
     )
 
 
-# TODO: import as
+def test_finds_default_value():
+    assert_renames(
+        row=1,
+        column=0,
+        old_name="old",
+        old_source="""
+        old = 2
+
+        def fun(arg=old):
+            return arg
+        """,
+        new_name="new",
+        new_source="""
+        new = 2
+
+        def fun(arg=new):
+            return arg
+        """,
+    )
+
+
 # TODO: rename parameter default value
 # TODO: rename something in a function body that is defined after the function:
