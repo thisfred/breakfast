@@ -10,7 +10,7 @@ import re
 from setuptools import setup
 
 
-def find_version(*file_paths: str) -> str:
+def find_version(*file_paths):  # type: ignore
     """Get version from python file."""
     with open(os.path.join(os.path.dirname(__file__), *file_paths)) as version_file:
         contents = version_file.read()
@@ -22,7 +22,7 @@ def find_version(*file_paths: str) -> str:
 
 setup(
     name="breakfast",
-    version=find_version("breakfast/__init__.py"),
+    version=find_version("breakfast/__init__.py"),  # type: ignore
     author="Eric Casteleijn",
     author_email="thisfred@gmail.com",
     description="Python refactoring tool",
