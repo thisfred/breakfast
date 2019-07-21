@@ -1,6 +1,8 @@
 import ast
+
 from collections import defaultdict
 from typing import TYPE_CHECKING, DefaultDict, List, Optional, Set
+
 
 if TYPE_CHECKING:
     from breakfast.position import Position

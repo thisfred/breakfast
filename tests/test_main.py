@@ -3,6 +3,7 @@ import os
 from breakfast.main import Application
 from breakfast.source import Source
 
+
 ROOT = os.path.sep.join(os.path.dirname(__file__).split(os.path.sep)[:-1])
 
 

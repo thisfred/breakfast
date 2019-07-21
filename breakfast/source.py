@@ -1,7 +1,9 @@
 import re
+
 from ast import AST, parse
 from functools import total_ordering
 from typing import TYPE_CHECKING, Dict, Iterator, List, Optional, Tuple
+
 
 if TYPE_CHECKING:
     from breakfast.position import Position

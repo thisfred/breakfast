@@ -2,6 +2,7 @@ import os
 
 from breakfast.modules import Module
 
+
 ROOT = os.path.sep.join(os.path.dirname(__file__).split(os.path.sep)[:-1])
 
 

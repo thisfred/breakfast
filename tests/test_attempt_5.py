@@ -1,10 +1,12 @@
 import ast
+
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
 
 import pytest
 
 from breakfast.position import Position
 from tests import make_source
+
 
 if TYPE_CHECKING:
     from breakfast.source import Source

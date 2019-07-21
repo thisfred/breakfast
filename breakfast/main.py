@@ -1,9 +1,11 @@
 import os
+
 from typing import TYPE_CHECKING, Iterator, List
 
 from breakfast.modules import Module
 from breakfast.names import Names
 from breakfast.position import Position
+
 
 if TYPE_CHECKING:
     from breakfast.source import Source

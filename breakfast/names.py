@@ -1,4 +1,5 @@
 import ast
+
 from collections import defaultdict
 from contextlib import contextmanager
 from typing import (
@@ -16,6 +17,7 @@ from typing import (
 )
 
 from breakfast.position import Position
+
 
 if TYPE_CHECKING:
     from breakfast.source import Source
