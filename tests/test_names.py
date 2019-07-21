@@ -10,15 +10,15 @@ from tests import make_source
 
 
 def test_is_prefix_fails_when_paths_are_equal():
-    assert not is_prefix((1, 2), (1, 2))
+    assert not is_prefix(("1", "2"), ("1", "2"))
 
 
 def test_is_prefix_fails_when_path_is_shorter_than_prefix():
-    assert not is_prefix((1, 2), (1,))
+    assert not is_prefix(("1", "2"), ("1",))
 
 
 def test_is_prefix_succeeds_when_prefix_prefixes_the_path():
-    assert is_prefix((1, 2), (1, 2, 3))
+    assert is_prefix(("1", "2"), ("1", "2", "3"))
 
 
 def test_visit_source_adds_name():
@@ -27,7 +27,7 @@ def test_visit_source_adds_name():
     a = 1
     """
     )
-    visitor = Names()
+    visitor = Names(source=source)
     visitor.visit_source(source)
     assert 1 == len(visitor.get_occurrences("a", Position(source, 1, 0)))
 
@@ -40,7 +40,7 @@ def test_does_not_rename_random_attributes():
     path = os.path.dirname(__file__)
     """
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
 
@@ -62,7 +62,7 @@ def test_finds_local_variable():
     old = 20
     """
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
 
@@ -85,7 +85,7 @@ def test_finds_non_local_variable():
     old = 20
     """
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
 
@@ -109,7 +109,7 @@ def test_finds_method_names():
     unbound = A.old
     """
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
     occurrences = visitor.get_occurrences("old", Position(source, 3, 8))
@@ -125,7 +125,7 @@ def test_finds_parameters():
     fun(arg=1, arg2=2)
     """
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
 
@@ -147,7 +147,7 @@ def test_only_finds_parameter():
     fun(old=old)
     """
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
 
@@ -167,7 +167,7 @@ def test_finds_function():
     """
     )
 
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
 
@@ -185,7 +185,7 @@ def test_finds_class():
     instance = OldClass()
     """
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
 
@@ -203,7 +203,7 @@ def test_finds_passed_argument():
     fun(1, old)
     """
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
 
@@ -223,7 +223,7 @@ def test_finds_parameter_with_unusual_indentation():
         arg2=2)
     """
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
 
@@ -261,7 +261,7 @@ def test_does_not_find_method_of_unrelated_class():
     b.old()
     """
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
 
@@ -284,7 +284,7 @@ def test_finds_definition_from_call():
         old()
     """
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
 
@@ -305,7 +305,7 @@ def test_finds_attribute_assignments():
             return self.property
     """
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
     occurrences = visitor.get_occurrences("property", Position(source, 7, 20))
@@ -320,7 +320,7 @@ def test_finds_dict_comprehension_variables():
     foo = {old: None for old in range(100) if old % 3}
     """
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
 
@@ -338,7 +338,7 @@ def test_finds_set_comprehension_variables():
     foo = {old for old in range(100) if old % 3}
     """
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
 
@@ -357,7 +357,7 @@ def test_finds_list_comprehension_variables():
         old for old in range(100) if old % 3]
     """
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
 
@@ -381,7 +381,7 @@ def test_finds_for_loop_variables():
     print(old)
     """
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
 
@@ -400,7 +400,7 @@ def test_finds_tuple_unpack():
     print(old)
     """
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
 
@@ -425,7 +425,7 @@ def test_recognizes_multiple_assignments():
     bar.old()
     """
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
 
@@ -441,7 +441,7 @@ def test_finds_enclosing_scope_variable_from_comprehension():
     res = [foo for foo in range(100) if foo % old]
     """
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
     occurrences = visitor.get_occurrences("old", Position(source, 2, 42))
@@ -464,7 +464,7 @@ def test_finds_across_files():
         """,
         module_name="bar",
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
     visitor.visit_source(other_source)
@@ -495,7 +495,7 @@ def test_finds_multiple_imports_on_one_line():
         """,
         module_name="bar",
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
     visitor.visit_source(other_source)
@@ -520,7 +520,7 @@ def test_finds_static_method():
     a.old('foo')
     """
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
 
@@ -542,7 +542,7 @@ def test_finds_argument():
             self.foo(arg=arg)
     """
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
 
@@ -571,7 +571,7 @@ def test_finds_method_but_not_function():
         pass
     """
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
 
@@ -589,7 +589,7 @@ def test_fails_to_rename_builtins():
                 print(arg)
         """
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
 
@@ -625,7 +625,7 @@ def test_finds_method_in_imported_subclass():
     """,
         module_name="bar",
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
     visitor.visit_source(other_source)
@@ -651,7 +651,7 @@ def test_finds_method_in_renamed_instance_of_subclass():
     """
     )
 
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
     occurrences = visitor.get_occurrences("old", Position(source, 3, 8))
@@ -671,7 +671,7 @@ def test_finds_global_variable_in_method_scope():
     """
     )
 
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
     occurrences = visitor.get_occurrences("b", Position(source, 1, 0))
@@ -692,7 +692,7 @@ def test_treats_staticmethod_args_correctly():
             whatever.old()
     """
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
     occurrences = visitor.get_occurrences("old", Position(source, 3, 8))
@@ -710,7 +710,7 @@ def test_finds_global_variable():
         b = 20
     """
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
     occurrences = visitor.get_occurrences("b", Position(source, 1, 0))
@@ -739,7 +739,7 @@ def test_finds_nonlocal_variable():
     print(b)
     """
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
     occurrences = visitor.get_occurrences("b", Position(source, 4, 4))
@@ -782,7 +782,7 @@ def test_finds_method_in_aliased_imported_subclass():
     """,
         module_name="bar",
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
     visitor.visit_source(other_source)
@@ -802,7 +802,7 @@ def test_finds_multiple_definitions():
     print(b)
     """
     )
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
     occurrences = visitor.get_occurrences("b", Position(source, 3, 4))
@@ -822,7 +822,7 @@ def test_dogfooding():
             file_name="breakfast/names.py",
         )
 
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
     assert visitor.get_occurrences("whatever", Position(source, 3, 8)) == []
@@ -845,7 +845,7 @@ def test_finds_method_in_super_call():
     """
     )
 
-    visitor = Names()
+    visitor = Names(source)
 
     visitor.visit_source(source)
     occurrences = visitor.get_occurrences("bar", Position(source, 3, 8))

@@ -1,8 +1,12 @@
+from typing import Any, Iterator, List, Tuple
+
 from breakfast.main import Application
 from breakfast.source import Source
 
 
-def do_rename(root, buffer_contents, row, column, new_name):
+def do_rename(
+    root: str, buffer_contents: List[str], row: int, column: int, new_name: str
+) -> Iterator[Tuple[int, str]]:
     source = Source(buffer_contents, module_name="module")
     application = Application(source=source, root=root)
     application.rename(row=row, column=column, new_name=new_name)
@@ -11,7 +15,7 @@ def do_rename(root, buffer_contents, row, column, new_name):
             yield (i, line)
 
 
-def move_to_start_of_word(vim):  # pragma: nocover
+def move_to_start_of_word(vim: Any) -> None:  # pragma: nocover
     cursor = vim.current.window.cursor
     vim.command("normal b")
     vim.command("normal w")
@@ -19,7 +23,7 @@ def move_to_start_of_word(vim):  # pragma: nocover
         vim.command("normal b")
 
 
-def user_input(vim, message):  # pragma: nocover
+def user_input(vim: Any, message: str) -> str:  # pragma: nocover
     """Request user input.
 
     copied from http://vim.wikia.com/wiki/User_input_from_a_script
@@ -27,4 +31,6 @@ def user_input(vim, message):  # pragma: nocover
     vim.command("call inputsave()")
     vim.command("let user_input = input('" + message + ": ')")
     vim.command("call inputrestore()")
-    return vim.eval("user_input")
+    user_input = vim.eval("user_input")
+    assert isinstance(user_input, str)
+    return user_input

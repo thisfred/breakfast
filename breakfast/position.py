@@ -1,4 +1,9 @@
+from ast import AST
 from functools import total_ordering
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from breakfast.source import Source
 
 
 class IllegalPosition(Exception):
@@ -7,7 +12,9 @@ class IllegalPosition(Exception):
 
 @total_ordering
 class Position:
-    def __init__(self, source, row, column, node=None):
+    def __init__(
+        self, source: "Source", row: int, column: int, node: Optional[AST] = None
+    ) -> None:
         if row < 0 or column < 0:
             raise IllegalPosition
 
@@ -16,20 +23,21 @@ class Position:
         self.column = column
         self.node = node
 
-    def __add__(self, column_offset):
+    def __add__(self, column_offset: int) -> "Position":
         return self._add_offset(column_offset)
 
-    def __sub__(self, column_offset):
+    def __sub__(self, column_offset: int) -> "Position":
         return self._add_offset(-column_offset)
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
+        assert isinstance(other, Position)
         return (
             self.source is other.source
             and self.row == other.row
             and self.column == other.column
         )
 
-    def __lt__(self, other):
+    def __lt__(self, other: "Position") -> bool:
         return self.source < other.source or (
             self.source is other.source
             and (
@@ -38,7 +46,7 @@ class Position:
             )
         )
 
-    def __gt__(self, other):
+    def __gt__(self, other: "Position") -> bool:
         return other.source < self.source or (
             other.source is self.source
             and (
@@ -47,14 +55,20 @@ class Position:
             )
         )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "Position(row=%s, column=%s%s)" % (
             self.row,
             self.column,
             ", node=%s" % (repr(self.node),) if self.node else "",
         )
 
-    def copy(self, source=None, row=None, column=None, node=None):
+    def copy(
+        self,
+        source: Optional["Source"] = None,
+        row: Optional[int] = None,
+        column: Optional[int] = None,
+        node: Optional[AST] = None,
+    ) -> "Position":
         return Position(
             source=source if source is not None else self.source,
             row=row if row is not None else self.row,
@@ -62,5 +76,5 @@ class Position:
             node=node if node is not None else self.node,
         )
 
-    def _add_offset(self, offset):
+    def _add_offset(self, offset: int) -> "Position":
         return self.copy(column=self.column + offset)

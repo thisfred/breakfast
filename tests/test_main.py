@@ -6,7 +6,7 @@ from breakfast.source import Source
 ROOT = os.path.sep.join(os.path.dirname(__file__).split(os.path.sep)[:-1])
 
 
-def test_renames_function_from_lines():
+def test_renames_function_from_lines() -> None:
     source = Source(["def fun_old():", "    return 'result'", "result = fun_old()"])
     application = Application(source, root=".")
 
@@ -18,8 +18,8 @@ def test_renames_function_from_lines():
     ]
 
 
-def test_returns_paths():
-    application = Application(source=Source(""), root=ROOT)
+def test_returns_paths() -> None:
+    application = Application(source=Source([""]), root=ROOT)
     found = list(
         "/".join(f.path.split(os.path.sep)[-3:]) for f in application.find_modules()
     )
@@ -28,8 +28,8 @@ def test_returns_paths():
     assert "tests/data/module2.py" in found
 
 
-def test_returns_module_paths():
-    application = Application(source=Source(""), root=ROOT)
+def test_returns_module_paths() -> None:
+    application = Application(source=Source([""]), root=ROOT)
     found = list(f.module_path for f in application.find_modules())
     assert "tests.data" in found
     assert "tests.data.module1" in found
@@ -37,8 +37,8 @@ def test_returns_module_paths():
     assert "tests.data.subpackage" in found
 
 
-def test_reports_empty_importers():
-    application = Application(source=Source(""), root=ROOT)
+def test_reports_empty_importers() -> None:
+    application = Application(source=Source([""]), root=ROOT)
     all_modules = application.find_modules()
 
     found = [
@@ -50,8 +50,8 @@ def test_reports_empty_importers():
     assert found == []
 
 
-def test_reports_importers():
-    application = Application(source=Source(""), root=ROOT)
+def test_reports_importers() -> None:
+    application = Application(source=Source([""]), root=ROOT)
     all_modules = application.find_modules()
 
     found = [
@@ -63,7 +63,7 @@ def test_reports_importers():
     assert found == ["tests.data.module1"]
 
 
-def ignore_finds_other_modules():
+def ignore_finds_other_modules() -> None:
     with open(os.path.join("tests", "data", "module1.py"), "r") as source_file:
         source = Source(
             lines=[l[:-1] for l in source_file.readlines()],
@@ -72,5 +72,5 @@ def ignore_finds_other_modules():
         )
     application = Application(source=source, root=ROOT)
     assert "tests.data.module2" in [
-        m.module_path for m in application.get_additional_sources()
+        m.path for m in application.get_additional_sources()
     ]

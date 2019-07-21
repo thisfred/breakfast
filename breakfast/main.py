@@ -1,30 +1,36 @@
 import os
+from typing import TYPE_CHECKING, Iterator, List
 
 from breakfast.modules import Module
 from breakfast.names import Names
 from breakfast.position import Position
 
+if TYPE_CHECKING:
+    from breakfast.source import Source
+
 
 class Application:
-    def __init__(self, source, root):
+    def __init__(self, source: "Source", root: str) -> None:
         self._initial_source = source
         self._root = root
 
-    def rename(self, row, column, new_name):
+    def rename(self, row: int, column: int, new_name: str) -> None:
         position = Position(self._initial_source, row=row, column=column)
         old_name = self._initial_source.get_name_at(position)
-        visitor = Names()
+        visitor = Names(self._initial_source)
         visitor.visit_source(self._initial_source)
         for module in self.get_additional_sources():
-            visitor.visit_source(module.source)
+            if module.source:
+                visitor.visit_source(module.source)
 
         for occurrence in reversed(visitor.get_occurrences(old_name, position)):
             occurrence.source.replace(position=occurrence, old=old_name, new=new_name)
 
-    def get_additional_sources(self):
+    @staticmethod
+    def get_additional_sources() -> List[Module]:
         return []
 
-    def find_modules(self):
+    def find_modules(self) -> Iterator[Module]:
         for (dirpath, _, filenames) in os.walk(self._root):
             if any(f.startswith(".") for f in dirpath.split(os.sep)):
                 continue

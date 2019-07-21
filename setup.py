@@ -26,6 +26,7 @@ setup(
     author="Eric Casteleijn",
     author_email="thisfred@gmail.com",
     description="Python refactoring tool",
+    python_requires=">=3",
     license="BSD",
     keywords="refactoring",
     url="http://github.com/thisfred/breakfast",
@@ -34,7 +35,20 @@ setup(
     classifiers=[
         "License :: OSI Approved :: BSD License",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.4",
-        "Programming Language :: Python :: 3.5",
+        "Programming Language :: Python :: 3.7",
     ],
+    package_data={"breakfast": ["py.typed"]},
+    extras_require={
+        "tests": [
+            "black",
+            "coverage",
+            "flake8",
+            "flake8-bugbear",
+            "isort",
+            "mypy",
+            "pytest",
+            "typeshed",
+        ],
+        "docs": [],
+    },
 )

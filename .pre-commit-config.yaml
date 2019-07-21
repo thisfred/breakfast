@@ -1,0 +1,30 @@
+repos:
+  - repo: https://github.com/ambv/black
+    hooks:
+      - id: black
+        language_version: python3.7
+        # override until resolved: https://github.com/ambv/black/issues/402
+        files: \.pyi?$
+        types: []
+
+  - repo: https://gitlab.com/pycqa/flake8
+    hooks:
+    - id: flake8
+      language_version: python3.7
+
+  - repo: https://github.com/asottile/seed-isort-config
+    hooks:
+      - id: seed-isort-config
+
+  - repo: https://github.com/pre-commit/mirrors-isort
+    hooks:
+      - id: isort
+        language_version: python3.7
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: debug-statements
+
+  - repo: 
