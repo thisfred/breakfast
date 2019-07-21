@@ -2,6 +2,10 @@
 test: .venv requirements.txt test-requirements.txt
 	tox
 
+.PHONY: test-continuously
+test-continuously: .venv requirements.txt test-requirements.txt
+	ptw -- --testmon
+
 .venv: requirements.txt test-requirements.txt
 	test -d .venv || python3 -m venv .venv
 	.venv/bin/pip install pip-tools
