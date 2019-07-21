@@ -1,7 +1,7 @@
 import vim_breakfast
 
 
-def test_simple_rename():
+def test_simple_rename() -> None:
     code = [
         "def fun():",
         "    old = 12",

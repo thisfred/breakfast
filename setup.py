@@ -10,7 +10,7 @@ import re
 from setuptools import setup
 
 
-def find_version(*file_paths):
+def find_version(*file_paths: str) -> str:
     """Get version from python file."""
     with open(os.path.join(os.path.dirname(__file__), *file_paths)) as version_file:
         contents = version_file.read()
