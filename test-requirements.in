@@ -8,3 +8,4 @@ pytest
 pytest-testmon
 rerun
 typeshed
+pre-commit
