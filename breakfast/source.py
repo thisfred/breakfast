@@ -1,41 +1,30 @@
 import re
 
 from ast import AST, parse
-from functools import total_ordering
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, Iterator, List, Optional, Tuple
 
 
 if TYPE_CHECKING:
     from breakfast.position import Position
 
+WORD = re.compile(r"\w+|\W+")
 
-@total_ordering
+
+@dataclass(order=True)
 class Source:
 
-    word = re.compile(r"\w+|\W+")
+    lines: List[str]
+    module_name: str = "module"
+    file_name: Optional[str] = None
 
-    def __init__(
-        self,
-        lines: List[str],
-        module_name: str = "module",
-        file_name: Optional[str] = None,
-    ):
-        self.lines = lines
-        self.changes: Dict[int, str] = {}
-        self.module_name = module_name
-        self.file_name = file_name
-
-    def __eq__(self, other: object) -> bool:
-        return self is other
-
-    def __lt__(self, other: "Source") -> bool:
-        return self.module_name < other.module_name
-
-    def __gt__(self, other: "Source") -> bool:
-        return other.module_name < self.module_name
+    def __post_init__(self) -> None:
+        self.changes: Dict[  # pylint: disable=attribute-defined-outside-init
+            int, str
+        ] = {}
 
     def get_name_at(self, position: "Position") -> str:
-        match = self.word.search(self.get_string_starting_at(position))
+        match = WORD.search(self.get_string_starting_at(position))
         assert match
         return match.group()
 
@@ -62,10 +51,10 @@ class Source:
         regex = re.compile("\\b{}\\b".format(name))
         match = regex.search(self.get_string_starting_at(start))
         while start.row <= len(self.lines) and not match:
-            start = start.copy(row=start.row + 1, column=0)
+            start = start.next_line()
             match = regex.search(self.get_string_starting_at(start))
         assert match
-        return start.copy(column=start.column + match.span()[0])
+        return start + match.span()[0]
 
     def get_string_starting_at(self, position: "Position") -> str:
         return self.lines[position.row][position.column :]

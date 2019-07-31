@@ -13,17 +13,21 @@ if TYPE_CHECKING:
 def find_occurrences(
     sources: List["Source"], old_name: str, position: Position
 ) -> List[Position]:
-    visitor = NameVisitor(sources[0])
-    for source in sources:
-        visitor.visit_source(source)
+    visitor = NameVisitor(sources)
+    visitor.visit_all()
     return visitor.top.find_occurrences(old_name, position)
 
 
 class NameVisitor(ast.NodeVisitor):
-    def __init__(self, initial_source: "Source") -> None:
-        self.current_source = initial_source
+    def __init__(self, sources: List["Source"]) -> None:
+        self.sources = sources
+        self.current_source = sources[0]
         self.top = Scope()
         self.current = self.top
+
+    def visit_all(self) -> None:
+        for source in self.sources:
+            self.visit_source(source)
 
     def visit_source(self, source: "Source") -> None:
         self.current_source = source
@@ -50,14 +54,11 @@ class NameVisitor(ast.NodeVisitor):
         for imported in node.names:
             name = imported.name
             position = self.current_source.find_after(name, start)
-            if position:
-                original = import_scope.add_occurrence(name, position, force=True)
-                self.current.add_scope(name, original)
+            original = import_scope.add_occurrence(name, position, force=True)
+            self.current.add_scope(name, original)
             alias = imported.asname
             if alias:
                 alias_position = self.current_source.find_after(alias, start)
-                if not alias_position:
-                    continue
                 alias_scope = self.current.add_definition(alias, alias_position)
                 original.add_alias(alias_scope)
                 self.current.add_definition(alias, alias_position)
@@ -115,11 +116,10 @@ class NameVisitor(ast.NodeVisitor):
         name = node.attr
         start = self._position_from_node(node)
         position = self.current_source.find_after(name, start)
-        if position:
-            if self._is_definition(node):
-                self.current.add_definition(name=name, position=position)
-            else:
-                self.current.add_occurrence(name=name, position=position, force=True)
+        if self._is_definition(node):
+            self.current.add_definition(name=name, position=position)
+        else:
+            self.current.add_occurrence(name=name, position=position, force=True)
         self.current = old
 
     def visit_Call(self, node: ast.Call) -> None:  # pylint: disable=invalid-name
@@ -131,8 +131,7 @@ class NameVisitor(ast.NodeVisitor):
         for keyword in node.keywords:
             if keyword.arg:
                 position = self.current_source.find_after(keyword.arg, start)
-                if position:
-                    self.current.add_occurrence(name=keyword.arg, position=position)
+                self.current.add_occurrence(name=keyword.arg, position=position)
         self.current = old
         for arg in node.args:
             self.visit(arg)

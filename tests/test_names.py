@@ -29,7 +29,7 @@ def test_visit_source_adds_name():
     )
     visitor = Names(source=source)
     visitor.visit_source(source)
-    assert 1 == len(visitor.get_occurrences("a", Position(source, 1, 0)))
+    assert len(visitor.get_occurrences("a", Position(source, 1, 0))) == 1
 
 
 def test_does_not_rename_random_attributes():
@@ -469,11 +469,13 @@ def test_finds_across_files():
     visitor.visit_source(source)
     visitor.visit_source(other_source)
 
-    assert [
-        Position(other_source, 1, 16),
-        Position(other_source, 2, 0),
-        Position(source, 1, 4),
-    ] == visitor.get_occurrences("old", Position(other_source, 2, 0))
+    assert sorted(
+        [
+            Position(other_source, 1, 16),
+            Position(other_source, 2, 0),
+            Position(source, 1, 4),
+        ]
+    ) == sorted(visitor.get_occurrences("old", Position(other_source, 2, 0)))
 
 
 def test_finds_multiple_imports_on_one_line():
@@ -500,11 +502,13 @@ def test_finds_multiple_imports_on_one_line():
     visitor.visit_source(source)
     visitor.visit_source(other_source)
 
-    assert [
-        Position(other_source, 1, 21),
-        Position(other_source, 2, 0),
-        Position(source, 1, 4),
-    ] == visitor.get_occurrences("old", Position(other_source, 2, 0))
+    assert sorted(
+        [
+            Position(other_source, 1, 21),
+            Position(other_source, 2, 0),
+            Position(source, 1, 4),
+        ]
+    ) == sorted(visitor.get_occurrences("old", Position(other_source, 2, 0)))
 
 
 def test_finds_static_method():
@@ -630,8 +634,10 @@ def test_finds_method_in_imported_subclass():
     visitor.visit_source(source)
     visitor.visit_source(other_source)
 
-    occurrences = visitor.get_occurrences("old", Position(source, 3, 8))
-    assert [Position(other_source, 6, 13), Position(source, 3, 8)] == occurrences
+    occurrences = sorted(visitor.get_occurrences("old", Position(source, 3, 8)))
+    assert (
+        sorted([Position(other_source, 6, 13), Position(source, 3, 8)]) == occurrences
+    )
 
 
 def test_finds_method_in_renamed_instance_of_subclass():
@@ -787,8 +793,10 @@ def test_finds_method_in_aliased_imported_subclass():
     visitor.visit_source(source)
     visitor.visit_source(other_source)
 
-    occurrences = visitor.get_occurrences("old", Position(source, 3, 8))
-    assert [Position(other_source, 6, 13), Position(source, 3, 8)] == occurrences
+    occurrences = sorted(visitor.get_occurrences("old", Position(source, 3, 8)))
+    assert (
+        sorted([Position(other_source, 6, 13), Position(source, 3, 8)]) == occurrences
+    )
 
 
 def test_finds_multiple_definitions():

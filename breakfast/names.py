@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from breakfast.source import Source
 
 
-class Collector:
+class Collector:  # pylint: disable=too-many-instance-attributes
     def __init__(self) -> None:
         self.in_method = False
         self._definitions: DefaultDict[Tuple[str, ...], List[Position]] = defaultdict(
@@ -242,11 +242,11 @@ class Names(ast.NodeVisitor):
     def get_occurrences(self, _: Any, position: Position) -> List[Position]:
         return self.collector.get_positions(position)
 
-    def visit_Module(self, node: ast.Module) -> None:  # noqa
+    def visit_Module(self, node: ast.Module) -> None:  # pylint: disable=invalid-name
         with self.collector.namespace(self.current_source.module_name):
             self.generic_visit(node)
 
-    def visit_Name(self, node: ast.Name) -> None:  # noqa
+    def visit_Name(self, node: ast.Name) -> None:  # pylint: disable=invalid-name
         if self._is_definition(node):
             action = self.collector.add_definition
         else:
@@ -255,7 +255,9 @@ class Names(ast.NodeVisitor):
         name = node.id
         action(name, position=position)
 
-    def visit_ClassDef(self, node: ast.ClassDef) -> None:  # noqa
+    def visit_ClassDef(  # pylint: disable=invalid-name
+        self, node: ast.ClassDef
+    ) -> None:
         position = self._position_from_node(
             node=node, row_offset=len(node.decorator_list), column_offset=len("class ")
         )
@@ -269,7 +271,9 @@ class Names(ast.NodeVisitor):
             for statement in node.body:
                 self.visit(statement)
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa
+    def visit_FunctionDef(  # pylint: disable=invalid-name
+        self, node: ast.FunctionDef
+    ) -> None:
         position = self._position_from_node(
             node=node, row_offset=len(node.decorator_list), column_offset=len("def ")
         )
@@ -283,7 +287,7 @@ class Names(ast.NodeVisitor):
                 self._add_parameter(arg)
             self.generic_visit(node)
 
-    def visit_Call(self, node: ast.Call) -> None:  # noqa
+    def visit_Call(self, node: ast.Call) -> None:  # pylint: disable=invalid-name
         start = self._position_from_node(node)
         self.visit(node.func)
         names = self._names_from(node.func)
@@ -299,14 +303,16 @@ class Names(ast.NodeVisitor):
         for keyword in node.keywords:
             self.visit(keyword.value)
 
-    def visit_Import(self, node: ast.Import) -> None:  # noqa
+    def visit_Import(self, node: ast.Import) -> None:  # pylint: disable=invalid-name
         start = self._position_from_node(node)
         for alias in node.names:
             name = alias.name
             position = self.current_source.find_after(name, start)
             self.collector.add_occurrence(name, position)
 
-    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:  # noqa
+    def visit_ImportFrom(  # pylint: disable=invalid-name
+        self, node: ast.ImportFrom
+    ) -> None:
         start = self._position_from_node(node)
         for imported in node.names:
             name = imported.name
@@ -321,7 +327,9 @@ class Names(ast.NodeVisitor):
                 position = self.current_source.find_after(alias, start)
                 self.collector.add_definition(alias, position)
 
-    def visit_Attribute(self, node: ast.Attribute) -> None:  # noqa
+    def visit_Attribute(  # pylint: disable=invalid-name
+        self, node: ast.Attribute
+    ) -> None:
         start = self._position_from_node(node)
         self.visit(node.value)
         names = self._names_from(node.value)
@@ -333,7 +341,7 @@ class Names(ast.NodeVisitor):
             else:
                 self.collector.add_occurrence(name, position)
 
-    def visit_Assign(self, node: ast.Assign) -> None:  # noqa
+    def visit_Assign(self, node: ast.Assign) -> None:  # pylint: disable=invalid-name
         target_names = self._get_names(node.targets[0])
         value_names = self._get_names(node.value)
         self.generic_visit(node)
@@ -341,16 +349,20 @@ class Names(ast.NodeVisitor):
             if target and value:
                 self.collector.add_alias(value, target)
 
-    def visit_DictComp(self, node: ast.DictComp) -> None:  # noqa
+    def visit_DictComp(  # pylint: disable=invalid-name
+        self, node: ast.DictComp
+    ) -> None:
         self._comp_visit(node, node.key, node.value)
 
-    def visit_SetComp(self, node: ast.SetComp) -> None:  # noqa
+    def visit_SetComp(self, node: ast.SetComp) -> None:  # pylint: disable=invalid-name
         self._comp_visit(node, node.elt)
 
-    def visit_ListComp(self, node: ast.ListComp) -> None:  # noqa
+    def visit_ListComp(  # pylint: disable=invalid-name
+        self, node: ast.ListComp
+    ) -> None:
         self._comp_visit(node, node.elt)
 
-    def visit_Global(self, node: ast.Global) -> None:  # noqa
+    def visit_Global(self, node: ast.Global) -> None:  # pylint: disable=invalid-name
         start = self._position_from_node(node)
         for name in node.names:
             position = self.current_source.find_after(name, start)
@@ -359,7 +371,9 @@ class Names(ast.NodeVisitor):
 
         self.generic_visit(node)
 
-    def visit_Nonlocal(self, node: ast.Nonlocal) -> None:  # noqa
+    def visit_Nonlocal(  # pylint: disable=invalid-name
+        self, node: ast.Nonlocal
+    ) -> None:
         start = self._position_from_node(node)
         for name in node.names:
             position = self.current_source.find_after(name, start)

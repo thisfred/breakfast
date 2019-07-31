@@ -47,6 +47,8 @@ class ImportFinder(ast.NodeVisitor):
     def __init__(self) -> None:
         self.imports: DefaultDict[str, Set[str]] = defaultdict(set)
 
-    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:  # noqa
+    def visit_ImportFrom(  # pylint: disable=invalid-name
+        self, node: ast.ImportFrom
+    ) -> None:
         if node.module:
             self.imports[node.module] |= {a.name for a in node.names}

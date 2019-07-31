@@ -1,5 +1,5 @@
 from ast import AST
-from functools import total_ordering
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Optional
 
 
@@ -11,71 +11,31 @@ class IllegalPosition(Exception):
     pass
 
 
-@total_ordering
+@dataclass(order=True, frozen=True)
 class Position:
-    def __init__(
-        self, source: "Source", row: int, column: int, node: Optional[AST] = None
-    ) -> None:
-        if row < 0 or column < 0:
-            raise IllegalPosition
+    source: "Source"
+    row: int
+    column: int
+    node: Optional[AST] = None
 
-        self.source = source
-        self.row = row
-        self.column = column
-        self.node = node
+    def __post_init__(self) -> None:
+        if self.column < 0:
+            raise IllegalPosition(f"Illegal value for column: {self.column}.")
+        if self.row < 0:
+            raise IllegalPosition(f"Illegal value for row: {self.row}.")
 
     def __add__(self, column_offset: int) -> "Position":
         return self._add_offset(column_offset)
 
     def __sub__(self, column_offset: int) -> "Position":
+        new_offset = self.column - column_offset
+        if new_offset < 0:
+            raise IllegalPosition()
+
         return self._add_offset(-column_offset)
 
-    def __eq__(self, other: object) -> bool:
-        assert isinstance(other, Position)
-        return (
-            self.source is other.source
-            and self.row == other.row
-            and self.column == other.column
-        )
-
-    def __lt__(self, other: "Position") -> bool:
-        return self.source < other.source or (
-            self.source is other.source
-            and (
-                self.row < other.row
-                or (self.row == other.row and self.column < other.column)
-            )
-        )
-
-    def __gt__(self, other: "Position") -> bool:
-        return other.source < self.source or (
-            other.source is self.source
-            and (
-                other.row < self.row
-                or (other.row == self.row and other.column < self.column)
-            )
-        )
-
-    def __repr__(self) -> str:
-        return "Position(row=%s, column=%s%s)" % (
-            self.row,
-            self.column,
-            ", node=%s" % (repr(self.node),) if self.node else "",
-        )
-
-    def copy(
-        self,
-        source: Optional["Source"] = None,
-        row: Optional[int] = None,
-        column: Optional[int] = None,
-        node: Optional[AST] = None,
-    ) -> "Position":
-        return Position(
-            source=source if source is not None else self.source,
-            row=row if row is not None else self.row,
-            column=column if column is not None else self.column,
-            node=node if node is not None else self.node,
-        )
+    def next_line(self) -> "Position":
+        return replace(self, row=self.row + 1, column=0)
 
     def _add_offset(self, offset: int) -> "Position":
-        return self.copy(column=self.column + offset)
+        return replace(self, column=self.column + offset)
