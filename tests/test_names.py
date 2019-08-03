@@ -1,5 +1,4 @@
 import os
-import sys
 
 import pytest
 
@@ -728,7 +727,6 @@ def test_finds_global_variable():
     ] == occurrences
 
 
-@pytest.mark.skipif(sys.version_info < (3, 0), reason="requires python 3.0 or higher")
 def test_finds_nonlocal_variable():
     source = make_source(
         """
