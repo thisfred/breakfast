@@ -2,7 +2,7 @@ import re
 
 from ast import AST, parse
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Dict, Iterator, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, Iterator, Optional, Tuple
 
 
 if TYPE_CHECKING:
@@ -14,9 +14,12 @@ WORD = re.compile(r"\w+|\W+")
 @dataclass(order=True)
 class Source:
 
-    lines: List[str]
+    lines: Tuple[str, ...]
     module_name: str = "module"
     file_name: Optional[str] = None
+
+    def __hash__(self) -> int:
+        return hash((self.module_name, self.file_name))
 
     def __post_init__(self) -> None:
         self.changes: Dict[  # pylint: disable=attribute-defined-outside-init
