@@ -119,7 +119,15 @@ def collect_names(source: Source) -> List[Occurrence]:
     return [o for o in visit(node=source.get_ast(), source=source, scope=ChainMap())]
 
 
-def test_assignment_target_is_its_own_definition():
+def all_occurrences_of(position: Position) -> List[Occurrence]:
+    return [
+        o
+        for o in collect_names(position.source)
+        if o.definition and o.definition.position == position
+    ]
+
+
+def test_finds_all_occurrences_of_function_local():
     source = make_source(
         """
         def fun():
@@ -132,29 +140,12 @@ def test_assignment_target_is_its_own_definition():
         old = 20
         """
     )
-    results = collect_names(source)
+    position = Position(source=source, row=2, column=4)
 
-    assert results[1].definition
-    assert results[1].definition.position == results[1].position
+    results = all_occurrences_of(position)
 
-
-def test_function_local_variable_knows_its_definition():
-    source = make_source(
-        """
-        def fun():
-            old = 12
-            old2 = 13
-            result = old + old2
-            del old
-            return result
-
-        old = 20
-        """
-    )
-    results = collect_names(source)
-
-    assert results[4].definition
-    assert results[4].definition.position == results[1].position
+    assert len(results) == 3
+    assert all(r.definition and r.definition.position == position for r in results)
 
 
 def test_module_global_does_not_see_function_local():
@@ -170,7 +161,21 @@ def test_module_global_does_not_see_function_local():
         old = 20
         """
     )
-    results = collect_names(source)
+    position = Position(source=source, row=8, column=0)
 
-    assert results[-1].definition
-    assert results[-1].definition.position == results[-1].position
+    results = all_occurrences_of(position)
+
+    assert len(results) == 1
+    assert results[0].definition
+    assert results[0].definition.position == position
+
+
+# def test_distinguishes_between_variable_and_attribute():
+#     source = make_source(
+#         """
+#         import os
+
+#         path = os.path.dirname(__file__)
+#         """
+#     )
+#     results = collect_names(source)
