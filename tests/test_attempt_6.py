@@ -177,3 +177,21 @@ def test_distinguishes_between_variable_and_attribute():
 
     results = all_occurrences_of(position)
     assert len(results) == 1
+
+
+def test_finds_variable_in_closure():
+    source = make_source(
+        """
+        old = 12
+
+        def fun():
+            result = old + 1
+            return result
+
+        old = 20
+        """
+    )
+    position = Position(source=source, row=1, column=0)
+
+    results = all_occurrences_of(position)
+    assert len(results) == 3
