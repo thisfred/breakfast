@@ -39,11 +39,6 @@ def name(node: ast.Name,) -> Optional[str]:
 
 
 @get_name_for.register
-def attribute(node: ast.Attribute,) -> Optional[str]:
-    return node.attr
-
-
-@get_name_for.register
 def function_definition(node: ast.FunctionDef,) -> Optional[str]:
     return node.name
 
@@ -170,12 +165,15 @@ def test_module_global_does_not_see_function_local():
     assert results[0].definition.position == position
 
 
-# def test_distinguishes_between_variable_and_attribute():
-#     source = make_source(
-#         """
-#         import os
+def test_distinguishes_between_variable_and_attribute():
+    source = make_source(
+        """
+        import os
 
-#         path = os.path.dirname(__file__)
-#         """
-#     )
-#     results = collect_names(source)
+        path = os.path.dirname(__file__)
+        """
+    )
+    position = Position(source=source, row=3, column=0)
+
+    results = all_occurrences_of(position)
+    assert len(results) == 1
