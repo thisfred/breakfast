@@ -1,7 +1,7 @@
 import ast
 
 from collections import ChainMap
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import singledispatch
 from typing import ChainMap as CM
 from typing import List, Optional
@@ -28,57 +28,80 @@ class Occurrence:
     definition: Optional[Definition] = None
 
 
+@dataclass()
+class Scope:
+    occurrence: Optional[Occurrence]
+    lookup: CM[str, Definition] = field(  # pylint: disable=unsubscriptable-object
+        default_factory=ChainMap
+    )
+
+
 @singledispatch
-def get_name_for(node: ast.AST,) -> Optional[str]:  # pylint: disable=unused-argument
+def get_name_for(
+    node: ast.AST, source: Source  # pylint: disable=unused-argument
+) -> Optional[str]:
     ...
 
 
 @get_name_for.register
-def name(node: ast.Name,) -> Optional[str]:
+def name(
+    node: ast.Name, source: Source  # pylint: disable=unused-argument
+) -> Optional[str]:
     return node.id
 
 
 @get_name_for.register
-def function_definition(node: ast.FunctionDef,) -> Optional[str]:
+def function_name(
+    node: ast.FunctionDef, source: Source  # pylint: disable=unused-argument
+) -> Optional[str]:
     return node.name
 
 
+@get_name_for.register
+def module_name(
+    node: ast.Module, source: Source  # pylint: disable=unused-argument
+) -> Optional[str]:
+    return source.module_name
+
+
 def create_occurrence(
-    node: ast.AST,
-    source: Source,
-    scope: CM[str, Definition],  # pylint: disable=unsubscriptable-object
+    node: ast.AST, source: Source, scope: Scope
 ) -> Optional[Occurrence]:
-    name = get_name_for(node)
+    name = get_name_for(node, source)
     if not name:
         return None
 
     position = Position(source=source, row=node.lineno - 1, column=node.col_offset)
-    definition = scope.get(name)
+    definition = scope.lookup.get(name)
     occurrence = Occurrence(name=name, position=position, node=node)
     if definition:
         definition.occurrences.append(occurrence)
     else:
         definition = Definition(position=position, occurrences=[])
-        scope[occurrence.name] = definition
+        scope.lookup[occurrence.name] = definition
     occurrence.definition = definition
     return occurrence
 
 
 @singledispatch
-def new_scope(node, current_scope):  # pylint: disable=unused-argument
+def new_scope(
+    node: ast.AST,  # pylint: disable=unused-argument
+    occurrence: Occurrence,  # pylint: disable=unused-argument
+    current_scope: Scope,
+) -> Scope:
     return current_scope
 
 
 @new_scope.register
 def function_scope(
-    node: ast.FunctionDef, current_scope
-):  # pylint: disable=unused-argument
-    return current_scope.new_child()
+    node: ast.FunctionDef,  # pylint: disable=unused-argument
+    occurrence: Occurrence,
+    current_scope: Scope,
+) -> Scope:
+    return Scope(occurrence=occurrence, lookup=current_scope.lookup.new_child())
 
 
-def visit(
-    node: ast.AST, source: Source, scope: CM[str, Definition]
-):  # pylint: disable=unsubscriptable-object
+def visit(node: ast.AST, source: Source, scope: Scope):
     """Visit a node.
 
     Copied and reworked from NodeVisitor in:
@@ -88,13 +111,12 @@ def visit(
     occurrence = create_occurrence(node, source, scope)
     if occurrence:
         yield occurrence
+        scope = new_scope(node, occurrence, scope)
 
-    yield from generic_visit(node, source, new_scope(node, scope))
+    yield from generic_visit(node, source, scope)
 
 
-def generic_visit(
-    node, source: Source, scope: CM[str, Definition]
-):  # pylint: disable=unsubscriptable-object
+def generic_visit(node, source: Source, scope: Scope):
     """Called if no explicit visitor function exists for a node.
 
     Copied and reworked from NodeVisitor in:
@@ -111,7 +133,9 @@ def generic_visit(
 
 
 def collect_names(source: Source) -> List[Occurrence]:
-    return [o for o in visit(node=source.get_ast(), source=source, scope=ChainMap())]
+    initial_node = source.get_ast()
+    top_level_scope = Scope(None, ChainMap())
+    return [o for o in visit(node=initial_node, source=source, scope=top_level_scope)]
 
 
 def all_occurrences_of(position: Position) -> List[Occurrence]:
