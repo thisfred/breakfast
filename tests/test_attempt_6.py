@@ -20,20 +20,20 @@ class Definition:
         return hash(self.position)
 
 
+@dataclass(frozen=True)
+class Scope:
+    lookup: CM[str, Definition] = field(  # pylint: disable=unsubscriptable-object
+        default_factory=ChainMap
+    )
+
+
 @dataclass()
 class Occurrence:
     name: str
     position: Position
     node: Optional[ast.AST] = None
     definition: Optional[Definition] = None
-
-
-@dataclass()
-class Scope:
-    occurrence: Optional[Occurrence]
-    lookup: CM[str, Definition] = field(  # pylint: disable=unsubscriptable-object
-        default_factory=ChainMap
-    )
+    scope: Optional[Scope] = None
 
 
 @singledispatch
@@ -98,7 +98,9 @@ def function_scope(
     occurrence: Occurrence,
     current_scope: Scope,
 ) -> Scope:
-    return Scope(occurrence=occurrence, lookup=current_scope.lookup.new_child())
+    new_scope = Scope(lookup=current_scope.lookup.new_child())
+    occurrence.scope = new_scope
+    return new_scope
 
 
 def visit(node: ast.AST, source: Source, scope: Scope):
@@ -134,7 +136,7 @@ def generic_visit(node, source: Source, scope: Scope):
 
 def collect_names(source: Source) -> List[Occurrence]:
     initial_node = source.get_ast()
-    top_level_scope = Scope(None, ChainMap())
+    top_level_scope = Scope()
     return [o for o in visit(node=initial_node, source=source, scope=top_level_scope)]
 
 
