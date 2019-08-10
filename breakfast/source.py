@@ -26,6 +26,12 @@ class Source:
             int, str
         ] = {}
 
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__}(lines=[...], module_name={repr(self.module_name)}, "
+            f"file_name={repr(self.file_name)})"
+        )
+
     def get_name_at(self, position: "Position") -> str:
         match = WORD.search(self.get_string_starting_at(position))
         assert match

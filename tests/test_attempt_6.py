@@ -4,7 +4,7 @@ from collections import ChainMap
 from dataclasses import dataclass, field
 from functools import singledispatch
 from typing import ChainMap as CM
-from typing import List, Optional
+from typing import Iterator, List, Optional
 
 from breakfast.position import Position
 from breakfast.source import Source
@@ -31,16 +31,16 @@ class Scope:
 class Occurrence:
     name: str
     position: Position
-    node: Optional[ast.AST] = None
+    node: ast.AST
+    scope: Scope
     definition: Optional[Definition] = None
-    scope: Optional[Scope] = None
 
 
 @singledispatch
 def get_name_for(
     node: ast.AST, source: Source  # pylint: disable=unused-argument
 ) -> Optional[str]:
-    ...
+    return None
 
 
 @get_name_for.register
@@ -55,6 +55,20 @@ def function_name(
     node: ast.FunctionDef, source: Source  # pylint: disable=unused-argument
 ) -> Optional[str]:
     return node.name
+
+
+@get_name_for.register
+def class_name(
+    node: ast.ClassDef, source: Source  # pylint: disable=unused-argument
+) -> Optional[str]:
+    return node.name
+
+
+@get_name_for.register
+def attribute_name(
+    node: ast.Attribute, source: Source  # pylint: disable=unused-argument
+) -> Optional[str]:
+    return node.attr
 
 
 @get_name_for.register
@@ -73,7 +87,7 @@ def create_occurrence(
 
     position = Position(source=source, row=node.lineno - 1, column=node.col_offset)
     definition = scope.lookup.get(name)
-    occurrence = Occurrence(name=name, position=position, node=node)
+    occurrence = Occurrence(name=name, position=position, node=node, scope=Scope())
     if definition:
         definition.occurrences.append(occurrence)
     else:
@@ -93,6 +107,16 @@ def new_scope(
 
 
 @new_scope.register
+def name_scope(
+    node: ast.Name,  # pylint: disable=unused-argument
+    occurrence: Occurrence,
+    current_scope: Scope,  # pylint: disable=unused-argument
+) -> Scope:
+    occurrence.scope = Scope()
+    return occurrence.scope
+
+
+@new_scope.register
 def function_scope(
     node: ast.FunctionDef,  # pylint: disable=unused-argument
     occurrence: Occurrence,
@@ -103,7 +127,19 @@ def function_scope(
     return new_scope
 
 
-def visit(node: ast.AST, source: Source, scope: Scope):
+@new_scope.register
+def class_scope(
+    node: ast.ClassDef,  # pylint: disable=unused-argument
+    occurrence: Occurrence,
+    current_scope: Scope,
+) -> Scope:
+    new_scope = Scope(lookup=current_scope.lookup.new_child())
+    occurrence.scope = new_scope
+    return new_scope
+
+
+@singledispatch
+def visit(node: ast.AST, source: Source, scope: Scope) -> Iterator[Occurrence]:
     """Visit a node.
 
     Copied and reworked from NodeVisitor in:
@@ -118,7 +154,26 @@ def visit(node: ast.AST, source: Source, scope: Scope):
     yield from generic_visit(node, source, scope)
 
 
-def generic_visit(node, source: Source, scope: Scope):
+@visit.register
+def visit_attribute(
+    node: ast.Attribute, source: Source, scope: Scope
+) -> Iterator[Occurrence]:
+    """Visit an Attribute node.
+
+    For Attributes, we have to sort of turn things inside out to build up the nested
+    scope correctly, because a.b.c shows up as `Attribute(value=a.b, attr=c)`.
+    """
+    occurrence = None
+    for occurrence in visit(node.value, source, scope):
+        yield occurrence
+    if occurrence:
+        scope = occurrence.scope
+    occurrence = create_occurrence(node, source, scope)
+    if occurrence:
+        yield occurrence
+
+
+def generic_visit(node, source: Source, scope: Scope) -> Iterator[Occurrence]:
     """Called if no explicit visitor function exists for a node.
 
     Copied and reworked from NodeVisitor in:
@@ -137,7 +192,7 @@ def generic_visit(node, source: Source, scope: Scope):
 def collect_names(source: Source) -> List[Occurrence]:
     initial_node = source.get_ast()
     top_level_scope = Scope()
-    return [o for o in visit(node=initial_node, source=source, scope=top_level_scope)]
+    return [o for o in visit(initial_node, source=source, scope=top_level_scope)]
 
 
 def all_occurrences_of(position: Position) -> List[Occurrence]:
