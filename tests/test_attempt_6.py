@@ -78,13 +78,17 @@ def module_name(
     return source.module_name
 
 
+def name_position(node: ast.AST, source: Source) -> Position:
+    return Position(source=source, row=node.lineno - 1, column=node.col_offset)
+
+
 def create_occurrence(
     node: ast.AST, source: Source, scope: Scope
 ) -> Optional[Occurrence]:
     name = name_for(node, source)
     if not name:
         return None
-    position = Position(source=source, row=node.lineno - 1, column=node.col_offset)
+    position = name_position(node, source)
     occurrence = Occurrence(name=name, position=position, node=node, scope=scope)
     scope.lookup.setdefault(occurrence.name, []).append(occurrence)
     return occurrence
@@ -114,6 +118,11 @@ def function_scope(
     occurrence: Occurrence,  # pylint: disable=unused-argument
     current_scope: Scope,
 ) -> Scope:
+    if current_scope.node_type == ast.ClassDef:
+        return Scope(
+            node_type=node.__class__, lookup=current_scope.lookup.parents.new_child()
+        )
+
     return Scope(node_type=node.__class__, lookup=current_scope.lookup.new_child())
 
 
