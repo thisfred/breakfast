@@ -4,7 +4,7 @@ from collections import ChainMap
 from dataclasses import dataclass, field
 from functools import singledispatch
 from typing import ChainMap as CM
-from typing import Iterator, List, Optional
+from typing import Iterator, List, Optional, Tuple, Type
 
 from breakfast.position import Position
 from breakfast.source import Source
@@ -20,11 +20,12 @@ class Definition:
         return hash(self.position)
 
 
-@dataclass(frozen=True)
+@dataclass()
 class Scope:
-    lookup: CM[str, Definition] = field(  # pylint: disable=unsubscriptable-object
-        default_factory=ChainMap
-    )
+    lookup: CM[  # pylint: disable=unsubscriptable-object
+        str, List["Occurrence"]
+    ] = field(default_factory=ChainMap)
+    node_type: Optional[Type[ast.AST]] = None
 
 
 @dataclass()
@@ -33,45 +34,44 @@ class Occurrence:
     position: Position
     node: ast.AST
     scope: Scope
-    definition: Optional[Definition] = None
 
 
 @singledispatch
-def get_name_for(
+def name_for(
     node: ast.AST, source: Source  # pylint: disable=unused-argument
 ) -> Optional[str]:
     return None
 
 
-@get_name_for.register
+@name_for.register
 def name(
     node: ast.Name, source: Source  # pylint: disable=unused-argument
 ) -> Optional[str]:
     return node.id
 
 
-@get_name_for.register
+@name_for.register
 def function_name(
     node: ast.FunctionDef, source: Source  # pylint: disable=unused-argument
 ) -> Optional[str]:
     return node.name
 
 
-@get_name_for.register
+@name_for.register
 def class_name(
     node: ast.ClassDef, source: Source  # pylint: disable=unused-argument
 ) -> Optional[str]:
     return node.name
 
 
-@get_name_for.register
+@name_for.register
 def attribute_name(
     node: ast.Attribute, source: Source  # pylint: disable=unused-argument
 ) -> Optional[str]:
     return node.attr
 
 
-@get_name_for.register
+@name_for.register
 def module_name(
     node: ast.Module, source: Source  # pylint: disable=unused-argument
 ) -> Optional[str]:
@@ -81,19 +81,12 @@ def module_name(
 def create_occurrence(
     node: ast.AST, source: Source, scope: Scope
 ) -> Optional[Occurrence]:
-    name = get_name_for(node, source)
+    name = name_for(node, source)
     if not name:
         return None
-
     position = Position(source=source, row=node.lineno - 1, column=node.col_offset)
-    definition = scope.lookup.get(name)
-    occurrence = Occurrence(name=name, position=position, node=node, scope=Scope())
-    if definition:
-        definition.occurrences.append(occurrence)
-    else:
-        definition = Definition(position=position, occurrences=[])
-        scope.lookup[occurrence.name] = definition
-    occurrence.definition = definition
+    occurrence = Occurrence(name=name, position=position, node=node, scope=scope)
+    scope.lookup.setdefault(occurrence.name, []).append(occurrence)
     return occurrence
 
 
@@ -108,38 +101,44 @@ def new_scope(
 
 @new_scope.register
 def name_scope(
-    node: ast.Name,  # pylint: disable=unused-argument
-    occurrence: Occurrence,
+    node: ast.Name,
+    occurrence: Occurrence,  # pylint: disable=unused-argument
     current_scope: Scope,  # pylint: disable=unused-argument
 ) -> Scope:
-    occurrence.scope = Scope()
-    return occurrence.scope
+    return Scope(node_type=node.__class__)
 
 
 @new_scope.register
 def function_scope(
-    node: ast.FunctionDef,  # pylint: disable=unused-argument
-    occurrence: Occurrence,
+    node: ast.FunctionDef,
+    occurrence: Occurrence,  # pylint: disable=unused-argument
     current_scope: Scope,
 ) -> Scope:
-    new_scope = Scope(lookup=current_scope.lookup.new_child())
-    occurrence.scope = new_scope
-    return new_scope
+    return Scope(node_type=node.__class__, lookup=current_scope.lookup.new_child())
 
 
 @new_scope.register
 def class_scope(
-    node: ast.ClassDef,  # pylint: disable=unused-argument
-    occurrence: Occurrence,
+    node: ast.ClassDef,
+    occurrence: Occurrence,  # pylint: disable=unused-argument
     current_scope: Scope,
 ) -> Scope:
-    new_scope = Scope(lookup=current_scope.lookup.new_child())
-    occurrence.scope = new_scope
-    return new_scope
+    return Scope(node_type=node.__class__, lookup=current_scope.lookup.new_child())
+
+
+@new_scope.register
+def attribute_scope(
+    node: ast.Attribute,
+    occurrence: Occurrence,  # pylint: disable=unused-argument
+    current_scope: Scope,  # pylint: disable=unused-argument
+) -> Scope:
+    return Scope(node_type=node.__class__)
 
 
 @singledispatch
-def visit(node: ast.AST, source: Source, scope: Scope) -> Iterator[Occurrence]:
+def visit(
+    node: ast.AST, source: Source, scope: Scope
+) -> Iterator[Tuple[Scope, Occurrence]]:
     """Visit a node.
 
     Copied and reworked from NodeVisitor in:
@@ -148,8 +147,8 @@ def visit(node: ast.AST, source: Source, scope: Scope) -> Iterator[Occurrence]:
     """
     occurrence = create_occurrence(node, source, scope)
     if occurrence:
-        yield occurrence
         scope = new_scope(node, occurrence, scope)
+        yield scope, occurrence
 
     yield from generic_visit(node, source, scope)
 
@@ -157,23 +156,24 @@ def visit(node: ast.AST, source: Source, scope: Scope) -> Iterator[Occurrence]:
 @visit.register
 def visit_attribute(
     node: ast.Attribute, source: Source, scope: Scope
-) -> Iterator[Occurrence]:
+) -> Iterator[Tuple[Scope, Occurrence]]:
     """Visit an Attribute node.
 
     For Attributes, we have to sort of turn things inside out to build up the nested
     scope correctly, because a.b.c shows up as `Attribute(value=a.b, attr=c)`.
     """
     occurrence = None
-    for occurrence in visit(node.value, source, scope):
-        yield occurrence
+    new_scope = scope
+    for new_scope, occurrence in visit(node.value, source, scope):
+        yield new_scope, occurrence
+    occurrence = create_occurrence(node, source, new_scope)
     if occurrence:
-        scope = occurrence.scope
-    occurrence = create_occurrence(node, source, scope)
-    if occurrence:
-        yield occurrence
+        yield scope, occurrence
 
 
-def generic_visit(node, source: Source, scope: Scope) -> Iterator[Occurrence]:
+def generic_visit(
+    node, source: Source, scope: Scope
+) -> Iterator[Tuple[Scope, Occurrence]]:
     """Called if no explicit visitor function exists for a node.
 
     Copied and reworked from NodeVisitor in:
@@ -189,18 +189,20 @@ def generic_visit(node, source: Source, scope: Scope) -> Iterator[Occurrence]:
             yield from visit(value, source, scope)
 
 
-def collect_names(source: Source) -> List[Occurrence]:
+def collect_occurrences(source: Source) -> List[Occurrence]:
     initial_node = source.get_ast()
     top_level_scope = Scope()
-    return [o for o in visit(initial_node, source=source, scope=top_level_scope)]
+    return [o for _, o in visit(initial_node, source=source, scope=top_level_scope)]
 
 
 def all_occurrences_of(position: Position) -> List[Occurrence]:
-    return [
-        o
-        for o in collect_names(position.source)
-        if o.definition and o.definition.position == position
-    ]
+    original_occurrence = next(
+        (o for o in collect_occurrences(position.source) if o.position == position),
+        None,
+    )
+    if not original_occurrence:
+        return []
+    return original_occurrence.scope.lookup[original_occurrence.name]
 
 
 def test_finds_all_occurrences_of_function_local():
@@ -221,7 +223,6 @@ def test_finds_all_occurrences_of_function_local():
     results = all_occurrences_of(position)
 
     assert len(results) == 3
-    assert all(r.definition and r.definition.position == position for r in results)
 
 
 def test_module_global_does_not_see_function_local():
@@ -242,8 +243,6 @@ def test_module_global_does_not_see_function_local():
     results = all_occurrences_of(position)
 
     assert len(results) == 1
-    assert results[0].definition
-    assert results[0].definition.position == position
 
 
 def test_distinguishes_between_variable_and_attribute():
