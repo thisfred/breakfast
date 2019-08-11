@@ -11,15 +11,6 @@ from breakfast.source import Source
 from tests import make_source
 
 
-@dataclass(frozen=True)
-class Definition:
-    position: Position
-    occurrences: List["Occurrence"]
-
-    def __hash__(self) -> int:
-        return hash(self.position)
-
-
 @dataclass()
 class Scope:
     lookup: CM[  # pylint: disable=unsubscriptable-object
@@ -78,8 +69,31 @@ def module_name(
     return source.module_name
 
 
-def name_position(node: ast.AST, source: Source) -> Position:
-    return Position(source=source, row=node.lineno - 1, column=node.col_offset)
+def node_position(
+    node: ast.AST, source: Source, row_offset=0, column_offset=0
+) -> Position:
+    return Position(
+        source=source,
+        row=(node.lineno - 1) + row_offset,
+        column=node.col_offset + column_offset,
+    )
+
+
+@singledispatch
+def node_name_offsets(
+    node: ast.AST  # pylint: disable=unused-argument
+) -> Tuple[int, int]:
+    return (0, 0)
+
+
+@node_name_offsets.register
+def class_name_offsets(node: ast.ClassDef) -> Tuple[int, int]:
+    return (len(node.decorator_list), len("class "))
+
+
+@node_name_offsets.register
+def function_name_offsets(node: ast.FunctionDef) -> Tuple[int, int]:
+    return (len(node.decorator_list), len("def "))
 
 
 def create_occurrence(
@@ -88,7 +102,10 @@ def create_occurrence(
     name = name_for(node, source)
     if not name:
         return None
-    position = name_position(node, source)
+    row_offset, column_offset = node_name_offsets(node)
+    position = node_position(
+        node, source, row_offset=row_offset, column_offset=column_offset
+    )
     occurrence = Occurrence(name=name, position=position, node=node, scope=scope)
     scope.lookup.setdefault(occurrence.name, []).append(occurrence)
     return occurrence
