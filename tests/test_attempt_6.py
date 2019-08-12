@@ -161,6 +161,17 @@ def attribute_scope(
     return Scope(node_type=node.__class__)
 
 
+def get_scope_and_occurrence(
+    node: ast.AST, source: Source, scope: Scope
+) -> Optional[Tuple[Scope, Occurrence]]:
+    occurrence = create_occurrence(node, source, scope)
+    if not occurrence:
+        return None
+
+    scope = new_scope(node, occurrence, scope)
+    return scope, occurrence
+
+
 @singledispatch
 def visit(
     node: ast.AST, source: Source, scope: Scope
@@ -171,10 +182,10 @@ def visit(
 
     https://github.com/python/cpython/blob/master/Lib/ast.py
     """
-    occurrence = create_occurrence(node, source, scope)
-    if occurrence:
-        scope = new_scope(node, occurrence, scope)
-        yield scope, occurrence
+    scope_and_occurrence = get_scope_and_occurrence(node, source, scope)
+    if scope_and_occurrence:
+        yield scope_and_occurrence
+        scope = scope_and_occurrence[0]
 
     yield from generic_visit(node, source, scope)
 
