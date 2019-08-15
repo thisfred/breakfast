@@ -96,21 +96,6 @@ def function_name_offsets(node: ast.FunctionDef) -> Tuple[int, int]:
     return (len(node.decorator_list), len("def "))
 
 
-def create_occurrence(
-    node: ast.AST, source: Source, scope: Scope
-) -> Optional[Occurrence]:
-    name = name_for(node, source)
-    if not name:
-        return None
-    row_offset, column_offset = node_name_offsets(node)
-    position = node_position(
-        node, source, row_offset=row_offset, column_offset=column_offset
-    )
-    occurrence = Occurrence(name=name, position=position, node=node, scope=scope)
-    scope.lookup.setdefault(occurrence.name, []).append(occurrence)
-    return occurrence
-
-
 @singledispatch
 def new_scope(
     node: ast.AST,  # pylint: disable=unused-argument
@@ -161,17 +146,6 @@ def attribute_scope(
     return Scope(node_type=node.__class__)
 
 
-def get_scope_and_occurrence(
-    node: ast.AST, source: Source, scope: Scope
-) -> Optional[Tuple[Scope, Occurrence]]:
-    occurrence = create_occurrence(node, source, scope)
-    if not occurrence:
-        return None
-
-    scope = new_scope(node, occurrence, scope)
-    return scope, occurrence
-
-
 @singledispatch
 def visit(
     node: ast.AST, source: Source, scope: Scope
@@ -182,12 +156,33 @@ def visit(
 
     https://github.com/python/cpython/blob/master/Lib/ast.py
     """
-    scope_and_occurrence = get_scope_and_occurrence(node, source, scope)
-    if scope_and_occurrence:
-        yield scope_and_occurrence
-        scope = scope_and_occurrence[0]
+    name = name_for(node, source)
+    if name:
+        row_offset, column_offset = node_name_offsets(node)
+        position = node_position(
+            node, source, row_offset=row_offset, column_offset=column_offset
+        )
+        occurrence = Occurrence(name=name, position=position, node=node, scope=scope)
+        scope.lookup.setdefault(occurrence.name, []).append(occurrence)
+        scope = new_scope(node, occurrence, scope)
+        yield scope, occurrence
 
     yield from generic_visit(node, source, scope)
+
+
+def create_occurrence(
+    node: ast.AST, source: Source, scope: Scope
+) -> Optional[Occurrence]:
+    name = name_for(node, source)
+    if not name:
+        return None
+    row_offset, column_offset = node_name_offsets(node)
+    position = node_position(
+        node, source, row_offset=row_offset, column_offset=column_offset
+    )
+    occurrence = Occurrence(name=name, position=position, node=node, scope=scope)
+    scope.lookup.setdefault(occurrence.name, []).append(occurrence)
+    return occurrence
 
 
 @visit.register
@@ -203,9 +198,18 @@ def visit_attribute(
     new_scope = scope
     for new_scope, occurrence in visit(node.value, source, scope):
         yield new_scope, occurrence
-    occurrence = create_occurrence(node, source, new_scope)
-    if occurrence:
-        yield scope, occurrence
+
+    name = name_for(node, source)
+    if name:
+        row_offset, column_offset = node_name_offsets(node)
+        position = node_position(
+            node, source, row_offset=row_offset, column_offset=column_offset
+        )
+        occurrence = Occurrence(
+            name=name, position=position, node=node, scope=new_scope
+        )
+        new_scope.lookup.setdefault(occurrence.name, []).append(occurrence)
+        yield new_scope, occurrence
 
 
 def generic_visit(

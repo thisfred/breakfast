@@ -119,10 +119,10 @@ def test_finds_method_names():
 def test_finds_parameters():
     source = make_source(
         """
-    def fun(arg, arg2):
-        return arg + arg2
-    fun(arg=1, arg2=2)
-    """
+        def fun(arg, arg2):
+            return arg + arg2
+        fun(arg=1, arg2=2)
+        """
     )
     visitor = Names(source)
 
