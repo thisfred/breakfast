@@ -128,15 +128,6 @@ def function_scope(
     return Scope(node_type=node.__class__, lookup=current_scope.lookup.new_child())
 
 
-@new_scope.register
-def attribute_scope(
-    node: ast.Attribute,
-    occurrence: Occurrence,  # pylint: disable=unused-argument
-    current_scope: Scope,  # pylint: disable=unused-argument
-) -> Scope:
-    return Scope(node_type=node.__class__)
-
-
 @singledispatch
 def visit(
     node: ast.AST, source: Source, scope: Scope
