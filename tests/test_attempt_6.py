@@ -27,27 +27,6 @@ class Occurrence:
     scope: Scope
 
 
-@singledispatch
-def name_for(
-    node: ast.AST, source: Source  # pylint: disable=unused-argument
-) -> Optional[str]:
-    return None
-
-
-@name_for.register
-def name(
-    node: ast.Name, source: Source  # pylint: disable=unused-argument
-) -> Optional[str]:
-    return node.id
-
-
-@name_for.register
-def module_name(
-    node: ast.Module, source: Source  # pylint: disable=unused-argument
-) -> Optional[str]:
-    return source.module_name
-
-
 def node_position(
     node: ast.AST, source: Source, row_offset=0, column_offset=0
 ) -> Position:
@@ -68,7 +47,11 @@ def visit(
 
     https://github.com/python/cpython/blob/master/Lib/ast.py
     """
-    name = name_for(node, source)
+    name = None
+    if isinstance(node, ast.Module):
+        name = source.module_name
+    elif isinstance(node, ast.Name):
+        name = node.id
     if name:
         position = node_position(node, source)
         occurrence = Occurrence(name=name, position=position, node=node, scope=scope)
