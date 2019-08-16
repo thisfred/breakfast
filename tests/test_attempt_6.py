@@ -129,15 +129,6 @@ def function_scope(
 
 
 @new_scope.register
-def class_scope(
-    node: ast.ClassDef,
-    occurrence: Occurrence,  # pylint: disable=unused-argument
-    current_scope: Scope,
-) -> Scope:
-    return Scope(node_type=node.__class__, lookup=current_scope.lookup.new_child())
-
-
-@new_scope.register
 def attribute_scope(
     node: ast.Attribute,
     occurrence: Occurrence,  # pylint: disable=unused-argument
@@ -165,6 +156,22 @@ def visit(
         occurrence = Occurrence(name=name, position=position, node=node, scope=scope)
         scope.lookup.setdefault(occurrence.name, []).append(occurrence)
         scope = new_scope(node, occurrence, scope)
+        yield scope, occurrence
+
+    yield from generic_visit(node, source, scope)
+
+
+@visit.register
+def visit_class(node: ast.ClassDef, source: Source, scope: Scope):
+    name = name_for(node, source)
+    if name:
+        row_offset, column_offset = node_name_offsets(node)
+        position = node_position(
+            node, source, row_offset=row_offset, column_offset=column_offset
+        )
+        occurrence = Occurrence(name=name, position=position, node=node, scope=scope)
+        scope.lookup.setdefault(occurrence.name, []).append(occurrence)
+        scope = Scope(node_type=node.__class__, lookup=scope.lookup.new_child())
         yield scope, occurrence
 
     yield from generic_visit(node, source, scope)
