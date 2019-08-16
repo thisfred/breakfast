@@ -170,21 +170,6 @@ def visit(
     yield from generic_visit(node, source, scope)
 
 
-def create_occurrence(
-    node: ast.AST, source: Source, scope: Scope
-) -> Optional[Occurrence]:
-    name = name_for(node, source)
-    if not name:
-        return None
-    row_offset, column_offset = node_name_offsets(node)
-    position = node_position(
-        node, source, row_offset=row_offset, column_offset=column_offset
-    )
-    occurrence = Occurrence(name=name, position=position, node=node, scope=scope)
-    scope.lookup.setdefault(occurrence.name, []).append(occurrence)
-    return occurrence
-
-
 @visit.register
 def visit_attribute(
     node: ast.Attribute, source: Source, scope: Scope
