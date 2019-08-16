@@ -59,24 +59,6 @@ def node_position(
 
 
 @singledispatch
-def new_scope(
-    node: ast.AST,  # pylint: disable=unused-argument
-    occurrence: Occurrence,  # pylint: disable=unused-argument
-    current_scope: Scope,
-) -> Scope:
-    return current_scope
-
-
-@new_scope.register
-def name_scope(
-    node: ast.Name,
-    occurrence: Occurrence,  # pylint: disable=unused-argument
-    current_scope: Scope,  # pylint: disable=unused-argument
-) -> Scope:
-    return Scope(node_type=node.__class__)
-
-
-@singledispatch
 def visit(
     node: ast.AST, source: Source, scope: Scope
 ) -> Iterator[Tuple[Scope, Occurrence]]:
@@ -91,7 +73,9 @@ def visit(
         position = node_position(node, source)
         occurrence = Occurrence(name=name, position=position, node=node, scope=scope)
         scope.lookup.setdefault(occurrence.name, []).append(occurrence)
-        scope = new_scope(node, occurrence, scope)
+        if isinstance(node, ast.Name):
+            scope = Scope(node_type=node.__class__)
+
         yield scope, occurrence
 
     yield from generic_visit(node, source, scope)
