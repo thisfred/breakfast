@@ -59,18 +59,6 @@ def node_position(
 
 
 @singledispatch
-def node_name_offsets(
-    node: ast.AST  # pylint: disable=unused-argument
-) -> Tuple[int, int]:
-    return (0, 0)
-
-
-@node_name_offsets.register
-def function_name_offsets(node: ast.FunctionDef) -> Tuple[int, int]:
-    return (len(node.decorator_list), len("def "))
-
-
-@singledispatch
 def new_scope(
     node: ast.AST,  # pylint: disable=unused-argument
     occurrence: Occurrence,  # pylint: disable=unused-argument
@@ -157,10 +145,7 @@ def visit_attribute(
     for new_scope, occurrence in visit(node.value, source, scope):
         yield new_scope, occurrence
 
-    row_offset, column_offset = node_name_offsets(node)
-    position = node_position(
-        node, source, row_offset=row_offset, column_offset=column_offset
-    )
+    position = node_position(node, source)
     occurrence = Occurrence(
         name=node.attr, position=position, node=node, scope=new_scope
     )
