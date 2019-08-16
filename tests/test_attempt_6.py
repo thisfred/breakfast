@@ -49,13 +49,6 @@ def function_name(
 
 
 @name_for.register
-def class_name(
-    node: ast.ClassDef, source: Source  # pylint: disable=unused-argument
-) -> Optional[str]:
-    return node.name
-
-
-@name_for.register
 def attribute_name(
     node: ast.Attribute, source: Source  # pylint: disable=unused-argument
 ) -> Optional[str]:
