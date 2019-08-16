@@ -154,16 +154,14 @@ def visit(
 
 @visit.register
 def visit_class(node: ast.ClassDef, source: Source, scope: Scope):
-    name = name_for(node, source)
-    if name:
-        row_offset, column_offset = node_name_offsets(node)
-        position = node_position(
-            node, source, row_offset=row_offset, column_offset=column_offset
-        )
-        occurrence = Occurrence(name=name, position=position, node=node, scope=scope)
-        scope.lookup.setdefault(occurrence.name, []).append(occurrence)
-        scope = Scope(node_type=node.__class__, lookup=scope.lookup.new_child())
-        yield scope, occurrence
+    row_offset, column_offset = node_name_offsets(node)
+    position = node_position(
+        node, source, row_offset=row_offset, column_offset=column_offset
+    )
+    occurrence = Occurrence(name=node.name, position=position, node=node, scope=scope)
+    scope.lookup.setdefault(occurrence.name, []).append(occurrence)
+    scope = Scope(node_type=node.__class__, lookup=scope.lookup.new_child())
+    yield scope, occurrence
 
     yield from generic_visit(node, source, scope)
 
