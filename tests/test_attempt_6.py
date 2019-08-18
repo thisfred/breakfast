@@ -11,15 +11,36 @@ from breakfast.source import Source
 from tests import make_source
 
 
-@dataclass()
+@dataclass
 class Scope:
     lookup: CM[  # pylint: disable=unsubscriptable-object
         str, List["Occurrence"]
     ] = field(default_factory=ChainMap)
     node_type: Optional[Type[ast.AST]] = None
 
+    def add_occurrence(
+        self,
+        name: str,
+        position: Position,
+        node: ast.AST,
+        new_scope: Optional["Scope"] = None,
+    ) -> "Occurrence":
+        occurrence = Occurrence(name, position, node, new_scope or self.new_scope(node))
+        self.lookup.setdefault(name, []).append(occurrence)
+        return occurrence
 
-@dataclass()
+    def new_scope(
+        self,
+        node: ast.AST,
+        new_lookup: Optional[
+            CM[str, List["Occurrence"]]  # pylint: disable=unsubscriptable-object
+        ] = None,
+    ) -> "Scope":
+        new_lookup = new_lookup or self.lookup.new_child()
+        return Scope(node_type=node.__class__, lookup=new_lookup)
+
+
+@dataclass
 class Occurrence:
     name: str
     position: Position
@@ -54,8 +75,8 @@ def visit(
         name = node.id
     if name:
         position = node_position(node, source)
-        occurrence = Occurrence(name=name, position=position, node=node, scope=scope)
-        scope.lookup.setdefault(occurrence.name, []).append(occurrence)
+        occurrence = scope.add_occurrence(name, position, node)
+
         if isinstance(node, ast.Name):
             scope = Scope(node_type=node.__class__)
 
@@ -70,18 +91,40 @@ def visit_function(node: ast.FunctionDef, source: Source, scope: Scope):
     position = node_position(
         node, source, row_offset=row_offset, column_offset=column_offset
     )
-    occurrence = Occurrence(name=node.name, position=position, node=node, scope=scope)
-    scope.lookup.setdefault(occurrence.name, []).append(occurrence)
-
     if scope.node_type == ast.ClassDef:
-        scope = Scope(node_type=node.__class__, lookup=scope.lookup.parents.new_child())
-
+        new_scope = Scope(
+            node_type=node.__class__, lookup=scope.lookup.parents.new_child()
+        )
     else:
-        scope = Scope(node_type=node.__class__, lookup=scope.lookup.new_child())
+        new_scope = Scope(node_type=node.__class__, lookup=scope.lookup.new_child())
 
-    yield scope, occurrence
+    occurrence = scope.add_occurrence(node.name, position, node, new_scope=new_scope)
 
-    yield from generic_visit(node, source, scope)
+    yield occurrence.scope, occurrence
+
+    for arg in node.args.args:
+        arg_position = node_position(arg, source)
+        occurrence = Occurrence(
+            name=arg.arg, position=arg_position, node=node, scope=new_scope
+        )
+
+    yield from generic_visit(node, source, new_scope)
+
+
+@visit.register
+def visit_call(node: ast.Call, source: Source, scope: Scope):
+    call_position = node_position(node, source)
+    new_scope = scope
+    for new_scope, occurrence in visit(node.func, source, scope):
+        yield new_scope, occurrence
+    for keyword in node.keywords:
+        if not keyword.arg:
+            continue
+        position = source.find_after(keyword.arg, call_position)
+        occurrence = Occurrence(
+            name=keyword.arg, position=position, node=node, scope=new_scope
+        )
+        yield new_scope, occurrence
 
 
 @visit.register
@@ -90,10 +133,8 @@ def visit_class(node: ast.ClassDef, source: Source, scope: Scope):
     position = node_position(
         node, source, row_offset=row_offset, column_offset=column_offset
     )
-    occurrence = Occurrence(name=node.name, position=position, node=node, scope=scope)
-    scope.lookup.setdefault(occurrence.name, []).append(occurrence)
-    scope = Scope(node_type=node.__class__, lookup=scope.lookup.new_child())
-    yield scope, occurrence
+    occurrence = scope.add_occurrence(node.name, position, node)
+    yield occurrence.scope, occurrence
 
     yield from generic_visit(node, source, scope)
 
@@ -113,11 +154,8 @@ def visit_attribute(
         yield new_scope, occurrence
 
     position = node_position(node, source)
-    occurrence = Occurrence(
-        name=node.attr, position=position, node=node, scope=new_scope
-    )
-    new_scope.lookup.setdefault(occurrence.name, []).append(occurrence)
-    yield new_scope, occurrence
+    occurrence = new_scope.add_occurrence(node.attr, position, node)
+    yield occurrence.scope, occurrence
 
 
 def generic_visit(
