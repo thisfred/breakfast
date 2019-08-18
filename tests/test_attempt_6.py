@@ -26,7 +26,7 @@ class Scope:
         new_scope: Optional["Scope"] = None,
     ) -> "Occurrence":
         occurrence = Occurrence(name, position, node, new_scope or self.new_scope(node))
-        self.lookup.setdefault(name, []).append(occurrence)
+        self.lookup.setdefault(name, []).append(occurrence)  # pylint: disable=no-member
         return occurrence
 
     def new_scope(
@@ -36,7 +36,7 @@ class Scope:
             CM[str, List["Occurrence"]]  # pylint: disable=unsubscriptable-object
         ] = None,
     ) -> "Scope":
-        new_lookup = new_lookup or self.lookup.new_child()
+        new_lookup = new_lookup or self.lookup.new_child()  # pylint: disable=no-member
         return Scope(node_type=node.__class__, lookup=new_lookup)
 
 
@@ -92,11 +92,9 @@ def visit_function(node: ast.FunctionDef, source: Source, scope: Scope):
         node, source, row_offset=row_offset, column_offset=column_offset
     )
     if scope.node_type == ast.ClassDef:
-        new_scope = Scope(
-            node_type=node.__class__, lookup=scope.lookup.parents.new_child()
-        )
+        new_scope = scope.new_scope(node, new_lookup=scope.lookup.parents.new_child())
     else:
-        new_scope = Scope(node_type=node.__class__, lookup=scope.lookup.new_child())
+        new_scope = scope.new_scope(node)
 
     occurrence = scope.add_occurrence(node.name, position, node, new_scope=new_scope)
 
