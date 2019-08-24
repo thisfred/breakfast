@@ -77,6 +77,7 @@ def visit_function(node: ast.FunctionDef, source: Source):
         node, source, row_offset=row_offset, column_offset=column_offset
     )
     yield Occurrence(node.name, position, node)
+    yield EnterScope(node)
 
     for arg in node.args.args:
 
@@ -84,6 +85,7 @@ def visit_function(node: ast.FunctionDef, source: Source):
         yield Occurrence(arg.arg, position, arg)
 
     yield from generic_visit(node, source)
+    yield LeaveScope(node)
 
 
 @visit.register
@@ -191,7 +193,10 @@ def test_distinguishes_local_variables_from_global():
         old = 20
         """
     )
-    assert [s.node.__class__ for s in get_scopes(source)] == []
+    assert [s.node.__class__ for s in get_scopes(source)] == [
+        ast.FunctionDef,
+        ast.FunctionDef,
+    ]
 
 
 def test_finds_imports():
