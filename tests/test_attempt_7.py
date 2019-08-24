@@ -67,7 +67,10 @@ def visit_class(node: ast.ClassDef, source: Source):
         node, source, row_offset=row_offset, column_offset=column_offset
     )
     yield Occurrence(node.name, position, node)
+
+    yield EnterScope(node)
     yield from generic_visit(node, source)
+    yield LeaveScope(node)
 
 
 @visit.register
@@ -268,6 +271,26 @@ def test_finds_class_name():
         "unbound",
         "A",
         "old",
+    ]
+
+
+def test_finds_class_scope():
+    source = make_source(
+        """
+        class A:
+
+            def old(self):
+                pass
+
+        unbound = A.old
+        """
+    )
+
+    assert [o.node.__class__ for o in get_scopes(source)] == [
+        ast.ClassDef,
+        ast.FunctionDef,
+        ast.FunctionDef,
+        ast.ClassDef,
     ]
 
 
