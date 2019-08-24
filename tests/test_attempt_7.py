@@ -70,6 +70,22 @@ def visit_function(node: ast.FunctionDef, source: Source):
     yield from generic_visit(node, source)
 
 
+@visit.register
+def visit_attribute(node: ast.Attribute, source: Source) -> Iterator[Event]:
+    yield from visit(node.value, source)
+    position = node_position(node, source)
+    yield Occurrence(node.attr, position, node)
+
+
+@visit.register
+def visit_import(node: ast.Import, source: Source) -> Iterator[Event]:
+    start = node_position(node, source)
+    for alias in node.names:
+        name = alias.name
+        position = source.find_after(name, start)
+        yield Occurrence(name, position, alias)
+
+
 def generic_visit(node, source: Source) -> Iterator[Event]:
     """Called if no explicit visitor function exists for a node.
 
@@ -95,7 +111,7 @@ def get_occurrences(source: Source) -> List[Occurrence]:
     ]
 
 
-def test_finds_all_occurrences_of_function_local():
+def test_finds_occurrences_in_and_outside_of_function():
     source = make_source(
         """
         def fun():
@@ -119,4 +135,23 @@ def test_finds_all_occurrences_of_function_local():
         "old",
         "result",
         "old",
+    ]
+
+
+def test_finds_occurrences_that_are_attributes():
+    source = make_source(
+        """
+        import os
+
+        path = os.path.dirname(__file__)
+        """
+    )
+
+    assert [o.name for o in get_occurrences(source)] == [
+        "os",
+        "path",
+        "os",
+        "path",
+        "dirname",
+        "__file__",
     ]
