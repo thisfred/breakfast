@@ -273,3 +273,34 @@ def test_finds_loop_variables():
         "print",
         "old",
     ]
+
+
+def test_finds_superclasses():
+    source = make_source(
+        """
+        class A:
+
+            def old(self):
+                pass
+
+        class B(A):
+            pass
+
+        b = B()
+        c = b
+        c.old()
+        """
+    )
+    assert [o.name for o in get_occurrences(source)] == [
+        "A",
+        "old",
+        "self",
+        "B",
+        "A",
+        "b",
+        "B",
+        "c",
+        "b",
+        "c",
+        "old",
+    ]
