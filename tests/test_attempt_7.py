@@ -4,8 +4,10 @@ SAX style events again.
 
 import ast
 
+from collections import ChainMap
 from dataclasses import dataclass
 from functools import singledispatch
+from typing import ChainMap as CM
 from typing import Iterator, List, Union
 
 from breakfast.position import Position
@@ -183,6 +185,26 @@ def test_finds_occurrences_in_and_outside_of_function():
     ]
 
 
+class Scopes:
+    def __init__(self) -> None:
+        self._lookups: List[
+            CM[str, List[Occurrence]]  # pylint: disable=unsubscriptable-object
+        ] = [ChainMap()]
+
+    def lookup(self, name: str) -> List[Occurrence]:
+        assert self._lookups
+        current = self._lookups[-1]
+        return current.setdefault(name, [])
+
+    def process(self, event: Event):
+        if isinstance(event, Occurrence):
+            self.lookup(event.name).append(event)
+        elif isinstance(event, EnterScope):
+            self._lookups.append(self._lookups[-1].new_child())
+        elif isinstance(event, LeaveScope):
+            self._lookups.pop()
+
+
 def test_distinguishes_local_variables_from_global():
     source = make_source(
         """
@@ -196,9 +218,27 @@ def test_distinguishes_local_variables_from_global():
         old = 20
         """
     )
-    assert [s.node.__class__ for s in get_scopes(source)] == [
-        ast.FunctionDef,
-        ast.FunctionDef,
+
+    position = Position(source=source, row=2, column=4)
+
+    def all_occurrences_of(position: Position) -> List[Occurrence]:
+
+        found: List[Occurrence] = []
+        scopes = Scopes()
+        for event in visit(position.source.get_ast(), source=position.source):
+            scopes.process(event)
+            if isinstance(event, Occurrence) and event.position == position:
+                found = scopes.lookup(event.name) or []
+
+        return found
+
+    occurrences = all_occurrences_of(position)
+    results = sorted(o.position for o in occurrences)
+
+    assert results == [
+        Position(source=source, row=2, column=4),
+        Position(source=source, row=4, column=13),
+        Position(source=source, row=5, column=8),
     ]
 
 
