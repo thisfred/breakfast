@@ -16,7 +16,10 @@ from tests import make_source
 
 
 class Event:
-    pass
+    def apply(  # pylint: disable=no-self-use
+        self, scopes: "Scopes"  # pylint: disable=unused-argument
+    ) -> None:
+        ...
 
 
 @dataclass
@@ -25,15 +28,41 @@ class Occurrence(Event):
     position: Position
     node: ast.AST
 
+    def apply(self, scopes: "Scopes") -> None:
+        scopes.lookup(self.name).append(self)
+
 
 @dataclass
 class EnterScope(Event):
     node: ast.AST
 
+    @staticmethod
+    def apply(scopes: "Scopes") -> None:
+        scopes.lookups.append(scopes.lookups[-1].new_child())
+
 
 @dataclass
 class LeaveScope(Event):
     node: ast.AST
+
+    @staticmethod
+    def apply(scopes: "Scopes") -> None:
+        scopes.lookups.pop()
+
+
+class Scopes:
+    def __init__(self) -> None:
+        self.lookups: List[
+            CM[str, List[Occurrence]]  # pylint: disable=unsubscriptable-object
+        ] = [ChainMap()]
+
+    def lookup(self, name: str) -> List[Occurrence]:
+        assert self.lookups
+        current = self.lookups[-1]
+        return current.setdefault(name, [])
+
+    def process(self, event: Event):
+        event.apply(self)
 
 
 def node_position(
@@ -158,51 +187,16 @@ def get_scopes(source: Source) -> List[Union[EnterScope, LeaveScope]]:
     ]
 
 
-def test_finds_occurrences_in_and_outside_of_function():
-    source = make_source(
-        """
-        def fun():
-            old = 12
-            old2 = 13
-            result = old + old2
-            del old
-            return result
+def all_occurrences_of(position: Position) -> List[Occurrence]:
 
-        old = 20
-        """
-    )
+    found: List[Occurrence] = []
+    scopes = Scopes()
+    for event in visit(position.source.get_ast(), source=position.source):
+        scopes.process(event)
+        if isinstance(event, Occurrence) and event.position == position:
+            found = scopes.lookup(event.name) or []
 
-    assert [o.name for o in get_occurrences(source)] == [
-        "fun",
-        "old",
-        "old2",
-        "result",
-        "old",
-        "old2",
-        "old",
-        "result",
-        "old",
-    ]
-
-
-class Scopes:
-    def __init__(self) -> None:
-        self._lookups: List[
-            CM[str, List[Occurrence]]  # pylint: disable=unsubscriptable-object
-        ] = [ChainMap()]
-
-    def lookup(self, name: str) -> List[Occurrence]:
-        assert self._lookups
-        current = self._lookups[-1]
-        return current.setdefault(name, [])
-
-    def process(self, event: Event):
-        if isinstance(event, Occurrence):
-            self.lookup(event.name).append(event)
-        elif isinstance(event, EnterScope):
-            self._lookups.append(self._lookups[-1].new_child())
-        elif isinstance(event, LeaveScope):
-            self._lookups.pop()
+    return found
 
 
 def test_distinguishes_local_variables_from_global():
@@ -220,22 +214,9 @@ def test_distinguishes_local_variables_from_global():
     )
 
     position = Position(source=source, row=2, column=4)
+    occurrences = sorted(o.position for o in all_occurrences_of(position))
 
-    def all_occurrences_of(position: Position) -> List[Occurrence]:
-
-        found: List[Occurrence] = []
-        scopes = Scopes()
-        for event in visit(position.source.get_ast(), source=position.source):
-            scopes.process(event)
-            if isinstance(event, Occurrence) and event.position == position:
-                found = scopes.lookup(event.name) or []
-
-        return found
-
-    occurrences = all_occurrences_of(position)
-    results = sorted(o.position for o in occurrences)
-
-    assert results == [
+    assert occurrences == [
         Position(source=source, row=2, column=4),
         Position(source=source, row=4, column=13),
         Position(source=source, row=5, column=8),
