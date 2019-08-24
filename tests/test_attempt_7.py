@@ -61,6 +61,16 @@ def visit_name(node: ast.Name, source: Source) -> Iterator[Event]:
 
 
 @visit.register
+def visit_class(node: ast.ClassDef, source: Source):
+    row_offset, column_offset = len(node.decorator_list), len("class ")
+    position = node_position(
+        node, source, row_offset=row_offset, column_offset=column_offset
+    )
+    yield Occurrence(node.name, position, node)
+    yield from generic_visit(node, source)
+
+
+@visit.register
 def visit_function(node: ast.FunctionDef, source: Source):
     row_offset, column_offset = len(node.decorator_list), len("def ")
     position = node_position(
@@ -206,4 +216,26 @@ def test_finds_parameters():
         "fun",
         "arg",
         "arg2",
+    ]
+
+
+def test_finds_class_name():
+    source = make_source(
+        """
+        class A:
+
+            def old(self):
+                pass
+
+        unbound = A.old
+        """
+    )
+
+    assert [o.name for o in get_occurrences(source)] == [
+        "A",
+        "old",
+        "self",
+        "unbound",
+        "A",
+        "old",
     ]
