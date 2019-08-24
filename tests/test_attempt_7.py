@@ -42,6 +42,15 @@ class EnterScope(Event):
 
 
 @dataclass
+class EnterAttributeScope(Event):
+    node: ast.AST
+
+    @staticmethod
+    def apply(scopes: "Scopes") -> None:
+        scopes.enter_isolated_scope()
+
+
+@dataclass
 class LeaveScope(Event):
     node: ast.AST
 
@@ -69,6 +78,9 @@ class Scopes:
 
     def enter_new_scope(self) -> None:
         self.lookups.append(self.lookups[-1].new_child())
+
+    def enter_isolated_scope(self) -> None:
+        self.lookups.append(ChainMap())
 
     def leave_scope(self) -> None:
         self.lookups.pop()
@@ -135,6 +147,7 @@ def visit_function(node: ast.FunctionDef, source: Source):
 def visit_attribute(node: ast.Attribute, source: Source) -> Iterator[Event]:
     yield from visit(node.value, source)
     position = node_position(node, source)
+    yield EnterAttributeScope(node)
     yield Occurrence(node.attr, position, node)
 
 
@@ -231,6 +244,22 @@ def test_distinguishes_local_variables_from_global():
         Position(source=source, row=2, column=4),
         Position(source=source, row=4, column=13),
         Position(source=source, row=5, column=8),
+    ]
+
+
+def test_finds_attributes():
+    source = make_source(
+        """
+        import os
+
+        path = os.path.dirname(__file__)
+        """
+    )
+
+    position = Position(source=source, row=3, column=0)
+
+    assert all_occurrence_positions(position) == [
+        Position(source=source, row=3, column=0)
     ]
 
 
