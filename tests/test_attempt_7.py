@@ -60,6 +60,16 @@ def visit_name(node: ast.Name, source: Source) -> Iterator[Event]:
     yield Occurrence(name=node.id, position=node_position(node, source), node=node)
 
 
+@visit.register
+def visit_function(node: ast.FunctionDef, source: Source):
+    row_offset, column_offset = len(node.decorator_list), len("def ")
+    position = node_position(
+        node, source, row_offset=row_offset, column_offset=column_offset
+    )
+    yield Occurrence(node.name, position, node)
+    yield from generic_visit(node, source)
+
+
 def generic_visit(node, source: Source) -> Iterator[Event]:
     """Called if no explicit visitor function exists for a node.
 
@@ -99,4 +109,14 @@ def test_finds_all_occurrences_of_function_local():
         """
     )
 
-    assert len(get_occurrences(source)) == 8
+    assert [o.name for o in get_occurrences(source)] == [
+        "fun",
+        "old",
+        "old2",
+        "result",
+        "old",
+        "old2",
+        "old",
+        "result",
+        "old",
+    ]
