@@ -6,7 +6,7 @@ import ast
 
 from dataclasses import dataclass
 from functools import singledispatch
-from typing import Iterator, List
+from typing import Iterator, List, Union
 
 from breakfast.position import Position
 from breakfast.source import Source
@@ -142,6 +142,15 @@ def get_occurrences(source: Source) -> List[Occurrence]:
     ]
 
 
+def get_scopes(source: Source) -> List[Union[EnterScope, LeaveScope]]:
+    initial_node = source.get_ast()
+    return [
+        event
+        for event in visit(initial_node, source=source)
+        if isinstance(event, (EnterScope, LeaveScope))
+    ]
+
+
 def test_finds_occurrences_in_and_outside_of_function():
     source = make_source(
         """
@@ -167,6 +176,22 @@ def test_finds_occurrences_in_and_outside_of_function():
         "result",
         "old",
     ]
+
+
+def test_distinguishes_local_variables_from_global():
+    source = make_source(
+        """
+        def fun():
+            old = 12
+            old2 = 13
+            result = old + old2
+            del old
+            return result
+
+        old = 20
+        """
+    )
+    assert [s.node.__class__ for s in get_scopes(source)] == []
 
 
 def test_finds_imports():
@@ -247,6 +272,7 @@ def test_finds_dict_comprehension_variables():
         foo = {old: None for old in range(100) if old % 3}
         """
     )
+
     assert [o.name for o in get_occurrences(source)] == [
         "foo",
         "old",
@@ -264,6 +290,7 @@ def test_finds_loop_variables():
             print(old)
         """
     )
+
     assert [o.name for o in get_occurrences(source)] == [
         "i",
         "old",
@@ -291,6 +318,7 @@ def test_finds_superclasses():
         c.old()
         """
     )
+
     assert [o.name for o in get_occurrences(source)] == [
         "A",
         "old",
