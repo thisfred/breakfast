@@ -76,6 +76,15 @@ def generic_visit(node, source: Source) -> Iterator[Event]:
             yield from visit(value, source)
 
 
+def get_occurrences(source: Source) -> List[Occurrence]:
+    initial_node = source.get_ast()
+    return [
+        event
+        for event in visit(initial_node, source=source)
+        if isinstance(event, Occurrence)
+    ]
+
+
 def test_finds_all_occurrences_of_function_local():
     source = make_source(
         """
@@ -89,13 +98,5 @@ def test_finds_all_occurrences_of_function_local():
         old = 20
         """
     )
-
-    def get_occurrences(source: Source) -> List[Occurrence]:
-        initial_node = source.get_ast()
-        return [
-            event
-            for event in visit(initial_node, source=source)
-            if isinstance(event, Occurrence)
-        ]
 
     assert len(get_occurrences(source)) == 8
