@@ -138,7 +138,17 @@ def test_finds_occurrences_in_and_outside_of_function():
     ]
 
 
-def test_finds_occurrences_that_are_attributes():
+def test_finds_imports():
+    source = make_source(
+        """
+        import os
+        """
+    )
+
+    assert [o.name for o in get_occurrences(source)] == ["os"]
+
+
+def test_finds_attributes():
     source = make_source(
         """
         import os
