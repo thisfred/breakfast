@@ -67,6 +67,12 @@ def visit_function(node: ast.FunctionDef, source: Source):
         node, source, row_offset=row_offset, column_offset=column_offset
     )
     yield Occurrence(node.name, position, node)
+
+    for arg in node.args.args:
+
+        position = node_position(arg, source)
+        yield Occurrence(arg.arg, position, arg)
+
     yield from generic_visit(node, source)
 
 
@@ -84,6 +90,21 @@ def visit_import(node: ast.Import, source: Source) -> Iterator[Event]:
         name = alias.name
         position = source.find_after(name, start)
         yield Occurrence(name, position, alias)
+
+
+@visit.register
+def visit_call(node: ast.Call, source: Source):
+    call_position = node_position(node, source)
+    yield from visit(node.func, source)
+
+    for arg in node.args:
+        yield from visit(arg, source)
+    for keyword in node.keywords:
+        if not keyword.arg:
+            continue
+
+        position = source.find_after(keyword.arg, call_position)
+        yield Occurrence(keyword.arg, position, node)
 
 
 def generic_visit(node, source: Source) -> Iterator[Event]:
@@ -164,4 +185,25 @@ def test_finds_attributes():
         "path",
         "dirname",
         "__file__",
+    ]
+
+
+def test_finds_parameters():
+    source = make_source(
+        """
+        def fun(arg, arg2):
+            return arg + arg2
+        fun(arg=1, arg2=2)
+        """
+    )
+
+    assert [o.name for o in get_occurrences(source)] == [
+        "fun",
+        "arg",
+        "arg2",
+        "arg",
+        "arg2",
+        "fun",
+        "arg",
+        "arg2",
     ]
