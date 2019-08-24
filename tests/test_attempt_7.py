@@ -29,7 +29,7 @@ class Occurrence(Event):
     node: ast.AST
 
     def apply(self, scopes: "Scopes") -> None:
-        scopes.lookup(self.name).append(self)
+        scopes.add_to_scope(self)
 
 
 @dataclass
@@ -38,7 +38,7 @@ class EnterScope(Event):
 
     @staticmethod
     def apply(scopes: "Scopes") -> None:
-        scopes.lookups.append(scopes.lookups[-1].new_child())
+        scopes.enter_new_scope()
 
 
 @dataclass
@@ -47,7 +47,7 @@ class LeaveScope(Event):
 
     @staticmethod
     def apply(scopes: "Scopes") -> None:
-        scopes.lookups.pop()
+        scopes.leave_scope()
 
 
 class Scopes:
@@ -63,6 +63,15 @@ class Scopes:
 
     def process(self, event: Event):
         event.apply(self)
+
+    def add_to_scope(self, occurrence: Occurrence) -> None:
+        self.lookup(occurrence.name).append(occurrence)
+
+    def enter_new_scope(self) -> None:
+        self.lookups.append(self.lookups[-1].new_child())
+
+    def leave_scope(self) -> None:
+        self.lookups.pop()
 
 
 def node_position(
