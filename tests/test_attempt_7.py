@@ -239,3 +239,37 @@ def test_finds_class_name():
         "A",
         "old",
     ]
+
+
+def test_finds_dict_comprehension_variables():
+    source = make_source(
+        """
+        foo = {old: None for old in range(100) if old % 3}
+        """
+    )
+    assert [o.name for o in get_occurrences(source)] == [
+        "foo",
+        "old",
+        "old",
+        "range",
+        "old",
+    ]
+
+
+def test_finds_loop_variables():
+    source = make_source(
+        """
+        for i, old in enumerate(['foo']):
+            print(i)
+            print(old)
+        """
+    )
+    assert [o.name for o in get_occurrences(source)] == [
+        "i",
+        "old",
+        "enumerate",
+        "print",
+        "i",
+        "print",
+        "old",
+    ]
