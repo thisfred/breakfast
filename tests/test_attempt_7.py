@@ -197,7 +197,6 @@ def get_scopes(source: Source) -> List[Union[EnterScope, LeaveScope]]:
 
 
 def all_occurrences_of(position: Position) -> List[Occurrence]:
-
     found: List[Occurrence] = []
     scopes = Scopes()
     for event in visit(position.source.get_ast(), source=position.source):
@@ -206,6 +205,10 @@ def all_occurrences_of(position: Position) -> List[Occurrence]:
             found = scopes.lookup(event.name) or []
 
     return found
+
+
+def all_occurrence_positions(position: Position) -> List[Position]:
+    return sorted(o.position for o in all_occurrences_of(position))
 
 
 def test_distinguishes_local_variables_from_global():
@@ -223,41 +226,11 @@ def test_distinguishes_local_variables_from_global():
     )
 
     position = Position(source=source, row=2, column=4)
-    occurrences = sorted(o.position for o in all_occurrences_of(position))
 
-    assert occurrences == [
+    assert all_occurrence_positions(position) == [
         Position(source=source, row=2, column=4),
         Position(source=source, row=4, column=13),
         Position(source=source, row=5, column=8),
-    ]
-
-
-def test_finds_imports():
-    source = make_source(
-        """
-        import os
-        """
-    )
-
-    assert [o.name for o in get_occurrences(source)] == ["os"]
-
-
-def test_finds_attributes():
-    source = make_source(
-        """
-        import os
-
-        path = os.path.dirname(__file__)
-        """
-    )
-
-    assert [o.name for o in get_occurrences(source)] == [
-        "os",
-        "path",
-        "os",
-        "path",
-        "dirname",
-        "__file__",
     ]
 
 
