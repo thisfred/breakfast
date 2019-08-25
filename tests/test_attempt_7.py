@@ -196,6 +196,20 @@ def visit_call(node: ast.Call, source: Source) -> Iterator[Event]:
         yield LeaveScope()
 
 
+@visit.register
+def visit_dict_comp(node: ast.DictComp, source: Source) -> Iterator[Event]:
+    position = node_position(node, source)
+    name = "comprehension-%s-%s" % (position.row, position.column)
+    yield EnterScope(name)
+
+    for generator in node.generators:
+        yield from visit(generator, source)
+    for sub_node in (node.key, node.value):
+        yield from visit(sub_node, source)
+
+    yield LeaveScope()
+
+
 def generic_visit(node, source: Source) -> Iterator[Event]:
     """Called if no explicit visitor function exists for a node.
 
@@ -337,21 +351,21 @@ def test_finds_method_name():
     ]
 
 
-# def test_finds_dict_comprehension_variables():
-#     source = make_source(
-#         """
-#         foo = {old: None for old in range(100) if old % 3}
-#         old = 1
-#         """
-#     )
+def test_finds_dict_comprehension_variables():
+    source = make_source(
+        """
+        foo = {old: None for old in range(100) if old % 3}
+        old = 1
+        """
+    )
 
-#     position = Position(source=source, row=1, column=7)
+    position = Position(source=source, row=1, column=7)
 
-#     assert all_occurrence_positions(position) == [
-#         Position(source=source, row=1, column=7),
-#         Position(source=source, row=1, column=21),
-#         Position(source=source, row=1, column=42),
-#     ]
+    assert all_occurrence_positions(position) == [
+        Position(source=source, row=1, column=7),
+        Position(source=source, row=1, column=21),
+        Position(source=source, row=1, column=42),
+    ]
 
 
 def test_finds_loop_variables():
