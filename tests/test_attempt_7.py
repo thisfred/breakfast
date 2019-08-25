@@ -17,7 +17,7 @@ from tests import make_source
 
 class Event:
     def apply(  # pylint: disable=no-self-use
-        self, context: "Context"  # pylint: disable=unused-argument
+        self, context: "State"  # pylint: disable=unused-argument
     ) -> None:
         ...
 
@@ -28,36 +28,11 @@ class Occurrence(Event):
     position: Position
     node: ast.AST
 
-    def apply(self, context: "Context") -> None:
+    def apply(self, context: "State") -> None:
         context.add_to_scope(self)
 
 
-@dataclass
-class EnterScope(Event):
-    name: str
-
-    def apply(self, context: "Context") -> None:
-        context.enter_scope(self.name)
-
-
-@dataclass
-class EnterAttributeScope(Event):
-    name: str
-
-    def apply(self, context: "Context") -> None:
-        context.enter_isolated_scope(self.name)
-
-
-@dataclass
-class LeaveScope(Event):
-    node: ast.AST
-
-    @staticmethod
-    def apply(context: "Context") -> None:
-        context.leave_scope()
-
-
-class Context:
+class State:
     def __init__(self) -> None:
         self.namespace: List[str] = []
         self.scopes: Dict[
@@ -95,6 +70,29 @@ class Context:
         self.namespace.pop()
 
 
+@dataclass
+class EnterScope(Event):
+    name: str
+
+    def apply(self, context: State) -> None:
+        context.enter_scope(self.name)
+
+
+@dataclass
+class EnterAttributeScope(Event):
+    name: str
+
+    def apply(self, context: State) -> None:
+        context.enter_isolated_scope(self.name)
+
+
+@dataclass
+class LeaveScope(Event):
+    @staticmethod
+    def apply(context: State) -> None:
+        context.leave_scope()
+
+
 def node_position(
     node: ast.AST, source: Source, row_offset=0, column_offset=0
 ) -> Position:
@@ -128,10 +126,9 @@ def visit_class(node: ast.ClassDef, source: Source):
         node, source, row_offset=row_offset, column_offset=column_offset
     )
     yield Occurrence(node.name, position, node)
-
     yield EnterScope(node.name)
     yield from generic_visit(node, source)
-    yield LeaveScope(node)
+    yield LeaveScope()
 
 
 @visit.register
@@ -144,21 +141,28 @@ def visit_function(node: ast.FunctionDef, source: Source):
     yield EnterScope(node.name)
 
     for arg in node.args.args:
-
         position = node_position(arg, source)
         yield Occurrence(arg.arg, position, arg)
 
     yield from generic_visit(node, source)
-    yield LeaveScope(node)
+    yield LeaveScope()
 
 
 @visit.register
 def visit_attribute(node: ast.Attribute, source: Source) -> Iterator[Event]:
     yield from visit(node.value, source)
     position = node_position(node, source)
-    yield EnterAttributeScope(node.attr)
+
+    names = names_from(node.value)
+    for name in names:
+        position = source.find_after(node.attr, position)
+        yield EnterAttributeScope(name)
+
+    position = source.find_after(node.attr, position)
     yield Occurrence(node.attr, position, node)
-    yield LeaveScope(node)
+
+    for _ in names:
+        yield LeaveScope()
 
 
 @visit.register
@@ -170,24 +174,14 @@ def visit_import(node: ast.Import, source: Source) -> Iterator[Event]:
         yield Occurrence(name, position, alias)
 
 
-def names_from(node: ast.AST) -> Tuple[str, ...]:
-    if isinstance(node, ast.Name):
-        return (node.id,)
-
-    if isinstance(node, ast.Attribute):
-        return names_from(node.value) + (node.attr,)
-
-    return ()
-
-
 @visit.register
-def visit_call(node: ast.Call, source: Source):
+def visit_call(node: ast.Call, source: Source) -> Iterator[Event]:
     call_position = node_position(node, source)
     yield from visit(node.func, source)
-    assert isinstance(node.func, (ast.Name, ast.Attribute))
+
     names = names_from(node.func)
     for name in names:
-        yield EnterScope(name)
+        yield EnterAttributeScope(name)
 
     for arg in node.args:
         yield from visit(arg, source)
@@ -199,7 +193,7 @@ def visit_call(node: ast.Call, source: Source):
         yield Occurrence(keyword.arg, position, node)
 
     for _ in names:
-        yield LeaveScope
+        yield LeaveScope()
 
 
 def generic_visit(node, source: Source) -> Iterator[Event]:
@@ -216,6 +210,21 @@ def generic_visit(node, source: Source) -> Iterator[Event]:
                     yield from visit(item, source)
         elif isinstance(value, ast.AST):
             yield from visit(value, source)
+
+
+@singledispatch
+def names_from(node: ast.AST) -> Tuple[str, ...]:  # pylint: disable=unused-argument
+    return ()
+
+
+@names_from.register
+def name_nemes(node: ast.Name) -> Tuple[str, ...]:
+    return (node.id,)
+
+
+@names_from.register
+def attribute_nemes(node: ast.Attribute) -> Tuple[str, ...]:
+    return names_from(node.value) + (node.attr,)
 
 
 def get_occurrences(source: Source) -> List[Occurrence]:
@@ -238,11 +247,14 @@ def get_scopes(source: Source) -> List[Union[EnterScope, LeaveScope]]:
 
 def all_occurrences_of(position: Position) -> List[Occurrence]:
     found: List[Occurrence] = []
-    context = Context()
+    context = State()
     for event in visit(position.source.get_ast(), source=position.source):
         context.process(event)
         if isinstance(event, Occurrence) and event.position == position:
             found = context.lookup(event.name) or []
+    from pprint import pprint
+
+    pprint(context.scopes)
 
     return found
 
@@ -308,7 +320,7 @@ def test_finds_parameters():
     ]
 
 
-def test_finds_class_name():
+def test_finds_method_name():
     source = make_source(
         """
         class A:
@@ -320,30 +332,29 @@ def test_finds_class_name():
         """
     )
 
-    assert [o.name for o in get_occurrences(source)] == [
-        "A",
-        "old",
-        "self",
-        "unbound",
-        "A",
-        "old",
+    position = Position(source=source, row=3, column=8)
+
+    assert all_occurrence_positions(position) == [
+        Position(source=source, row=3, column=8),
+        Position(source=source, row=6, column=12),
     ]
 
 
-def test_finds_dict_comprehension_variables():
-    source = make_source(
-        """
-        foo = {old: None for old in range(100) if old % 3}
-        """
-    )
+# def test_finds_dict_comprehension_variables():
+#     source = make_source(
+#         """
+#         foo = {old: None for old in range(100) if old % 3}
+#         old = 1
+#         """
+#     )
 
-    assert [o.name for o in get_occurrences(source)] == [
-        "foo",
-        "old",
-        "old",
-        "range",
-        "old",
-    ]
+#     position = Position(source=source, row=1, column=7)
+
+#     assert all_occurrence_positions(position) == [
+#         Position(source=source, row=1, column=7),
+#         Position(source=source, row=1, column=21),
+#         Position(source=source, row=1, column=42),
+#     ]
 
 
 def test_finds_loop_variables():
