@@ -8,7 +8,7 @@ from collections import ChainMap
 from dataclasses import dataclass
 from functools import singledispatch
 from typing import ChainMap as CM
-from typing import Iterator, List, Union
+from typing import Dict, Iterator, List, Tuple, Union
 
 from breakfast.position import Position
 from breakfast.source import Source
@@ -17,7 +17,7 @@ from tests import make_source
 
 class Event:
     def apply(  # pylint: disable=no-self-use
-        self, scopes: "Scopes"  # pylint: disable=unused-argument
+        self, context: "Context"  # pylint: disable=unused-argument
     ) -> None:
         ...
 
@@ -28,26 +28,26 @@ class Occurrence(Event):
     position: Position
     node: ast.AST
 
-    def apply(self, scopes: "Scopes") -> None:
-        scopes.add_to_scope(self)
+    def apply(self, context: "Context") -> None:
+        context.add_to_scope(self)
 
 
 @dataclass
 class EnterScope(Event):
+    name: str
     node: ast.AST
 
-    @staticmethod
-    def apply(scopes: "Scopes") -> None:
-        scopes.enter_new_scope()
+    def apply(self, context: "Context") -> None:
+        context.enter_new_scope(self.name)
 
 
 @dataclass
 class EnterAttributeScope(Event):
+    name: str
     node: ast.AST
 
-    @staticmethod
-    def apply(scopes: "Scopes") -> None:
-        scopes.enter_isolated_scope()
+    def apply(self, context: "Context") -> None:
+        context.enter_isolated_scope(self.name)
 
 
 @dataclass
@@ -55,20 +55,26 @@ class LeaveScope(Event):
     node: ast.AST
 
     @staticmethod
-    def apply(scopes: "Scopes") -> None:
-        scopes.leave_scope()
+    def apply(context: "Context") -> None:
+        context.leave_scope()
 
 
-class Scopes:
+class Context:
     def __init__(self) -> None:
-        self.lookups: List[
-            CM[str, List[Occurrence]]  # pylint: disable=unsubscriptable-object
-        ] = [ChainMap()]
+        self.namespace: List[str] = []
+        self.scopes: Dict[
+            Tuple[str, ...],
+            CM[str, List[Occurrence]],  # pylint: disable=unsubscriptable-object
+        ] = {(): ChainMap()}
+
+    @property
+    def current_scope(
+        self
+    ) -> CM[str, List[Occurrence]]:  # pylint: disable=unsubscriptable-object
+        return self.scopes[tuple(self.namespace)]
 
     def lookup(self, name: str) -> List[Occurrence]:
-        assert self.lookups
-        current = self.lookups[-1]
-        return current.setdefault(name, [])
+        return self.current_scope.setdefault(name, [])
 
     def process(self, event: Event):
         event.apply(self)
@@ -76,14 +82,17 @@ class Scopes:
     def add_to_scope(self, occurrence: Occurrence) -> None:
         self.lookup(occurrence.name).append(occurrence)
 
-    def enter_new_scope(self) -> None:
-        self.lookups.append(self.lookups[-1].new_child())
+    def enter_new_scope(self, name: str) -> None:
+        new_lookup = self.current_scope.new_child()
+        self.namespace.append(name)
+        self.scopes[tuple(self.namespace)] = new_lookup
 
-    def enter_isolated_scope(self) -> None:
-        self.lookups.append(ChainMap())
+    def enter_isolated_scope(self, name: str) -> None:
+        self.namespace.append(name)
+        self.scopes[tuple(self.namespace)] = ChainMap()
 
     def leave_scope(self) -> None:
-        self.lookups.pop()
+        self.namespace.pop()
 
 
 def node_position(
@@ -120,7 +129,7 @@ def visit_class(node: ast.ClassDef, source: Source):
     )
     yield Occurrence(node.name, position, node)
 
-    yield EnterScope(node)
+    yield EnterScope(node.name, node)
     yield from generic_visit(node, source)
     yield LeaveScope(node)
 
@@ -132,7 +141,7 @@ def visit_function(node: ast.FunctionDef, source: Source):
         node, source, row_offset=row_offset, column_offset=column_offset
     )
     yield Occurrence(node.name, position, node)
-    yield EnterScope(node)
+    yield EnterScope(node.name, node)
 
     for arg in node.args.args:
 
@@ -147,7 +156,7 @@ def visit_function(node: ast.FunctionDef, source: Source):
 def visit_attribute(node: ast.Attribute, source: Source) -> Iterator[Event]:
     yield from visit(node.value, source)
     position = node_position(node, source)
-    yield EnterAttributeScope(node)
+    yield EnterAttributeScope(node.attr, node)
     yield Occurrence(node.attr, position, node)
     yield LeaveScope(node)
 
@@ -212,11 +221,11 @@ def get_scopes(source: Source) -> List[Union[EnterScope, LeaveScope]]:
 
 def all_occurrences_of(position: Position) -> List[Occurrence]:
     found: List[Occurrence] = []
-    scopes = Scopes()
+    context = Context()
     for event in visit(position.source.get_ast(), source=position.source):
-        scopes.process(event)
+        context.process(event)
         if isinstance(event, Occurrence) and event.position == position:
-            found = scopes.lookup(event.name) or []
+            found = context.lookup(event.name) or []
 
     return found
 
@@ -261,27 +270,6 @@ def test_finds_attributes():
 
     assert all_occurrence_positions(position) == [
         Position(source=source, row=3, column=0)
-    ]
-
-
-def test_finds_parameters():
-    source = make_source(
-        """
-        def fun(arg, arg2):
-            return arg + arg2
-        fun(arg=1, arg2=2)
-        """
-    )
-
-    assert [o.name for o in get_occurrences(source)] == [
-        "fun",
-        "arg",
-        "arg2",
-        "arg",
-        "arg2",
-        "fun",
-        "arg",
-        "arg2",
     ]
 
 
