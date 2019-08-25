@@ -199,7 +199,7 @@ def visit_call(node: ast.Call, source: Source) -> Iterator[Event]:
 @visit.register
 def visit_dict_comp(node: ast.DictComp, source: Source) -> Iterator[Event]:
     position = node_position(node, source)
-    name = "comprehension-%s-%s" % (position.row, position.column)
+    name = repr(position)
     yield EnterScope(name)
 
     for generator in node.generators:
