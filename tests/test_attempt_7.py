@@ -149,6 +149,7 @@ def visit_attribute(node: ast.Attribute, source: Source) -> Iterator[Event]:
     position = node_position(node, source)
     yield EnterAttributeScope(node)
     yield Occurrence(node.attr, position, node)
+    yield LeaveScope(node)
 
 
 @visit.register
@@ -303,26 +304,6 @@ def test_finds_class_name():
         "unbound",
         "A",
         "old",
-    ]
-
-
-def test_finds_class_scope():
-    source = make_source(
-        """
-        class A:
-
-            def old(self):
-                pass
-
-        unbound = A.old
-        """
-    )
-
-    assert [o.node.__class__ for o in get_scopes(source)] == [
-        ast.ClassDef,
-        ast.FunctionDef,
-        ast.FunctionDef,
-        ast.ClassDef,
     ]
 
 
