@@ -233,8 +233,15 @@ def visit_set_comp(node: ast.SetComp, source: Source) -> Iterator[Event]:
     yield from visit_comp(node, source, node.elt)
 
 
+@visit.register
+def visit_generator_exp(node: ast.GeneratorExp, source: Source) -> Iterator[Event]:
+    yield from visit_comp(node, source, node.elt)
+
+
 def visit_comp(
-    node: Union[ast.DictComp, ast.ListComp, ast.SetComp], source: Source, *sub_nodes
+    node: Union[ast.DictComp, ast.ListComp, ast.SetComp, ast.GeneratorExp],
+    source: Source,
+    *sub_nodes,
 ) -> Iterator[Event]:
     name = f"{type(node)}-{id(node)}"
     yield EnterScope(name)
@@ -434,6 +441,22 @@ def test_finds_set_comprehension_variables() -> None:
         """
         old = 100
         foo = {old for old in range(100) if old % 3}
+        """
+    )
+
+    position = Position(source=source, row=2, column=7)
+    assert all_occurrence_positions(position) == [
+        Position(source=source, row=2, column=7),
+        Position(source=source, row=2, column=15),
+        Position(source=source, row=2, column=36),
+    ]
+
+
+def test_finds_generator_comprehension_variables() -> None:
+    source = make_source(
+        """
+        old = 100
+        foo = (old for old in range(100) if old % 3)
         """
     )
 
