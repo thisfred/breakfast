@@ -35,16 +35,14 @@ class Occurrence(Event):
 @dataclass
 class EnterScope(Event):
     name: str
-    node: ast.AST
 
     def apply(self, context: "Context") -> None:
-        context.enter_new_scope(self.name)
+        context.enter_scope(self.name)
 
 
 @dataclass
 class EnterAttributeScope(Event):
     name: str
-    node: ast.AST
 
     def apply(self, context: "Context") -> None:
         context.enter_isolated_scope(self.name)
@@ -82,14 +80,16 @@ class Context:
     def add_to_scope(self, occurrence: Occurrence) -> None:
         self.lookup(occurrence.name).append(occurrence)
 
-    def enter_new_scope(self, name: str) -> None:
-        new_lookup = self.current_scope.new_child()
+    def enter_scope(self, name: str) -> None:
+        previous_scope = self.current_scope
         self.namespace.append(name)
-        self.scopes[tuple(self.namespace)] = new_lookup
+        key = tuple(self.namespace)
+        self.scopes.setdefault(key, previous_scope.new_child())
 
     def enter_isolated_scope(self, name: str) -> None:
         self.namespace.append(name)
-        self.scopes[tuple(self.namespace)] = ChainMap()
+        key = tuple(self.namespace)
+        self.scopes.setdefault(key, ChainMap())
 
     def leave_scope(self) -> None:
         self.namespace.pop()
@@ -129,7 +129,7 @@ def visit_class(node: ast.ClassDef, source: Source):
     )
     yield Occurrence(node.name, position, node)
 
-    yield EnterScope(node.name, node)
+    yield EnterScope(node.name)
     yield from generic_visit(node, source)
     yield LeaveScope(node)
 
@@ -141,7 +141,7 @@ def visit_function(node: ast.FunctionDef, source: Source):
         node, source, row_offset=row_offset, column_offset=column_offset
     )
     yield Occurrence(node.name, position, node)
-    yield EnterScope(node.name, node)
+    yield EnterScope(node.name)
 
     for arg in node.args.args:
 
@@ -156,7 +156,7 @@ def visit_function(node: ast.FunctionDef, source: Source):
 def visit_attribute(node: ast.Attribute, source: Source) -> Iterator[Event]:
     yield from visit(node.value, source)
     position = node_position(node, source)
-    yield EnterAttributeScope(node.attr, node)
+    yield EnterAttributeScope(node.attr)
     yield Occurrence(node.attr, position, node)
     yield LeaveScope(node)
 
@@ -170,10 +170,24 @@ def visit_import(node: ast.Import, source: Source) -> Iterator[Event]:
         yield Occurrence(name, position, alias)
 
 
+def names_from(node: ast.AST) -> Tuple[str, ...]:
+    if isinstance(node, ast.Name):
+        return (node.id,)
+
+    if isinstance(node, ast.Attribute):
+        return names_from(node.value) + (node.attr,)
+
+    return ()
+
+
 @visit.register
 def visit_call(node: ast.Call, source: Source):
     call_position = node_position(node, source)
     yield from visit(node.func, source)
+    assert isinstance(node.func, (ast.Name, ast.Attribute))
+    names = names_from(node.func)
+    for name in names:
+        yield EnterScope(name)
 
     for arg in node.args:
         yield from visit(arg, source)
@@ -183,6 +197,9 @@ def visit_call(node: ast.Call, source: Source):
 
         position = source.find_after(keyword.arg, call_position)
         yield Occurrence(keyword.arg, position, node)
+
+    for _ in names:
+        yield LeaveScope
 
 
 def generic_visit(node, source: Source) -> Iterator[Event]:
@@ -270,6 +287,24 @@ def test_finds_attributes():
 
     assert all_occurrence_positions(position) == [
         Position(source=source, row=3, column=0)
+    ]
+
+
+def test_finds_parameters():
+    source = make_source(
+        """
+        def fun(arg, arg2):
+            return arg + arg2
+        fun(arg=1, arg2=2)
+        """
+    )
+
+    position = Position(source=source, row=1, column=8)
+
+    assert all_occurrence_positions(position) == [
+        Position(source=source, row=1, column=8),
+        Position(source=source, row=2, column=11),
+        Position(source=source, row=3, column=4),
     ]
 
 
