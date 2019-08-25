@@ -252,9 +252,6 @@ def all_occurrences_of(position: Position) -> List[Occurrence]:
         context.process(event)
         if isinstance(event, Occurrence) and event.position == position:
             found = context.lookup(event.name) or []
-    from pprint import pprint
-
-    pprint(context.scopes)
 
     return found
 
