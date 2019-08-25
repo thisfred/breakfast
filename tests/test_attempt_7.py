@@ -17,7 +17,7 @@ from tests import make_source
 
 class Event:
     def apply(  # pylint: disable=no-self-use
-        self, context: "State"  # pylint: disable=unused-argument
+        self, state: "State"  # pylint: disable=unused-argument
     ) -> None:
         ...
 
@@ -28,8 +28,38 @@ class Occurrence(Event):
     position: Position
     node: ast.AST
 
-    def apply(self, context: "State") -> None:
-        context.add_to_scope(self)
+
+class Regular(Occurrence):
+    def apply(self, state: "State") -> None:
+        state.add_to_scope(self)
+
+
+class Definition(Occurrence):
+    def apply(self, state: "State") -> None:
+        state.add_definition_to_scope(self)
+
+
+@dataclass
+class EnterScope(Event):
+    name: str
+
+    def apply(self, state: "State") -> None:
+        state.enter_scope(self.name)
+
+
+@dataclass
+class EnterAttributeScope(Event):
+    name: str
+
+    def apply(self, state: "State") -> None:
+        state.enter_isolated_scope(self.name)
+
+
+@dataclass
+class LeaveScope(Event):
+    @staticmethod
+    def apply(state: "State") -> None:
+        state.leave_scope()
 
 
 class State:
@@ -55,6 +85,11 @@ class State:
     def add_to_scope(self, occurrence: Occurrence) -> None:
         self.lookup(occurrence.name).append(occurrence)
 
+    def add_definition_to_scope(self, occurrence: Occurrence) -> None:
+        mapping = self.current_scope.maps[0]
+        assert isinstance(mapping, dict)
+        mapping.setdefault(occurrence.name, []).append(occurrence)
+
     def enter_scope(self, name: str) -> None:
         previous_scope = self.current_scope
         self.namespace.append(name)
@@ -68,29 +103,6 @@ class State:
 
     def leave_scope(self) -> None:
         self.namespace.pop()
-
-
-@dataclass
-class EnterScope(Event):
-    name: str
-
-    def apply(self, context: State) -> None:
-        context.enter_scope(self.name)
-
-
-@dataclass
-class EnterAttributeScope(Event):
-    name: str
-
-    def apply(self, context: State) -> None:
-        context.enter_isolated_scope(self.name)
-
-
-@dataclass
-class LeaveScope(Event):
-    @staticmethod
-    def apply(context: State) -> None:
-        context.leave_scope()
 
 
 def node_position(
@@ -114,35 +126,45 @@ def visit(node: ast.AST, source: Source) -> Iterator[Event]:
     yield from generic_visit(node, source)
 
 
+@singledispatch
+def visit_definition(node: ast.AST, source: Source) -> Iterator[Event]:
+    yield from visit(node, source)
+
+
 @visit.register
 def visit_name(node: ast.Name, source: Source) -> Iterator[Event]:
-    yield Occurrence(name=node.id, position=node_position(node, source), node=node)
+    yield Regular(name=node.id, position=node_position(node, source), node=node)
+
+
+@visit_definition.register
+def visit_name_definition(node: ast.Name, source: Source) -> Iterator[Event]:
+    yield Definition(name=node.id, position=node_position(node, source), node=node)
 
 
 @visit.register
-def visit_class(node: ast.ClassDef, source: Source):
+def visit_class(node: ast.ClassDef, source: Source) -> Iterator[Event]:
     row_offset, column_offset = len(node.decorator_list), len("class ")
     position = node_position(
         node, source, row_offset=row_offset, column_offset=column_offset
     )
-    yield Occurrence(node.name, position, node)
+    yield Regular(node.name, position, node)
     yield EnterScope(node.name)
     yield from generic_visit(node, source)
     yield LeaveScope()
 
 
 @visit.register
-def visit_function(node: ast.FunctionDef, source: Source):
+def visit_function(node: ast.FunctionDef, source: Source) -> Iterator[Event]:
     row_offset, column_offset = len(node.decorator_list), len("def ")
     position = node_position(
         node, source, row_offset=row_offset, column_offset=column_offset
     )
-    yield Occurrence(node.name, position, node)
+    yield Regular(node.name, position, node)
     yield EnterScope(node.name)
 
     for arg in node.args.args:
         position = node_position(arg, source)
-        yield Occurrence(arg.arg, position, arg)
+        yield Regular(arg.arg, position, arg)
 
     yield from generic_visit(node, source)
     yield LeaveScope()
@@ -159,7 +181,7 @@ def visit_attribute(node: ast.Attribute, source: Source) -> Iterator[Event]:
         yield EnterAttributeScope(name)
 
     position = source.find_after(node.attr, position)
-    yield Occurrence(node.attr, position, node)
+    yield Regular(node.attr, position, node)
 
     for _ in names:
         yield LeaveScope()
@@ -171,7 +193,7 @@ def visit_import(node: ast.Import, source: Source) -> Iterator[Event]:
     for alias in node.names:
         name = alias.name
         position = source.find_after(name, start)
-        yield Occurrence(name, position, alias)
+        yield Regular(name, position, alias)
 
 
 @visit.register
@@ -190,7 +212,7 @@ def visit_call(node: ast.Call, source: Source) -> Iterator[Event]:
             continue
 
         position = source.find_after(keyword.arg, call_position)
-        yield Occurrence(keyword.arg, position, node)
+        yield Regular(keyword.arg, position, node)
 
     for _ in names:
         yield LeaveScope()
@@ -198,13 +220,27 @@ def visit_call(node: ast.Call, source: Source) -> Iterator[Event]:
 
 @visit.register
 def visit_dict_comp(node: ast.DictComp, source: Source) -> Iterator[Event]:
-    position = node_position(node, source)
-    name = repr(position)
+    yield from visit_comp(node, source, node.key, node.value)
+
+
+@visit.register
+def visit_list_comp(node: ast.ListComp, source: Source) -> Iterator[Event]:
+    yield from visit_comp(node, source, node.elt)
+
+
+def visit_comp(
+    node: Union[ast.DictComp, ast.ListComp, ast.SetComp], source: Source, *sub_nodes
+) -> Iterator[Event]:
+    name = f"{type(node)}-{id(node)}"
     yield EnterScope(name)
 
     for generator in node.generators:
-        yield from visit(generator, source)
-    for sub_node in (node.key, node.value):
+        yield from visit_definition(generator.target, source)
+        yield from visit(generator.iter, source)
+        for if_node in generator.ifs:
+            yield from visit(if_node, source)
+
+    for sub_node in sub_nodes:
         yield from visit(sub_node, source)
 
     yield LeaveScope()
@@ -261,11 +297,11 @@ def get_scopes(source: Source) -> List[Union[EnterScope, LeaveScope]]:
 
 def all_occurrences_of(position: Position) -> List[Occurrence]:
     found: List[Occurrence] = []
-    context = State()
+    state = State()
     for event in visit(position.source.get_ast(), source=position.source):
-        context.process(event)
+        state.process(event)
         if isinstance(event, Occurrence) and event.position == position:
-            found = context.lookup(event.name) or []
+            found = state.lookup(event.name) or []
 
     return found
 
@@ -354,17 +390,37 @@ def test_finds_method_name():
 def test_finds_dict_comprehension_variables():
     source = make_source(
         """
-        foo = {old: None for old in range(100) if old % 3}
         old = 1
+        foo = {old: None for old in range(100) if old % 3}
+        old = 2
         """
     )
 
-    position = Position(source=source, row=1, column=7)
+    position = Position(source=source, row=2, column=7)
 
     assert all_occurrence_positions(position) == [
-        Position(source=source, row=1, column=7),
-        Position(source=source, row=1, column=21),
-        Position(source=source, row=1, column=42),
+        Position(source=source, row=2, column=7),
+        Position(source=source, row=2, column=21),
+        Position(source=source, row=2, column=42),
+    ]
+
+
+def test_finds_list_comprehension_variables():
+    source = make_source(
+        """
+        old = 100
+        foo = [
+            old for old in range(100) if old % 3]
+        old = 200
+        """
+    )
+
+    position = Position(source=source, row=3, column=4)
+
+    assert all_occurrence_positions(position) == [
+        Position(source=source, row=3, column=4),
+        Position(source=source, row=3, column=12),
+        Position(source=source, row=3, column=33),
     ]
 
 
