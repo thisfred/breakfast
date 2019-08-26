@@ -204,6 +204,7 @@ def visit_call(node: ast.Call, source: Source) -> Iterator[Event]:
     names = names_from(node.func)
     for arg in node.args:
         yield from visit(arg, source)
+
     for name in names:
         yield EnterAttributeScope(name)
 
@@ -496,33 +497,17 @@ def test_finds_loop_variables():
     ]
 
 
-def test_finds_superclasses():
-    source = make_source(
-        """
-        class A:
+def test_dogfood():
 
-            def old(self):
-                pass
+    with open(__file__, "r") as source_file:
+        source = Source(
+            lines=tuple(l[:-1] for l in source_file.readlines()),
+            module_name="test_attempt_7",
+            file_name=__file__,
+        )
 
-        class B(A):
-            pass
+    state = State()
+    for event in visit(source.get_ast(), source=source):
+        state.process(event)
 
-        b = B()
-        c = b
-        c.old()
-        """
-    )
-
-    assert [o.name for o in get_occurrences(source)] == [
-        "A",
-        "old",
-        "self",
-        "B",
-        "A",
-        "b",
-        "B",
-        "c",
-        "b",
-        "c",
-        "old",
-    ]
+    assert True
