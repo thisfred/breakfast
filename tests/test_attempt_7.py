@@ -147,7 +147,7 @@ def visit_class(node: ast.ClassDef, source: Source) -> Iterator[Event]:
     position = node_position(
         node, source, row_offset=row_offset, column_offset=column_offset
     )
-    yield Regular(node.name, position, node)
+    yield Definition(node.name, position, node)
     yield EnterScope(node.name)
     yield from generic_visit(node, source)
     yield LeaveScope()
@@ -159,7 +159,7 @@ def visit_function(node: ast.FunctionDef, source: Source) -> Iterator[Event]:
     position = node_position(
         node, source, row_offset=row_offset, column_offset=column_offset
     )
-    yield Regular(node.name, position, node)
+    yield Definition(node.name, position, node)
     yield EnterScope(node.name)
 
     for arg in node.args.args:
@@ -202,11 +202,11 @@ def visit_call(node: ast.Call, source: Source) -> Iterator[Event]:
     yield from visit(node.func, source)
 
     names = names_from(node.func)
+    for arg in node.args:
+        yield from visit(arg, source)
     for name in names:
         yield EnterAttributeScope(name)
 
-    for arg in node.args:
-        yield from visit(arg, source)
     for keyword in node.keywords:
         if not keyword.arg:
             continue
@@ -315,6 +315,11 @@ def all_occurrences_of(position: Position) -> List[Occurrence]:
         if isinstance(event, Occurrence) and event.position == position:
             found = state.lookup(event.name) or []
 
+    print()
+    print()
+    from pprint import pprint
+
+    pprint(state.scopes)
     return found
 
 
@@ -445,6 +450,7 @@ def test_finds_set_comprehension_variables() -> None:
     )
 
     position = Position(source=source, row=2, column=7)
+
     assert all_occurrence_positions(position) == [
         Position(source=source, row=2, column=7),
         Position(source=source, row=2, column=15),
@@ -461,6 +467,7 @@ def test_finds_generator_comprehension_variables() -> None:
     )
 
     position = Position(source=source, row=2, column=7)
+
     assert all_occurrence_positions(position) == [
         Position(source=source, row=2, column=7),
         Position(source=source, row=2, column=15),
@@ -471,20 +478,21 @@ def test_finds_generator_comprehension_variables() -> None:
 def test_finds_loop_variables():
     source = make_source(
         """
+        old = None
         for i, old in enumerate(['foo']):
             print(i)
             print(old)
+        print(old)
         """
     )
 
-    assert [o.name for o in get_occurrences(source)] == [
-        "i",
-        "old",
-        "enumerate",
-        "print",
-        "i",
-        "print",
-        "old",
+    position = Position(source=source, row=2, column=7)
+
+    assert all_occurrence_positions(position) == [
+        Position(source=source, row=1, column=0),
+        Position(source=source, row=2, column=7),
+        Position(source=source, row=4, column=10),
+        Position(source=source, row=5, column=6),
     ]
 
 
