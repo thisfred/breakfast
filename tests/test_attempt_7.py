@@ -123,13 +123,19 @@ class State:
 
     def enter_scope(self, name: str) -> None:
         new_scope = self.current_scope.new_child()
-        self._namespace.append(name)
-        self.scopes.setdefault(self.namespace, new_scope)
+        self._enter_scope(name, new_scope)
 
     def enter_isolated_scope(self, name: str) -> None:
         new_scope: CM[  # pylint: disable=unsubscriptable-object
             str, List[Occurrence]
         ] = ChainMap()
+        self._enter_scope(name, new_scope)
+
+    def _enter_scope(
+        self,
+        name: str,
+        new_scope: CM[str, List[Occurrence]],  # pylint: disable=unsubscriptable-object
+    ):
         self._namespace.append(name)
         self.scopes.setdefault(self.namespace, new_scope)
 
