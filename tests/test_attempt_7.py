@@ -495,6 +495,22 @@ def test_finds_function():
     )
 
 
+def test_finds_class():
+    source = make_source(
+        """
+    class OldClass:
+        pass
+
+    instance = OldClass()
+    """
+    )
+
+    assert [
+        Position(source, 1, 6),
+        Position(source, 4, 11),
+    ] == all_occurrence_positions(Position(source, 1, 6))
+
+
 def test_finds_method_name():
     source = make_source(
         """
