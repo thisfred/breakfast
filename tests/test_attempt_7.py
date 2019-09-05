@@ -122,13 +122,16 @@ class State:
         self.aliases[self.namespace + (new,)] = self.namespace + (existing,)
 
     def enter_scope(self, name: str) -> None:
-        previous_scope = self.current_scope
+        new_scope = self.current_scope.new_child()
         self._namespace.append(name)
-        self.scopes.setdefault(self.namespace, previous_scope.new_child())
+        self.scopes.setdefault(self.namespace, new_scope)
 
     def enter_isolated_scope(self, name: str) -> None:
+        new_scope: CM[  # pylint: disable=unsubscriptable-object
+            str, List[Occurrence]
+        ] = ChainMap()
         self._namespace.append(name)
-        self.scopes.setdefault(self.namespace, ChainMap())
+        self.scopes.setdefault(self.namespace, new_scope)
 
     def leave_scope(self) -> None:
         self._namespace.pop()
