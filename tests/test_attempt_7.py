@@ -463,25 +463,7 @@ def test_finds_attributes():
     ]
 
 
-def test_finds_parameters():
-    source = make_source(
-        """
-        def fun(arg, arg2):
-            return arg + arg2
-        fun(arg=1, arg2=2)
-        """
-    )
-
-    position = Position(source=source, row=1, column=8)
-
-    assert all_occurrence_positions(position) == [
-        Position(source=source, row=1, column=8),
-        Position(source=source, row=2, column=11),
-        Position(source=source, row=3, column=4),
-    ]
-
-
-def test_only_finds_parameter():
+def test_finds_parameter():
     source = make_source(
         """
     def fun(old=1):
