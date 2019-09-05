@@ -22,7 +22,7 @@ class Event:
         ...
 
 
-@dataclass
+@dataclass(frozen=True)
 class Occurrence(Event):
     name: str
     position: Position
@@ -39,7 +39,7 @@ class Definition(Occurrence):
         state.add_definition_to_scope(self)
 
 
-@dataclass
+@dataclass(frozen=True)
 class EnterScope(Event):
     name: str
 
@@ -47,7 +47,7 @@ class EnterScope(Event):
         state.enter_scope(self.name)
 
 
-@dataclass
+@dataclass(frozen=True)
 class EnterAttributeScope(Event):
     name: str
 
@@ -55,14 +55,14 @@ class EnterAttributeScope(Event):
         state.enter_isolated_scope(self.name)
 
 
-@dataclass
+@dataclass(frozen=True)
 class LeaveScope(Event):
     @staticmethod
     def apply(state: "State") -> None:
         state.leave_scope()
 
 
-@dataclass
+@dataclass(frozen=True)
 class Alias(Event):
     existing: str
     new: str
