@@ -8,7 +8,7 @@ from collections import ChainMap
 from dataclasses import dataclass
 from functools import singledispatch
 from typing import ChainMap as CM
-from typing import Dict, Iterator, List, Tuple, Union
+from typing import Dict, Iterator, List, Optional, Tuple, Union
 
 from breakfast.position import Position
 from breakfast.source import Source
@@ -62,21 +62,49 @@ class LeaveScope(Event):
         state.leave_scope()
 
 
+@dataclass
+class Alias(Event):
+    existing: str
+    new: str
+
+    def apply(self, state: "State") -> None:
+        state.add_alias(existing=self.existing, new=self.new)
+
+
 class State:
     def __init__(self) -> None:
-        self.namespace: List[str] = []
+        self._namespace: List[str] = []
         self.scopes: Dict[
             Tuple[str, ...],
             CM[str, List[Occurrence]],  # pylint: disable=unsubscriptable-object
         ] = {(): ChainMap()}
+        self.aliases: Dict[Tuple[str, ...], Tuple[str, ...]] = {}
+
+    @property
+    def namespace(self) -> Tuple[str, ...]:
+        return tuple(self._namespace)
 
     @property
     def current_scope(
         self
     ) -> CM[str, List[Occurrence]]:  # pylint: disable=unsubscriptable-object
-        return self.scopes[tuple(self.namespace)]
+        assert self.namespace in self.scopes
+        return self.scopes[self.namespace]
+
+    def scope_for(
+        self, namespace: Tuple[str, ...]
+    ) -> Optional[CM[str, List[Occurrence]]]:  # pylint: disable=unsubscriptable-object
+        return self.scopes.get(namespace)
 
     def lookup(self, name: str) -> List[Occurrence]:
+        if name not in self.current_scope:
+            namespace = self.namespace
+            while namespace in self.aliases:
+                namespace = self.aliases[namespace]
+                alias_scope = self.scope_for(namespace)
+                if alias_scope and name in alias_scope:
+                    return alias_scope[name]
+
         return self.current_scope.setdefault(name, [])
 
     def process(self, event: Event):
@@ -90,19 +118,20 @@ class State:
         assert isinstance(mapping, dict)
         mapping.setdefault(occurrence.name, []).append(occurrence)
 
+    def add_alias(self, new: str, existing: str) -> None:
+        self.aliases[self.namespace + (new,)] = self.namespace + (existing,)
+
     def enter_scope(self, name: str) -> None:
         previous_scope = self.current_scope
-        self.namespace.append(name)
-        key = tuple(self.namespace)
-        self.scopes.setdefault(key, previous_scope.new_child())
+        self._namespace.append(name)
+        self.scopes.setdefault(self.namespace, previous_scope.new_child())
 
     def enter_isolated_scope(self, name: str) -> None:
-        self.namespace.append(name)
-        key = tuple(self.namespace)
-        self.scopes.setdefault(key, ChainMap())
+        self._namespace.append(name)
+        self.scopes.setdefault(self.namespace, ChainMap())
 
     def leave_scope(self) -> None:
-        self.namespace.pop()
+        self._namespace.pop()
 
 
 def node_position(
@@ -148,8 +177,17 @@ def visit_class(node: ast.ClassDef, source: Source) -> Iterator[Event]:
         node, source, row_offset=row_offset, column_offset=column_offset
     )
     yield Definition(node.name, position, node)
+
+    for base in node.bases:
+        if isinstance(base, ast.Name):
+            yield Alias(new=node.name, existing=base.id)
+        yield from visit(base, source)
+
     yield EnterScope(node.name)
-    yield from generic_visit(node, source)
+
+    for statement in node.body:
+        yield from visit(statement, source)
+
     yield LeaveScope()
 
 
@@ -185,6 +223,42 @@ def visit_attribute(node: ast.Attribute, source: Source) -> Iterator[Event]:
 
     for _ in names:
         yield LeaveScope()
+
+
+@visit.register
+def visit_assign(node: ast.Assign, source: Source) -> Iterator[Event]:
+    yield from generic_visit(node, source)
+
+    target_names = get_names(node.targets[0])
+    value_names = get_names(node.value)
+
+    for target, value in zip(target_names, value_names):
+        if target and value:
+            yield Alias(new=target, existing=value)
+
+
+def get_names(node: ast.AST):
+    return [name_for(node)]
+
+
+@singledispatch
+def name_for(node: ast.AST) -> Optional[str]:  # pylint: disable= unused-argument
+    return None
+
+
+@name_for.register
+def name_for_name(node: ast.Name) -> Optional[str]:
+    return node.id
+
+
+@name_for.register
+def name_for_attribute(node: ast.Attribute) -> Optional[str]:
+    return node.attr
+
+
+@name_for.register
+def name_for_call(node: ast.Call) -> Optional[str]:
+    return name_for(node.func)
 
 
 @visit.register
@@ -316,16 +390,29 @@ def all_occurrences_of(position: Position) -> List[Occurrence]:
         if isinstance(event, Occurrence) and event.position == position:
             found = state.lookup(event.name) or []
 
-    print()
-    print()
-    from pprint import pprint
-
-    pprint(state.scopes)
     return found
 
 
 def all_occurrence_positions(position: Position) -> List[Position]:
     return sorted(o.position for o in all_occurrences_of(position))
+
+
+def test_dogfood():
+    """Test we can walk through a realistic file."""
+
+    with open(__file__, "r") as source_file:
+        source = Source(
+            lines=tuple(l[:-1] for l in source_file.readlines()),
+            module_name="test_attempt_7",
+            file_name=__file__,
+        )
+
+    state = State()
+    for event in visit(source.get_ast(), source=source):
+        state.process(event)
+
+    # the test is that we get here without errors.
+    assert True
 
 
 def test_distinguishes_local_variables_from_global():
@@ -497,17 +584,25 @@ def test_finds_loop_variables():
     ]
 
 
-def test_dogfood():
+def test_finds_superclasses():
+    source = make_source(
+        """
+        class A:
 
-    with open(__file__, "r") as source_file:
-        source = Source(
-            lines=tuple(l[:-1] for l in source_file.readlines()),
-            module_name="test_attempt_7",
-            file_name=__file__,
-        )
+            def old(self):
+                pass
 
-    state = State()
-    for event in visit(source.get_ast(), source=source):
-        state.process(event)
+        class B(A):
+            pass
 
-    assert True
+        b = B()
+        c = b
+        c.old()
+        """
+    )
+
+    position = Position(source=source, row=3, column=8)
+    assert all_occurrence_positions(position) == [
+        Position(source=source, row=3, column=8),
+        Position(source=source, row=11, column=2),
+    ]
