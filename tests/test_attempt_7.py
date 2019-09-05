@@ -481,6 +481,20 @@ def test_finds_parameter():
     ] == all_occurrence_positions(Position(source, 1, 8))
 
 
+def test_finds_function():
+    source = make_source(
+        """
+    def fun_old():
+        return 'result'
+    result = fun_old()
+    """
+    )
+
+    assert [Position(source, 1, 4), Position(source, 3, 9)] == all_occurrence_positions(
+        Position(source, 1, 4)
+    )
+
+
 def test_finds_method_name():
     source = make_source(
         """
