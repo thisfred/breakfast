@@ -481,6 +481,24 @@ def test_finds_parameters():
     ]
 
 
+def test_only_finds_parameter():
+    source = make_source(
+        """
+    def fun(old=1):
+        print(old)
+
+    old = 8
+    fun(old=old)
+    """
+    )
+
+    assert [
+        Position(source, 1, 8),
+        Position(source, 2, 10),
+        Position(source, 5, 4),
+    ] == all_occurrence_positions(Position(source, 1, 8))
+
+
 def test_finds_method_name():
     source = make_source(
         """
