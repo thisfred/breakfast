@@ -785,3 +785,27 @@ def test_finds_superclasses():
         Position(source=source, row=3, column=8),
         Position(source=source, row=11, column=2),
     ]
+
+
+def test_recognizes_multiple_assignments():
+    source = make_source(
+        """
+    class A:
+        def old(self):
+            pass
+
+    class B:
+        def old(self):
+            pass
+
+    foo, bar = A(), B()
+    foo.old()
+    bar.old()
+    """
+    )
+
+    position = Position(source=source, row=2, column=8)
+    assert all_occurrence_positions(position) == [
+        Position(source, 2, 8),
+        Position(source, 10, 4),
+    ]
