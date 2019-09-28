@@ -8,7 +8,7 @@ from collections import ChainMap
 from dataclasses import dataclass
 from functools import singledispatch
 from typing import ChainMap as CM
-from typing import Dict, Iterator, List, Optional, Tuple, Union
+from typing import Dict, Iterator, List, Optional, Set, Tuple, Union
 
 from breakfast.position import Position
 from breakfast.source import Source
@@ -47,12 +47,17 @@ class EnterScope(Event):
         state.enter_scope(self.name)
 
 
+class EnterClassScope(EnterScope):
+    def apply(self, state: "State") -> None:
+        state.enter_class_scope(self.name)
+
+
 @dataclass(frozen=True)
 class EnterAttributeScope(Event):
     name: str
 
     def apply(self, state: "State") -> None:
-        state.enter_isolated_scope(self.name)
+        state.enter_attribute_scope(self.name)
 
 
 @dataclass(frozen=True)
@@ -64,11 +69,19 @@ class LeaveScope(Event):
 
 @dataclass(frozen=True)
 class Alias(Event):
-    existing: str
-    new: str
+    existing: Tuple[str, ...]
+    new: Tuple[str, ...]
 
     def apply(self, state: "State") -> None:
         state.add_alias(existing=self.existing, new=self.new)
+
+
+@dataclass(frozen=True)
+class FirstArgument(Event):
+    name: str
+
+    def apply(self, state: "State") -> None:
+        state.add_self(name=self.name)
 
 
 class State:
@@ -79,6 +92,7 @@ class State:
             CM[str, List[Occurrence]],  # pylint: disable=unsubscriptable-object
         ] = {(): ChainMap()}
         self.aliases: Dict[Tuple[str, ...], Tuple[str, ...]] = {}
+        self.classes: Set[Tuple[str, ...]] = set()
 
     @property
     def namespace(self) -> Tuple[str, ...]:
@@ -118,17 +132,28 @@ class State:
         assert isinstance(mapping, dict)
         mapping.setdefault(occurrence.name, []).append(occurrence)
 
-    def add_alias(self, new: str, existing: str) -> None:
-        self.aliases[self.namespace + (new,)] = self.namespace + (existing,)
+    def add_alias(self, new: Tuple[str, ...], existing: Tuple[str, ...]) -> None:
+        self.aliases[self.namespace + new] = self.namespace + existing
+
+    def add_self(self, name: str) -> None:
+        if self.namespace[:-1] in self.classes:
+            full_name = self.namespace + (name,)
+            self.aliases[full_name] = full_name[:-2]
+
+    def enter_class_scope(self, name: str) -> None:
+        self.enter_scope(name)
+        self.classes.add(self.namespace)
 
     def enter_scope(self, name: str) -> None:
         new_scope = self.current_scope.new_child()
         self._enter_scope(name, new_scope)
 
-    def enter_isolated_scope(self, name: str) -> None:
-        new_scope: CM[  # pylint: disable=unsubscriptable-object
-            str, List[Occurrence]
-        ] = ChainMap()
+    def enter_attribute_scope(self, name: str) -> None:
+        full_name = self.namespace + (name,)
+        if full_name in self.aliases and self.aliases[full_name] in self.classes:
+            new_scope = self.scopes[self.aliases[full_name]]
+        else:
+            new_scope = ChainMap()
         self._enter_scope(name, new_scope)
 
     def _enter_scope(
@@ -189,10 +214,10 @@ def visit_class(node: ast.ClassDef, source: Source) -> Iterator[Event]:
 
     for base in node.bases:
         if isinstance(base, ast.Name):
-            yield Alias(new=node.name, existing=base.id)
+            yield Alias(new=(node.name,), existing=(base.id,))
         yield from visit(base, source)
 
-    yield EnterScope(node.name)
+    yield EnterClassScope(node.name)
 
     for statement in node.body:
         yield from visit(statement, source)
@@ -209,12 +234,22 @@ def visit_function(node: ast.FunctionDef, source: Source) -> Iterator[Event]:
     yield Definition(node.name, position, node)
     yield EnterScope(node.name)
 
-    for arg in node.args.args:
+    for i, arg in enumerate(node.args.args):
+
+        if i == 0 and not is_static_method(node):
+            yield FirstArgument(name=arg.arg)
+
         position = node_position(arg, source)
         yield Regular(arg.arg, position, arg)
 
     yield from generic_visit(node, source)
     yield LeaveScope()
+
+
+def is_static_method(node: ast.FunctionDef) -> bool:
+    return any(
+        n.id == "staticmethod" for n in node.decorator_list if isinstance(n, ast.Name)
+    )
 
 
 @visit.register
@@ -246,28 +281,31 @@ def visit_assign(node: ast.Assign, source: Source) -> Iterator[Event]:
             yield Alias(new=target, existing=value)
 
 
-def get_names(node: ast.AST):
-    return [name_for(node)]
+def get_names(value: ast.AST) -> List[Tuple[str, ...]]:
+    if isinstance(value, ast.Tuple):
+        return [names_for(v) for v in value.elts]
+
+    return [names_for(value)]
 
 
 @singledispatch
-def name_for(node: ast.AST) -> Optional[str]:  # pylint: disable= unused-argument
-    return None
+def names_for(node: ast.AST) -> Tuple[str, ...]:  # pylint: disable= unused-argument
+    return ()
 
 
-@name_for.register
-def name_for_name(node: ast.Name) -> Optional[str]:
-    return node.id
+@names_for.register
+def names_for_name(node: ast.Name) -> Tuple[str, ...]:
+    return (node.id,)
 
 
-@name_for.register
-def name_for_attribute(node: ast.Attribute) -> Optional[str]:
-    return node.attr
+@names_for.register
+def names_for_attribute(node: ast.Attribute) -> Tuple[str, ...]:
+    return names_for(node.value) + (node.attr,)
 
 
-@name_for.register
-def name_for_call(node: ast.Call) -> Optional[str]:
-    return name_for(node.func)
+@names_for.register
+def names_for_call(node: ast.Call) -> Tuple[str, ...]:
+    return names_for(node.func)
 
 
 @visit.register
@@ -373,24 +411,6 @@ def attribute_nemes(node: ast.Attribute) -> Tuple[str, ...]:
     return names_from(node.value) + (node.attr,)
 
 
-def get_occurrences(source: Source) -> List[Occurrence]:
-    initial_node = source.get_ast()
-    return [
-        event
-        for event in visit(initial_node, source=source)
-        if isinstance(event, Occurrence)
-    ]
-
-
-def get_scopes(source: Source) -> List[Union[EnterScope, LeaveScope]]:
-    initial_node = source.get_ast()
-    return [
-        event
-        for event in visit(initial_node, source=source)
-        if isinstance(event, (EnterScope, LeaveScope))
-    ]
-
-
 def all_occurrences_of(position: Position) -> List[Occurrence]:
     found: List[Occurrence] = []
     state = State()
@@ -466,12 +486,12 @@ def test_finds_attributes():
 def test_finds_parameter():
     source = make_source(
         """
-    def fun(old=1):
-        print(old)
+        def fun(old=1):
+            print(old)
 
-    old = 8
-    fun(old=old)
-    """
+        old = 8
+        fun(old=old)
+        """
     )
 
     assert [
@@ -484,10 +504,10 @@ def test_finds_parameter():
 def test_finds_function():
     source = make_source(
         """
-    def fun_old():
-        return 'result'
-    result = fun_old()
-    """
+        def fun_old():
+            return 'result'
+        result = fun_old()
+        """
     )
 
     assert [Position(source, 1, 4), Position(source, 3, 9)] == all_occurrence_positions(
@@ -498,11 +518,11 @@ def test_finds_function():
 def test_finds_class():
     source = make_source(
         """
-    class OldClass:
-        pass
+        class OldClass:
+            pass
 
-    instance = OldClass()
-    """
+        instance = OldClass()
+        """
     )
 
     assert [
@@ -529,6 +549,110 @@ def test_finds_method_name():
         Position(source=source, row=3, column=8),
         Position(source=source, row=6, column=12),
     ]
+
+
+def test_finds_passed_argument():
+    source = make_source(
+        """
+        old = 2
+        def fun(arg, arg2):
+            return arg + arg2
+        fun(1, old)
+        """
+    )
+
+    assert [Position(source, 1, 0), Position(source, 4, 7)] == all_occurrence_positions(
+        Position(source, 1, 0)
+    )
+
+
+def test_finds_parameter_with_unusual_indentation():
+    source = make_source(
+        """
+        def fun(arg, arg2):
+            return arg + arg2
+        fun(
+            arg=\\
+                1,
+            arg2=2)
+        """
+    )
+
+    assert [
+        Position(source, 1, 8),
+        Position(source, 2, 11),
+        Position(source, 4, 4),
+    ] == all_occurrence_positions(Position(source, 1, 8))
+
+
+def test_does_not_find_method_of_unrelated_class():
+    source = make_source(
+        """
+        class ClassThatShouldHaveMethodRenamed:
+
+            def old(self, arg):
+                pass
+
+            def foo(self):
+                self.old('whatever')
+
+
+        class UnrelatedClass:
+
+            def old(self, arg):
+                pass
+
+            def foo(self):
+                self.old('whatever')
+
+
+        a = ClassThatShouldHaveMethodRenamed()
+        a.old()
+        b = UnrelatedClass()
+        b.old()
+        """
+    )
+
+    occurrences = all_occurrence_positions(Position(source, 3, 8))
+
+    assert [
+        Position(source, 3, 8),
+        Position(source, 7, 13),
+        Position(source, 20, 2),
+    ] == occurrences
+
+
+def test_finds_definition_from_call():
+    source = make_source(
+        """
+        def old():
+            pass
+
+        def bar():
+            old()
+        """
+    )
+
+    assert [Position(source, 1, 4), Position(source, 5, 4)] == all_occurrence_positions(
+        Position(source, 5, 4)
+    )
+
+
+def test_finds_attribute_assignments():
+    source = make_source(
+        """
+        class ClassName:
+
+            def __init__(self, property):
+                self.property = property
+
+            def get_property(self):
+                return self.property
+        """
+    )
+    occurrences = all_occurrence_positions(Position(source, 7, 20))
+
+    assert [Position(source, 4, 13), Position(source, 7, 20)] == occurrences
 
 
 def test_finds_dict_comprehension_variables():
