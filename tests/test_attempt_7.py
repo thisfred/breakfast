@@ -113,11 +113,20 @@ class State:
     def lookup(self, name: str) -> List[Occurrence]:
         if name not in self.current_scope:
             namespace = self.namespace
+
             while namespace in self.aliases:
                 namespace = self.aliases[namespace]
                 alias_scope = self.scope_for(namespace)
                 if alias_scope and name in alias_scope:
                     return alias_scope[name]
+
+            for length in range(len(namespace), 0, -1):
+                prefix, suffix = namespace[:length], namespace[length:]
+                if prefix in self.aliases:
+                    namespace = self.aliases[prefix] + suffix
+                    alias_scope = self.scope_for(namespace)
+                    if alias_scope and name in alias_scope:
+                        return alias_scope[name]
 
         return self.current_scope.setdefault(name, [])
 
@@ -781,6 +790,7 @@ def test_finds_superclasses():
     )
 
     position = Position(source=source, row=3, column=8)
+
     assert all_occurrence_positions(position) == [
         Position(source=source, row=3, column=8),
         Position(source=source, row=11, column=2),
@@ -805,7 +815,69 @@ def test_recognizes_multiple_assignments():
     )
 
     position = Position(source=source, row=2, column=8)
+
     assert all_occurrence_positions(position) == [
         Position(source, 2, 8),
         Position(source, 10, 4),
+    ]
+
+
+def test_finds_enclosing_scope_variable_from_comprehension():
+    source = make_source(
+        """
+    old = 3
+    res = [foo for foo in range(100) if foo % old]
+    """
+    )
+
+    position = Position(source=source, row=2, column=42)
+
+    assert all_occurrence_positions(position) == [
+        Position(source, 1, 0),
+        Position(source, 2, 42),
+    ]
+
+
+def test_finds_static_method():
+    source = make_source(
+        """
+    class A:
+
+        @staticmethod
+        def old(arg):
+            pass
+
+    a = A()
+    a.old('foo')
+    """
+    )
+
+    position = Position(source=source, row=4, column=8)
+
+    assert all_occurrence_positions(position) == [
+        Position(source, 4, 8),
+        Position(source, 8, 2),
+    ]
+
+
+def test_finds_argument():
+    source = make_source(
+        """
+    class A:
+
+        def foo(self, arg):
+            print(arg)
+
+        def bar(self):
+            arg = "1"
+            self.foo(arg=arg)
+    """
+    )
+
+    position = Position(source=source, row=8, column=17)
+
+    assert all_occurrence_positions(position) == [
+        Position(source, 3, 18),
+        Position(source, 4, 14),
+        Position(source, 8, 17),
     ]

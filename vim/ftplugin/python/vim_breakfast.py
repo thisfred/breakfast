@@ -7,7 +7,7 @@ from breakfast.source import Source
 def do_rename(
     root: str, buffer_contents: List[str], row: int, column: int, new_name: str
 ) -> Iterator[Tuple[int, str]]:
-    source = Source(buffer_contents, module_name="module")
+    source = Source(tuple(buffer_contents), module_name="module")
     application = Application(source=source, root=root)
     application.rename(row=row, column=column, new_name=new_name)
     for i, line in source.get_changes():
