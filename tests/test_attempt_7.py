@@ -747,6 +747,22 @@ def test_finds_loop_variables():
     ]
 
 
+def test_finds_tuple_unpack():
+    source = make_source(
+        """
+    foo, old = 1, 2
+    print(old)
+    """
+    )
+
+    position = Position(source=source, row=1, column=5)
+
+    assert all_occurrence_positions(position) == [
+        Position(source, 1, 5),
+        Position(source, 2, 6),
+    ]
+
+
 def test_finds_superclasses():
     source = make_source(
         """
