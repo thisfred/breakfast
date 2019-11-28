@@ -31,12 +31,12 @@ class Occurrence(Event):
 
 class Regular(Occurrence):
     def apply(self, state: "State") -> None:
-        state.add_to_scope(self)
+        state.add_occurrence(self)
 
 
 class Definition(Occurrence):
     def apply(self, state: "State") -> None:
-        state.add_definition_to_scope(self)
+        state.add_definition(self)
 
 
 @dataclass(frozen=True)
@@ -45,6 +45,16 @@ class EnterScope(Event):
 
     def apply(self, state: "State") -> None:
         state.enter_scope(self.name)
+
+
+class EnterFunctionScope(EnterScope):
+    def apply(self, state: "State") -> None:
+        state.enter_function_scope(self.name)
+
+
+class EnterModuleScope(EnterScope):
+    def apply(self, state: "State") -> None:
+        state.enter_modulte_scope(self.name)
 
 
 class EnterClassScope(EnterScope):
@@ -77,7 +87,7 @@ class Alias(Event):
 
 
 @dataclass(frozen=True)
-class FirstArgument(Event):
+class SelfArgument(Event):
     name: str
 
     def apply(self, state: "State") -> None:
@@ -93,6 +103,10 @@ class State:
         ] = {(): ChainMap()}
         self.aliases: Dict[Tuple[str, ...], Tuple[str, ...]] = {}
         self.classes: Set[Tuple[str, ...]] = set()
+        self.module_scope: Optional[
+            CM[str, List[Occurrence]]  # pylint: disable=unsubscriptable-object
+        ] = None
+        self.attribute_scopes: Set[Tuple[str, ...]] = set()
 
     @property
     def namespace(self) -> Tuple[str, ...]:
@@ -105,38 +119,74 @@ class State:
         assert self.namespace in self.scopes
         return self.scopes[self.namespace]
 
+    @property
+    def in_attribute_scope(self):
+        return self.namespace in self.attribute_scopes
+
     def scope_for(
         self, namespace: Tuple[str, ...]
     ) -> Optional[CM[str, List[Occurrence]]]:  # pylint: disable=unsubscriptable-object
         return self.scopes.get(namespace)
 
-    def lookup(self, name: str) -> List[Occurrence]:
-        if name not in self.current_scope:
-            namespace = self.namespace
+    def lookup_existing(self, name: str) -> Optional[List[Occurrence]]:
+        if name in self.current_scope:
+            return self.current_scope[name]
 
-            while namespace in self.aliases:
-                namespace = self.aliases[namespace]
+        alias = self.get_alias(name)
+        if alias:
+            return alias
+
+        prefix_alias = self.get_prefix_alias(name)
+        if prefix_alias:
+            return prefix_alias
+
+        return None
+
+    def lookup(self, name: str) -> List[Occurrence]:
+        existing = self.lookup_existing(name)
+        if existing:
+            return existing
+
+        return self.current_scope.setdefault(name, [])
+
+    def get_alias(self, name: str) -> Optional[List[Occurrence]]:
+        namespace = self.namespace
+        while namespace in self.aliases:
+            namespace = self.aliases[namespace]
+            alias_scope = self.scope_for(namespace)
+            if alias_scope and name in alias_scope:
+                return alias_scope[name]
+
+        return None
+
+    def get_prefix_alias(self, name: str) -> Optional[List[Occurrence]]:
+        namespace = self.namespace
+        for length in range(len(namespace), 0, -1):
+            prefix, suffix = namespace[:length], namespace[length:]
+            if prefix in self.aliases:
+                namespace = self.aliases[prefix] + suffix
                 alias_scope = self.scope_for(namespace)
                 if alias_scope and name in alias_scope:
                     return alias_scope[name]
 
-            for length in range(len(namespace), 0, -1):
-                prefix, suffix = namespace[:length], namespace[length:]
-                if prefix in self.aliases:
-                    namespace = self.aliases[prefix] + suffix
-                    alias_scope = self.scope_for(namespace)
-                    if alias_scope and name in alias_scope:
-                        return alias_scope[name]
-
-        return self.current_scope.setdefault(name, [])
+        return None
 
     def process(self, event: Event):
         event.apply(self)
 
-    def add_to_scope(self, occurrence: Occurrence) -> None:
-        self.lookup(occurrence.name).append(occurrence)
+    def add_occurrence(self, occurrence: Occurrence) -> None:
+        existing = self.lookup_existing(occurrence.name)
+        if existing:
+            existing.append(occurrence)
+        elif self.in_attribute_scope:
+            self.lookup(occurrence.name).append(occurrence)
+        else:
+            # Use before definition, which means the definition has to come later. The
+            # only place that can happen is in the module scope.
+            assert self.module_scope is not None
+            self.module_scope.setdefault(occurrence.name, []).append(occurrence)
 
-    def add_definition_to_scope(self, occurrence: Occurrence) -> None:
+    def add_definition(self, occurrence: Occurrence) -> None:
         mapping = self.current_scope.maps[0]
         assert isinstance(mapping, dict)
         mapping.setdefault(occurrence.name, []).append(occurrence)
@@ -149,9 +199,20 @@ class State:
             full_name = self.namespace + (name,)
             self.aliases[full_name] = full_name[:-2]
 
+    def enter_modulte_scope(self, name: str) -> None:
+        self.enter_scope(name)
+        self.module_scope = self.current_scope
+
     def enter_class_scope(self, name: str) -> None:
         self.enter_scope(name)
         self.classes.add(self.namespace)
+
+    def enter_function_scope(self, name: str) -> None:
+        if self.namespace in self.classes:
+            new_scope = ChainMap(*self.current_scope.maps[1:]).new_child()
+        else:
+            new_scope = self.current_scope.new_child()
+        self._enter_scope(name, new_scope)
 
     def enter_scope(self, name: str) -> None:
         new_scope = self.current_scope.new_child()
@@ -164,6 +225,7 @@ class State:
         else:
             new_scope = ChainMap()
         self._enter_scope(name, new_scope)
+        self.attribute_scopes.add(self.namespace)
 
     def _enter_scope(
         self,
@@ -214,11 +276,15 @@ def visit_name_definition(node: ast.Name, source: Source) -> Iterator[Event]:
 
 
 @visit.register
+def visit_module(node: ast.Module, source: Source) -> Iterator[Event]:
+    yield EnterModuleScope(source.module_name)
+    yield from generic_visit(node, source)
+    yield LeaveScope()
+
+
+@visit.register
 def visit_class(node: ast.ClassDef, source: Source) -> Iterator[Event]:
-    row_offset, column_offset = len(node.decorator_list), len("class ")
-    position = node_position(
-        node, source, row_offset=row_offset, column_offset=column_offset
-    )
+    position = node_position(node, source, column_offset=len("class "))
     yield Definition(node.name, position, node)
 
     for base in node.bases:
@@ -236,20 +302,17 @@ def visit_class(node: ast.ClassDef, source: Source) -> Iterator[Event]:
 
 @visit.register
 def visit_function(node: ast.FunctionDef, source: Source) -> Iterator[Event]:
-    row_offset, column_offset = len(node.decorator_list), len("def ")
-    position = node_position(
-        node, source, row_offset=row_offset, column_offset=column_offset
-    )
+    position = node_position(node, source, column_offset=len("def "))
     yield Definition(node.name, position, node)
-    yield EnterScope(node.name)
+    yield EnterFunctionScope(node.name)
 
     for i, arg in enumerate(node.args.args):
 
         if i == 0 and not is_static_method(node):
-            yield FirstArgument(name=arg.arg)
+            yield SelfArgument(name=arg.arg)
 
         position = node_position(arg, source)
-        yield Regular(arg.arg, position, arg)
+        yield Definition(arg.arg, position, arg)
 
     yield from generic_visit(node, source)
     yield LeaveScope()
@@ -280,11 +343,12 @@ def visit_attribute(node: ast.Attribute, source: Source) -> Iterator[Event]:
 
 @visit.register
 def visit_assign(node: ast.Assign, source: Source) -> Iterator[Event]:
-    yield from generic_visit(node, source)
+    for node_target in node.targets:
+        yield from visit_definition(node_target, source)
+    yield from visit(node.value, source)
 
     target_names = get_names(node.targets[0])
     value_names = get_names(node.value)
-
     for target, value in zip(target_names, value_names):
         if target and value:
             yield Alias(new=target, existing=value)
@@ -331,12 +395,14 @@ def visit_call(node: ast.Call, source: Source) -> Iterator[Event]:
     call_position = node_position(node, source)
     yield from visit(node.func, source)
 
-    names = names_from(node.func)
     for arg in node.args:
         yield from visit(arg, source)
 
-    for name in names:
+    names = names_from(node.func)
+    for name in names[:-1]:
         yield EnterAttributeScope(name)
+
+    yield EnterScope(names[-1])
 
     for keyword in node.keywords:
         if not keyword.arg:
@@ -411,7 +477,7 @@ def names_from(node: ast.AST) -> Tuple[str, ...]:  # pylint: disable=unused-argu
 
 
 @names_from.register
-def name_nemes(node: ast.Name) -> Tuple[str, ...]:
+def name_names(node: ast.Name) -> Tuple[str, ...]:
     return (node.id,)
 
 
@@ -433,6 +499,11 @@ def all_occurrences_of(position: Position) -> List[Occurrence]:
 
 def all_occurrence_positions(position: Position) -> List[Position]:
     return sorted(o.position for o in all_occurrences_of(position))
+
+
+def all_events(source: Source) -> Iterator[Event]:
+    for event in visit(source.get_ast(), source=source):
+        yield event
 
 
 def test_dogfood():
@@ -841,15 +912,15 @@ def test_finds_enclosing_scope_variable_from_comprehension():
 def test_finds_static_method():
     source = make_source(
         """
-    class A:
+        class A:
 
-        @staticmethod
-        def old(arg):
-            pass
+            @staticmethod
+            def old(arg):
+                pass
 
-    a = A()
-    a.old('foo')
-    """
+        a = A()
+        a.old('foo')
+        """
     )
 
     position = Position(source=source, row=4, column=8)
@@ -863,15 +934,15 @@ def test_finds_static_method():
 def test_finds_argument():
     source = make_source(
         """
-    class A:
+        class A:
 
-        def foo(self, arg):
-            print(arg)
+            def foo(self, arg):
+                print(arg)
 
-        def bar(self):
-            arg = "1"
-            self.foo(arg=arg)
-    """
+            def bar(self):
+                arg = "1"
+                self.foo(arg=arg)
+        """
     )
 
     position = Position(source=source, row=8, column=17)
@@ -880,4 +951,30 @@ def test_finds_argument():
         Position(source, 3, 18),
         Position(source, 4, 14),
         Position(source, 8, 17),
+    ]
+
+
+def test_finds_method_but_not_function():
+    source = make_source(
+        """
+        class A:
+
+            def old(self):
+                pass
+
+            def foo(self):
+                self.old()
+
+            def bar(self):
+                old()
+
+        def old():
+            pass
+        """
+    )
+    position = Position(source, 3, 8)
+
+    assert all_occurrence_positions(position) == [
+        Position(source, 3, 8),
+        Position(source, 7, 13),
     ]
