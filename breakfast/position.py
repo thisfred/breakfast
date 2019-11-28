@@ -27,12 +27,11 @@ class Position:
     def __add__(self, column_offset: int) -> "Position":
         return self._add_offset(column_offset)
 
-    def __sub__(self, column_offset: int) -> "Position":
-        new_offset = self.column - column_offset
-        if new_offset < 0:
+    def __sub__(self, to_subtract: int) -> "Position":
+        if to_subtract > self.column:
             raise IllegalPosition()
 
-        return self._add_offset(-column_offset)
+        return self._add_offset(-to_subtract)
 
     def next_line(self) -> "Position":
         return replace(self, row=self.row + 1, column=0)

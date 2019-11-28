@@ -2,11 +2,10 @@ import re
 
 from ast import AST, parse
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Dict, Iterator, Optional, Tuple
+from typing import Dict, Iterator, Optional, Tuple
 
+from breakfast.position import Position
 
-if TYPE_CHECKING:
-    from breakfast.position import Position
 
 WORD = re.compile(r"\w+|\W+")
 
@@ -32,7 +31,10 @@ class Source:
             f"file_name={repr(self.file_name)})"
         )
 
-    def get_name_at(self, position: "Position") -> str:
+    def position(self, row: int, column: int) -> Position:
+        return Position(source=self, row=row, column=column)
+
+    def get_name_at(self, position: Position) -> str:
         match = WORD.search(self.get_string_starting_at(position))
         assert match
         return match.group()
@@ -47,16 +49,16 @@ class Source:
         for change in sorted(self.changes.items()):
             yield change
 
-    def replace(self, position: "Position", old: str, new: str) -> None:
+    def replace(self, position: Position, old: str, new: str) -> None:
         self.modify_line(start=position, end=position + len(old), new=new)
 
-    def modify_line(self, start: "Position", end: "Position", new: str) -> None:
+    def modify_line(self, start: Position, end: Position, new: str) -> None:
         line_number = start.row
         line = self.changes.get(line_number, self.lines[line_number])
         modified_line = line[: start.column] + new + line[end.column :]
         self.changes[line_number] = modified_line
 
-    def find_after(self, name: str, start: "Position") -> "Position":
+    def find_after(self, name: str, start: Position) -> Position:
         regex = re.compile("\\b{}\\b".format(name))
         match = regex.search(self.get_string_starting_at(start))
         while start.row <= len(self.lines) and not match:
@@ -65,5 +67,5 @@ class Source:
         assert match
         return start + match.span()[0]
 
-    def get_string_starting_at(self, position: "Position") -> str:
+    def get_string_starting_at(self, position: Position) -> str:
         return self.lines[position.row][position.column :]

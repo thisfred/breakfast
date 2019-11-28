@@ -242,10 +242,8 @@ class State:
 def node_position(
     node: ast.AST, source: Source, row_offset=0, column_offset=0
 ) -> Position:
-    return Position(
-        source=source,
-        row=(node.lineno - 1) + row_offset,
-        column=node.col_offset + column_offset,
+    return source.position(
+        row=(node.lineno - 1) + row_offset, column=node.col_offset + column_offset
     )
 
 
@@ -538,12 +536,12 @@ def test_distinguishes_local_variables_from_global():
         """
     )
 
-    position = Position(source=source, row=2, column=4)
+    position = source.position(row=2, column=4)
 
     assert all_occurrence_positions(position) == [
-        Position(source=source, row=2, column=4),
-        Position(source=source, row=4, column=13),
-        Position(source=source, row=5, column=8),
+        source.position(row=2, column=4),
+        source.position(row=4, column=13),
+        source.position(row=5, column=8),
     ]
 
 
@@ -556,11 +554,9 @@ def test_finds_attributes():
         """
     )
 
-    position = Position(source=source, row=3, column=0)
+    position = source.position(row=3, column=0)
 
-    assert all_occurrence_positions(position) == [
-        Position(source=source, row=3, column=0)
-    ]
+    assert all_occurrence_positions(position) == [source.position(row=3, column=0)]
 
 
 def test_finds_parameter():
@@ -575,10 +571,10 @@ def test_finds_parameter():
     )
 
     assert [
-        Position(source, 1, 8),
-        Position(source, 2, 10),
-        Position(source, 5, 4),
-    ] == all_occurrence_positions(Position(source, 1, 8))
+        source.position(1, 8),
+        source.position(2, 10),
+        source.position(5, 4),
+    ] == all_occurrence_positions(source.position(1, 8))
 
 
 def test_finds_function():
@@ -590,8 +586,8 @@ def test_finds_function():
         """
     )
 
-    assert [Position(source, 1, 4), Position(source, 3, 9)] == all_occurrence_positions(
-        Position(source, 1, 4)
+    assert [source.position(1, 4), source.position(3, 9)] == all_occurrence_positions(
+        source.position(1, 4)
     )
 
 
@@ -605,10 +601,9 @@ def test_finds_class():
         """
     )
 
-    assert [
-        Position(source, 1, 6),
-        Position(source, 4, 11),
-    ] == all_occurrence_positions(Position(source, 1, 6))
+    assert [source.position(1, 6), source.position(4, 11)] == all_occurrence_positions(
+        source.position(1, 6)
+    )
 
 
 def test_finds_method_name():
@@ -623,11 +618,11 @@ def test_finds_method_name():
         """
     )
 
-    position = Position(source=source, row=3, column=8)
+    position = source.position(row=3, column=8)
 
     assert all_occurrence_positions(position) == [
-        Position(source=source, row=3, column=8),
-        Position(source=source, row=6, column=12),
+        source.position(row=3, column=8),
+        source.position(row=6, column=12),
     ]
 
 
@@ -641,8 +636,8 @@ def test_finds_passed_argument():
         """
     )
 
-    assert [Position(source, 1, 0), Position(source, 4, 7)] == all_occurrence_positions(
-        Position(source, 1, 0)
+    assert [source.position(1, 0), source.position(4, 7)] == all_occurrence_positions(
+        source.position(1, 0)
     )
 
 
@@ -659,10 +654,10 @@ def test_finds_parameter_with_unusual_indentation():
     )
 
     assert [
-        Position(source, 1, 8),
-        Position(source, 2, 11),
-        Position(source, 4, 4),
-    ] == all_occurrence_positions(Position(source, 1, 8))
+        source.position(1, 8),
+        source.position(2, 11),
+        source.position(4, 4),
+    ] == all_occurrence_positions(source.position(1, 8))
 
 
 def test_does_not_find_method_of_unrelated_class():
@@ -693,12 +688,12 @@ def test_does_not_find_method_of_unrelated_class():
         """
     )
 
-    occurrences = all_occurrence_positions(Position(source, 3, 8))
+    occurrences = all_occurrence_positions(source.position(3, 8))
 
     assert [
-        Position(source, 3, 8),
-        Position(source, 7, 13),
-        Position(source, 20, 2),
+        source.position(3, 8),
+        source.position(7, 13),
+        source.position(20, 2),
     ] == occurrences
 
 
@@ -713,8 +708,8 @@ def test_finds_definition_from_call():
         """
     )
 
-    assert [Position(source, 1, 4), Position(source, 5, 4)] == all_occurrence_positions(
-        Position(source, 5, 4)
+    assert [source.position(1, 4), source.position(5, 4)] == all_occurrence_positions(
+        source.position(5, 4)
     )
 
 
@@ -730,9 +725,9 @@ def test_finds_attribute_assignments():
                 return self.property
         """
     )
-    occurrences = all_occurrence_positions(Position(source, 7, 20))
+    occurrences = all_occurrence_positions(source.position(7, 20))
 
-    assert [Position(source, 4, 13), Position(source, 7, 20)] == occurrences
+    assert [source.position(4, 13), source.position(7, 20)] == occurrences
 
 
 def test_finds_dict_comprehension_variables():
@@ -744,12 +739,12 @@ def test_finds_dict_comprehension_variables():
         """
     )
 
-    position = Position(source=source, row=2, column=7)
+    position = source.position(row=2, column=7)
 
     assert all_occurrence_positions(position) == [
-        Position(source=source, row=2, column=7),
-        Position(source=source, row=2, column=21),
-        Position(source=source, row=2, column=42),
+        source.position(row=2, column=7),
+        source.position(row=2, column=21),
+        source.position(row=2, column=42),
     ]
 
 
@@ -763,12 +758,12 @@ def test_finds_list_comprehension_variables():
         """
     )
 
-    position = Position(source=source, row=3, column=4)
+    position = source.position(row=3, column=4)
 
     assert all_occurrence_positions(position) == [
-        Position(source=source, row=3, column=4),
-        Position(source=source, row=3, column=12),
-        Position(source=source, row=3, column=33),
+        source.position(row=3, column=4),
+        source.position(row=3, column=12),
+        source.position(row=3, column=33),
     ]
 
 
@@ -780,12 +775,12 @@ def test_finds_set_comprehension_variables() -> None:
         """
     )
 
-    position = Position(source=source, row=2, column=7)
+    position = source.position(row=2, column=7)
 
     assert all_occurrence_positions(position) == [
-        Position(source=source, row=2, column=7),
-        Position(source=source, row=2, column=15),
-        Position(source=source, row=2, column=36),
+        source.position(row=2, column=7),
+        source.position(row=2, column=15),
+        source.position(row=2, column=36),
     ]
 
 
@@ -797,12 +792,12 @@ def test_finds_generator_comprehension_variables() -> None:
         """
     )
 
-    position = Position(source=source, row=2, column=7)
+    position = source.position(row=2, column=7)
 
     assert all_occurrence_positions(position) == [
-        Position(source=source, row=2, column=7),
-        Position(source=source, row=2, column=15),
-        Position(source=source, row=2, column=36),
+        source.position(row=2, column=7),
+        source.position(row=2, column=15),
+        source.position(row=2, column=36),
     ]
 
 
@@ -817,13 +812,13 @@ def test_finds_loop_variables():
         """
     )
 
-    position = Position(source=source, row=2, column=7)
+    position = source.position(row=2, column=7)
 
     assert all_occurrence_positions(position) == [
-        Position(source=source, row=1, column=0),
-        Position(source=source, row=2, column=7),
-        Position(source=source, row=4, column=10),
-        Position(source=source, row=5, column=6),
+        source.position(row=1, column=0),
+        source.position(row=2, column=7),
+        source.position(row=4, column=10),
+        source.position(row=5, column=6),
     ]
 
 
@@ -835,11 +830,11 @@ def test_finds_tuple_unpack():
     """
     )
 
-    position = Position(source=source, row=1, column=5)
+    position = source.position(row=1, column=5)
 
     assert all_occurrence_positions(position) == [
-        Position(source, 1, 5),
-        Position(source, 2, 6),
+        source.position(1, 5),
+        source.position(2, 6),
     ]
 
 
@@ -860,11 +855,11 @@ def test_finds_superclasses():
         """
     )
 
-    position = Position(source=source, row=3, column=8)
+    position = source.position(row=3, column=8)
 
     assert all_occurrence_positions(position) == [
-        Position(source=source, row=3, column=8),
-        Position(source=source, row=11, column=2),
+        source.position(row=3, column=8),
+        source.position(row=11, column=2),
     ]
 
 
@@ -885,11 +880,11 @@ def test_recognizes_multiple_assignments():
     """
     )
 
-    position = Position(source=source, row=2, column=8)
+    position = source.position(row=2, column=8)
 
     assert all_occurrence_positions(position) == [
-        Position(source, 2, 8),
-        Position(source, 10, 4),
+        source.position(2, 8),
+        source.position(10, 4),
     ]
 
 
@@ -901,11 +896,11 @@ def test_finds_enclosing_scope_variable_from_comprehension():
     """
     )
 
-    position = Position(source=source, row=2, column=42)
+    position = source.position(row=2, column=42)
 
     assert all_occurrence_positions(position) == [
-        Position(source, 1, 0),
-        Position(source, 2, 42),
+        source.position(1, 0),
+        source.position(2, 42),
     ]
 
 
@@ -923,11 +918,11 @@ def test_finds_static_method():
         """
     )
 
-    position = Position(source=source, row=4, column=8)
+    position = source.position(row=4, column=8)
 
     assert all_occurrence_positions(position) == [
-        Position(source, 4, 8),
-        Position(source, 8, 2),
+        source.position(4, 8),
+        source.position(8, 2),
     ]
 
 
@@ -945,12 +940,12 @@ def test_finds_argument():
         """
     )
 
-    position = Position(source=source, row=8, column=17)
+    position = source.position(row=8, column=17)
 
     assert all_occurrence_positions(position) == [
-        Position(source, 3, 18),
-        Position(source, 4, 14),
-        Position(source, 8, 17),
+        source.position(3, 18),
+        source.position(4, 14),
+        source.position(8, 17),
     ]
 
 
@@ -972,9 +967,9 @@ def test_finds_method_but_not_function():
             pass
         """
     )
-    position = Position(source, 3, 8)
+    position = source.position(3, 8)
 
     assert all_occurrence_positions(position) == [
-        Position(source, 3, 8),
-        Position(source, 7, 13),
+        source.position(3, 8),
+        source.position(7, 13),
     ]
