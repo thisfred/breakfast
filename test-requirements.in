@@ -4,9 +4,10 @@ flake8
 flake8-bugbear
 isort
 mypy>=0.750
+pre-commit>=1.20.0
 pytest
 pytest-testmon
 pytest-watch
 rerun
+tox
 typeshed
-pre-commit>=1.20.0
