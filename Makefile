@@ -1,18 +1,23 @@
 .PHONY: test
-test: .venv requirements.txt test-requirements.txt
+test: .venv/requirements
 	tox
 
 .PHONY: test-continuously
 test-continuously: .venv requirements.txt test-requirements.txt
 	.venv/bin/ptw -- --testmon -rf -l -s -x tests
 
-.venv: requirements.txt test-requirements.txt
-	test -d .venv || virtualenv -p python3.7 .venv || python3.7 -m venv .venv
+pip-tools:
 	.venv/bin/pip install pip-tools
+
+.venv:
+	test -d .venv || virtualenv -p python3.8 .venv || python3.8 -m venv .venv
+	touch $@
+
+.venv/requirements: .venv pip-tools requirements.txt test-requirements.txt
 	.venv/bin/pip install -r requirements.txt -r test-requirements.txt
 	touch $@
 
-%.txt: %.in
+%.txt: %.in pip-tools
 	.venv/bin/pip-compile -v --output-file $@ $<
 
 .PHONY: autoformat

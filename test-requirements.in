@@ -3,10 +3,10 @@ coverage
 flake8
 flake8-bugbear
 isort
-mypy
+mypy>=0.750
 pytest
 pytest-testmon
 pytest-watch
 rerun
 typeshed
-pre-commit
+pre-commit>=1.20.0
