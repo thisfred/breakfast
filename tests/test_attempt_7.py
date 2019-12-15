@@ -22,7 +22,7 @@ class Event:
         ...
 
 
-@dataclass(frozen=True)
+@dataclass
 class Occurrence(Event):
     name: str
     position: Position
@@ -39,7 +39,7 @@ class Definition(Occurrence):
         state.add_definition(self)
 
 
-@dataclass(frozen=True)
+@dataclass
 class EnterScope(Event):
     name: str
 
@@ -62,7 +62,7 @@ class EnterClassScope(EnterScope):
         state.enter_class_scope(self.name)
 
 
-@dataclass(frozen=True)
+@dataclass
 class EnterAttributeScope(Event):
     name: str
 
@@ -70,14 +70,14 @@ class EnterAttributeScope(Event):
         state.enter_attribute_scope(self.name)
 
 
-@dataclass(frozen=True)
+@dataclass
 class LeaveScope(Event):
     @staticmethod
     def apply(state: "State") -> None:
         state.leave_scope()
 
 
-@dataclass(frozen=True)
+@dataclass
 class Alias(Event):
     existing: Tuple[str, ...]
     new: Tuple[str, ...]
@@ -86,7 +86,7 @@ class Alias(Event):
         state.add_alias(existing=self.existing, new=self.new)
 
 
-@dataclass(frozen=True)
+@dataclass
 class SelfArgument(Event):
     name: str
 
@@ -114,7 +114,7 @@ class State:
 
     @property
     def current_scope(
-        self
+        self,
     ) -> CM[str, List[Occurrence]]:  # pylint: disable=unsubscriptable-object
         assert self.namespace in self.scopes
         return self.scopes[self.namespace]
