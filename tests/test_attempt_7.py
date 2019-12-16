@@ -480,7 +480,7 @@ def name_names(node: ast.Name) -> Tuple[str, ...]:
 
 
 @names_from.register
-def attribute_nemes(node: ast.Attribute) -> Tuple[str, ...]:
+def attribute_names(node: ast.Attribute) -> Tuple[str, ...]:
     return names_from(node.value) + (node.attr,)
 
 

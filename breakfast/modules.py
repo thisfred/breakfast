@@ -51,4 +51,4 @@ class ImportFinder(ast.NodeVisitor):
         self, node: ast.ImportFrom
     ) -> None:
         if node.module:
-            self.imports[node.module] |= {a.name for a in node.names}
+            self.imports[node.module] |= {a.asname or a.name for a in node.names}
