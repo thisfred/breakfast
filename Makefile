@@ -1,6 +1,6 @@
 .PHONY: test
 test: .venv/requirements
-	tox
+	.venv/bin/tox
 
 .PHONY: test-continuously
 test-continuously: .venv requirements.txt test-requirements.txt
