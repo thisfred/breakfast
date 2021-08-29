@@ -11,8 +11,6 @@ from functools import singledispatch
 from typing import ChainMap as CM
 from typing import Dict, Iterator, List, Optional, Set, Tuple, Union
 
-from pytest import mark
-
 from breakfast.position import Position
 from breakfast.source import Source
 from tests import make_source
@@ -79,6 +77,12 @@ class EnterAttributeScope(Event):
 
 
 @dataclass
+class EnterSuperAttributeScope(Event):
+    def apply(self, state: "State") -> None:
+        state.enter_super_attribute_scope()
+
+
+@dataclass
 class LeaveScope(Event):
     @staticmethod
     def apply(state: "State") -> None:
@@ -102,7 +106,7 @@ class SelfArgument(Event):
         state.add_self(name=self.name)
 
 
-class State:
+class State:  # pylint: disable=too-many-public-methods
     def __init__(self) -> None:
         self._namespace: List[str] = []
         self.scopes: Dict[
@@ -250,6 +254,17 @@ class State:
         self._enter_scope(name, new_scope)
         self.attribute_scopes.add(self.namespace)
 
+    def enter_super_attribute_scope(self) -> None:
+        if self.namespace[:-1] in self.classes:
+            full_name = self.namespace[:-1]
+            new_scope = self.scopes[self.aliases[full_name]]
+        else:
+            full_name = ("super",)
+            new_scope = ChainMap()
+        print(full_name)
+        self._enter_scope(full_name[-1], new_scope)
+        self.attribute_scopes.add(self.namespace)
+
     def _enter_scope(
         self,
         name: str,
@@ -360,9 +375,13 @@ def visit_attribute(node: ast.Attribute, source: Source) -> Iterator[Event]:
     position = node_position(node, source)
 
     names = names_from(node.value)
-    for name in names:
-        position = source.find_after(node.attr, position)
-        yield EnterAttributeScope(name)
+    if isinstance(node.value, ast.Call) and names == ("super",):
+        yield EnterSuperAttributeScope()
+    else:
+        for name in names:
+            position = source.find_after(name, position)
+            print("attribute")
+            yield EnterAttributeScope(name)
 
     position = source.find_after(node.attr, position)
     yield Regular(node.attr, position, node)
@@ -433,12 +452,12 @@ def visit_import(node: ast.Import, source: Source) -> Iterator[Event]:
 @visit.register
 def visit_call(node: ast.Call, source: Source) -> Iterator[Event]:
     call_position = node_position(node, source)
-    yield from visit(node.func, source)
 
     for arg in node.args:
         yield from visit(arg, source)
 
     names = names_from(node.func)
+    yield from visit(node.func, source)
     for name in names[:-1]:
         yield EnterAttributeScope(name)
 
@@ -526,10 +545,17 @@ def attribute_names(node: ast.Attribute) -> Tuple[str, ...]:
     return names_from(node.value) + (node.attr,)
 
 
+@names_from.register
+def call_names(node: ast.Call) -> Tuple[str, ...]:
+    names = names_from(node.func)
+    return names
+
+
 def all_occurrences_of(position: Position) -> List[Occurrence]:
     found: List[Occurrence] = []
     state = State()
     for event in visit(position.source.get_ast(), source=position.source):
+        print(event)
         state.process(event)
         if isinstance(event, Occurrence) and event.position == position:
             found = state.lookup(event.name) or []
@@ -549,7 +575,7 @@ def all_events(source: Source) -> Iterator[Event]:
 def test_dogfood():
     """Test we can walk through a realistic file."""
 
-    with open(__file__, "r") as source_file:
+    with open(__file__, "r", encoding="utf-8") as source_file:
         source = Source(
             lines=tuple(line[:-1] for line in source_file.readlines()),
             module_name="test_attempt_7",
@@ -978,7 +1004,7 @@ def test_finds_static_method():
                 pass
 
         a = A()
-        a.old('foo')
+        b = a.old('foo')
         """
     )
 
@@ -986,7 +1012,27 @@ def test_finds_static_method():
 
     assert all_occurrence_positions(position) == [
         source.position(4, 8),
-        source.position(8, 2),
+        source.position(8, 6),
+    ]
+
+
+def test_finds_method_after_call():
+    source = make_source(
+        """
+        class A:
+
+            def old(arg):
+                pass
+
+        b = A().old('foo')
+        """
+    )
+
+    position = source.position(row=3, column=8)
+
+    assert all_occurrence_positions(position) == [
+        source.position(3, 8),
+        source.position(6, 8),
     ]
 
 
@@ -1144,7 +1190,6 @@ def test_finds_multiple_definitions():
     ]
 
 
-@mark.xfail
 def test_finds_method_in_super_call():
     source = make_source(
         """
@@ -1165,5 +1210,30 @@ def test_finds_method_in_super_call():
 
     assert all_occurrence_positions(position) == [
         Position(source, 3, 8),
-        Position(source, 10, 26),
+        Position(source, 10, 16),
     ]
+
+
+def test_rename_method_of_subclass():
+    source = make_source(
+        """
+    class Foo:
+
+        def bar(self):
+            pass
+
+
+    class Bar(Foo):
+
+        def bar(self):
+            super().bar()
+    """
+    )
+
+    position = Position(source, 9, 8)
+
+    assert all_occurrence_positions(position) == [Position(source, 9, 8)]
+
+
+# TODO: calls in the middle of an attribute: foo.bar().qux
+# TODO: import as
