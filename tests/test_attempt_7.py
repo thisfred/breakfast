@@ -261,7 +261,6 @@ class State:  # pylint: disable=too-many-public-methods
         else:
             full_name = ("super",)
             new_scope = ChainMap()
-        print(full_name)
         self._enter_scope(full_name[-1], new_scope)
         self.attribute_scopes.add(self.namespace)
 
@@ -380,7 +379,6 @@ def visit_attribute(node: ast.Attribute, source: Source) -> Iterator[Event]:
     else:
         for name in names:
             position = source.find_after(name, position)
-            print("attribute")
             yield EnterAttributeScope(name)
 
     position = source.find_after(node.attr, position)
@@ -555,7 +553,6 @@ def all_occurrences_of(position: Position) -> List[Occurrence]:
     found: List[Occurrence] = []
     state = State()
     for event in visit(position.source.get_ast(), source=position.source):
-        print(event)
         state.process(event)
         if isinstance(event, Occurrence) and event.position == position:
             found = state.lookup(event.name) or []
