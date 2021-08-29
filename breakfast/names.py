@@ -132,7 +132,7 @@ class Collector:  # pylint: disable=too-many-instance-attributes
         self._classes.add(self.get_namespaced(name))
 
     def _post_process(self) -> None:
-        self._rewrite_selves()
+        self._rewrite_self()
         for name in self._occurrences.copy():
             if name in self._rewrites:
                 new_name = self._rewrites[name]
@@ -188,11 +188,11 @@ class Collector:  # pylint: disable=too-many-instance-attributes
 
         return full_name
 
-    def _rewrite_selves(self) -> None:
+    def _rewrite_self(self) -> None:
         for name in self._occurrences.copy():
-            for alias in self._class_aliases:
+            for alias, value in self._class_aliases.items():
                 if is_prefix(alias, name):
-                    new_name = self._class_aliases[alias] + name[len(alias) :]
+                    new_name = value + name[len(alias) :]
                     self._occurrences[new_name].extend(self._occurrences[name])
                     del self._occurrences[name]
                     if name in self._definitions:

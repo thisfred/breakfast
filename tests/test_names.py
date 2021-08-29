@@ -1,6 +1,6 @@
 import os
 
-import pytest
+from pytest import mark
 
 from breakfast.names import Names, is_prefix
 from breakfast.position import Position
@@ -117,13 +117,16 @@ def test_finds_across_files():
     visitor.visit_source(source)
     visitor.visit_source(other_source)
 
-    assert sorted(
-        [
-            Position(other_source, 1, 16),
-            Position(other_source, 2, 0),
-            Position(source, 1, 4),
-        ]
-    ) == sorted(visitor.get_occurrences("old", Position(other_source, 2, 0)))
+    assert (
+        sorted(
+            [
+                Position(other_source, 1, 16),
+                Position(other_source, 2, 0),
+                Position(source, 1, 4),
+            ]
+        )
+        == sorted(visitor.get_occurrences("old", Position(other_source, 2, 0)))
+    )
 
 
 def test_finds_multiple_imports_on_one_line():
@@ -150,16 +153,20 @@ def test_finds_multiple_imports_on_one_line():
     visitor.visit_source(source)
     visitor.visit_source(other_source)
 
-    assert sorted(
-        [
-            Position(other_source, 1, 21),
-            Position(other_source, 2, 0),
-            Position(source, 1, 4),
-        ]
-    ) == sorted(visitor.get_occurrences("old", Position(other_source, 2, 0)))
+    assert (
+        sorted(
+            [
+                Position(other_source, 1, 21),
+                Position(other_source, 2, 0),
+                Position(source, 1, 4),
+            ]
+        )
+        == sorted(visitor.get_occurrences("old", Position(other_source, 2, 0)))
+    )
 
 
-def skip_test_finds_static_method():
+@mark.skip
+def test_finds_static_method():
     source = make_source(
         """
     class A:
@@ -472,7 +479,7 @@ def test_dogfooding():
     """Make sure we can read and process a realistic file."""
     with open(os.path.join("breakfast", "names.py"), "r") as source_file:
         source = Source(
-            lines=[l[:-1] for l in source_file.readlines()],
+            lines=tuple(line[:-1] for line in source_file.readlines()),
             module_name="breakfast.names",
             file_name="breakfast/names.py",
         )
@@ -483,7 +490,7 @@ def test_dogfooding():
     assert visitor.get_occurrences("whatever", Position(source, 3, 8)) == []
 
 
-@pytest.mark.skip()
+@mark.skip
 def test_finds_method_in_super_call():
     source = make_source(
         """

@@ -1,6 +1,7 @@
 """
 SAX style events again.
 """
+# pylint: disable=too-many-lines
 
 import ast
 
@@ -9,6 +10,8 @@ from dataclasses import dataclass
 from functools import singledispatch
 from typing import ChainMap as CM
 from typing import Dict, Iterator, List, Optional, Set, Tuple, Union
+
+from pytest import mark
 
 from breakfast.position import Position
 from breakfast.source import Source
@@ -32,6 +35,11 @@ class Occurrence(Event):
 class Regular(Occurrence):
     def apply(self, state: "State") -> None:
         state.add_occurrence(self)
+
+
+class Nonlocal(Occurrence):
+    def apply(self, state: "State") -> None:
+        state.add_nonlocal(self)
 
 
 class Definition(Occurrence):
@@ -129,6 +137,10 @@ class State:
         return self.scopes.get(namespace)
 
     def lookup_existing(self, name: str) -> Optional[List[Occurrence]]:
+        from_current_scope = self.current_scope.get(name)
+        if from_current_scope:
+            return from_current_scope
+
         if name in self.current_scope:
             return self.current_scope[name]
 
@@ -185,6 +197,17 @@ class State:
             # only place that can happen is in the module scope.
             assert self.module_scope is not None
             self.module_scope.setdefault(occurrence.name, []).append(occurrence)
+
+    def add_nonlocal(self, occurrence: Occurrence) -> None:
+        self.add_occurrence(occurrence)
+        existing = self.lookup_existing(occurrence.name)
+        mapping = self.current_scope.maps[0]
+        assert not mapping.get(occurrence.name)
+        assert isinstance(mapping, dict)
+        # XXX: this is kind of hacky: We're aliasing the name in the current namespace
+        # to the one in the outer namespace. It works for now, but I may have to do
+        # something more like the aliases for this.
+        mapping[occurrence.name] = existing
 
     def add_definition(self, occurrence: Occurrence) -> None:
         mapping = self.current_scope.maps[0]
@@ -258,19 +281,9 @@ def visit(node: ast.AST, source: Source) -> Iterator[Event]:
     yield from generic_visit(node, source)
 
 
-@singledispatch
-def visit_definition(node: ast.AST, source: Source) -> Iterator[Event]:
-    yield from visit(node, source)
-
-
 @visit.register
 def visit_name(node: ast.Name, source: Source) -> Iterator[Event]:
     yield Regular(name=node.id, position=node_position(node, source), node=node)
-
-
-@visit_definition.register
-def visit_name_definition(node: ast.Name, source: Source) -> Iterator[Event]:
-    yield Definition(name=node.id, position=node_position(node, source), node=node)
 
 
 @visit.register
@@ -316,6 +329,25 @@ def visit_function(node: ast.FunctionDef, source: Source) -> Iterator[Event]:
     yield LeaveScope()
 
 
+def visit_non_local_like(
+    node: Union[ast.Global, ast.Nonlocal], source: Source
+) -> Iterator[Event]:
+    position = node_position(node, source)
+    for name in node.names:
+        position = source.find_after(name, position)
+        yield Nonlocal(name=name, position=position, node=node)
+
+
+@visit.register
+def visit_global(node: ast.Global, source: Source) -> Iterator[Event]:
+    yield from visit_non_local_like(node, source)
+
+
+@visit.register
+def visit_nonlocal(node: ast.Nonlocal, source: Source) -> Iterator[Event]:
+    yield from visit_non_local_like(node, source)
+
+
 def is_static_method(node: ast.FunctionDef) -> bool:
     return any(
         n.id == "staticmethod" for n in node.decorator_list if isinstance(n, ast.Name)
@@ -350,6 +382,16 @@ def visit_assign(node: ast.Assign, source: Source) -> Iterator[Event]:
     for target, value in zip(target_names, value_names):
         if target and value:
             yield Alias(new=target, existing=value)
+
+
+@singledispatch
+def visit_definition(node: ast.AST, source: Source) -> Iterator[Event]:
+    yield from visit(node, source)
+
+
+@visit_definition.register
+def visit_name_definition(node: ast.Name, source: Source) -> Iterator[Event]:
+    yield Definition(name=node.id, position=node_position(node, source), node=node)
 
 
 def get_names(value: ast.AST) -> List[Tuple[str, ...]]:
@@ -509,7 +551,7 @@ def test_dogfood():
 
     with open(__file__, "r") as source_file:
         source = Source(
-            lines=tuple(l[:-1] for l in source_file.readlines()),
+            lines=tuple(line[:-1] for line in source_file.readlines()),
             module_name="test_attempt_7",
             file_name=__file__,
         )
@@ -545,7 +587,29 @@ def test_distinguishes_local_variables_from_global():
     ]
 
 
-def test_finds_attributes():
+def test_finds_non_local_variable():
+    source = make_source(
+        """
+    old = 12
+
+    def fun():
+        result = old + 1
+        return result
+
+    old = 20
+    """
+    )
+
+    position = source.position(1, 0)
+
+    assert all_occurrence_positions(position) == [
+        Position(source, 1, 0),
+        Position(source, 4, 13),
+        Position(source, 7, 0),
+    ]
+
+
+def test_does_not_rename_random_attributes():
     source = make_source(
         """
         import os
@@ -972,4 +1036,134 @@ def test_finds_method_but_not_function():
     assert all_occurrence_positions(position) == [
         source.position(3, 8),
         source.position(7, 13),
+    ]
+
+
+def test_finds_global_variable_in_method_scope():
+    source = make_source(
+        """
+    b = 12
+
+    class Foo:
+
+        def bar(self):
+            return b
+    """
+    )
+
+    position = Position(source, 1, 0)
+
+    assert all_occurrence_positions(position) == [
+        Position(source, 1, 0),
+        Position(source, 6, 15),
+    ]
+
+
+def test_treats_staticmethod_args_correctly():
+    source = make_source(
+        """
+    class ClassName:
+
+        def old(self):
+            pass
+
+        @staticmethod
+        def foo(whatever):
+            whatever.old()
+    """
+    )
+    position = Position(source, 3, 8)
+
+    assert all_occurrence_positions(position) == [Position(source, 3, 8)]
+
+
+def test_finds_global_variable():
+    source = make_source(
+        """
+    b = 12
+
+    def bar():
+        global b
+        b = 20
+    """
+    )
+
+    position = Position(source, 1, 0)
+
+    assert all_occurrence_positions(position) == [
+        Position(source, 1, 0),
+        Position(source, 4, 11),
+        Position(source, 5, 4),
+    ]
+
+
+def test_finds_nonlocal_variable():
+    source = make_source(
+        """
+    b = 12
+
+    def foo():
+        b = 20
+        def bar():
+            nonlocal b
+            b = 20
+        return b
+        b = 1
+
+    print(b)
+    """
+    )
+
+    position = Position(source, 4, 4)
+
+    assert all_occurrence_positions(position) == [
+        Position(source, 4, 4),
+        Position(source, 6, 17),
+        Position(source, 7, 8),
+        Position(source, 8, 11),
+        Position(source, 9, 4),
+    ]
+
+
+def test_finds_multiple_definitions():
+    source = make_source(
+        """
+    a = 12
+    if a > 10:
+        b = a + 100
+    else:
+        b = 3 - a
+    print(b)
+    """
+    )
+    position = Position(source, 3, 4)
+    assert all_occurrence_positions(position) == [
+        Position(source, 3, 4),
+        Position(source, 5, 4),
+        Position(source, 6, 6),
+    ]
+
+
+@mark.xfail
+def test_finds_method_in_super_call():
+    source = make_source(
+        """
+    class Foo:
+
+        def bar(self):
+            pass
+
+
+    class Bar(Foo):
+
+        def bar(self):
+            super().bar()
+    """
+    )
+
+    position = Position(source, 3, 8)
+
+    assert all_occurrence_positions(position) == [
+        Position(source, 3, 8),
+        Position(source, 10, 26),
     ]

@@ -6,7 +6,7 @@ from breakfast.source import Source
 def dedent(code: str) -> str:
     lines = code.split("\n")
     indentation = len(lines[-1])
-    return "\n".join(l[indentation:] for l in lines)
+    return "\n".join(line[indentation:] for line in lines)
 
 
 def make_source(

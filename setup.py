@@ -47,7 +47,6 @@ setup(
             "isort",
             "mypy",
             "pytest",
-            "typeshed",
         ],
         "docs": [],
     },

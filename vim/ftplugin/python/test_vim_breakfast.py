@@ -11,12 +11,11 @@ def test_simple_rename() -> None:
         "    return result",
     ]
 
-    result = [
-        l
-        for l in vim_breakfast.do_rename(
+    result = list(
+        vim_breakfast.do_rename(
             root=".", buffer_contents=code, row=1, column=4, new_name="new"
         )
-    ]
+    )
 
     assert [
         (1, "    new = 12"),
