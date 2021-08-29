@@ -142,10 +142,10 @@ class NameVisitor(ast.NodeVisitor):
         self.generic_visit(node)
         if isinstance(node.value, ast.Tuple):
             # multiple assignment
-            values = [v for v in node.value.elts]
+            values = list(node.value.elts)
             idk = node.targets[0]
             if isinstance(idk, (ast.Tuple, ast.List, ast.Set)):
-                targets = [t for t in idk.elts]
+                targets = list(idk.elts)
         else:
             values = [node.value]
             targets = [node.targets[0]]
