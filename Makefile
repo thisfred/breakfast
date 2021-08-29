@@ -1,6 +1,6 @@
 .PHONY: test
 test: .requirements
-	.venv/bin/tox
+	tox
 
 pip-tools:
 	pip install pip-tools
@@ -10,4 +10,4 @@ pip-tools:
 	touch $@
 
 %.txt: %.in pip-tools
-	.venv/bin/pip-compile -v --generate-hashes --output-file $@ $<
+	pip-compile -v --generate-hashes --output-file $@ $<
