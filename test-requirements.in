@@ -5,6 +5,7 @@ flake8
 flake8-bugbear
 isort
 libcst
+libcst
 mypy>=0.750
 pre-commit>=1.20.0
 pytest

@@ -5,17 +5,20 @@ SAX style events again.
 
 import ast
 
-from collections import ChainMap
+from collections import defaultdict
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import singledispatch
-from typing import ChainMap as CM
-from typing import Dict, Iterator, List, Optional, Set, Tuple, Union
+from typing import Dict, Iterator, List, Mapping, Optional, Sequence, Set, Tuple, Union
 
 from pytest import mark
 
 from breakfast.position import Position
 from breakfast.source import Source
 from tests import make_source
+
+
+QualifiedName = Tuple[str, ...]
 
 
 class Event:
@@ -92,12 +95,21 @@ class LeaveScope(Event):
 
 
 @dataclass
-class Alias(Event):
-    existing: Tuple[str, ...]
-    new: Tuple[str, ...]
+class BaseClass(Event):
+    sub_class: str
+    base_class: str
 
     def apply(self, state: "State") -> None:
-        state.add_alias(existing=self.existing, new=self.new)
+        state.add_base_class(sub_class=self.sub_class, base_class=self.base_class)
+
+
+@dataclass
+class Assignment(Event):
+    existing: QualifiedName
+    new: QualifiedName
+
+    def apply(self, state: "State") -> None:
+        state.add_assignment(existing=self.existing, new=self.new)
 
 
 @dataclass
@@ -108,174 +120,219 @@ class SelfArgument(Event):
         state.add_self(name=self.name)
 
 
-class State:  # pylint: disable=too-many-public-methods
+class State:  # pylint: disable=too-many-public-methods,too-many-instance-attributes
     def __init__(self) -> None:
-        self._namespace: List[str] = []
-        self.scopes: Dict[
-            Tuple[str, ...],
-            CM[str, List[Occurrence]],  # pylint: disable=unsubscriptable-object
-        ] = {(): ChainMap()}
-        self.aliases: Dict[Tuple[str, ...], Tuple[str, ...]] = {}
-        self.classes: Set[Tuple[str, ...]] = set()
-        self.module_scope: Optional[
-            CM[str, List[Occurrence]]  # pylint: disable=unsubscriptable-object
-        ] = None
-        self.attribute_scopes: Set[Tuple[str, ...]] = set()
+        self._namespace: List[QualifiedName] = []
+        self.aliases: Dict[QualifiedName, QualifiedName] = {}
+        self.prefix_aliases: Dict[QualifiedName, QualifiedName] = {}
+        self.base_classes: Dict[QualifiedName, List[QualifiedName]] = defaultdict(list)
+        self.classes: Set[QualifiedName] = set()
+        self.attribute_scopes: Set[QualifiedName] = set()
+        self.qualified_names: Dict[QualifiedName, List[Occurrence]] = defaultdict(list)
+        self._canonicalized: Dict[QualifiedName, List[Occurrence]] = defaultdict(list)
 
     @property
-    def namespace(self) -> Tuple[str, ...]:
-        return tuple(self._namespace)
+    def namespace(self) -> QualifiedName:
+        return self._namespace[-1]
 
-    @property
-    def current_scope(
-        self,
-    ) -> CM[str, List[Occurrence]]:  # pylint: disable=unsubscriptable-object
-        assert self.namespace in self.scopes
-        return self.scopes[self.namespace]
+    @contextmanager
+    def temp_namespace(self, namespace: QualifiedName):
+        self._namespace.append(namespace)
+        yield
+        self._namespace.pop()
 
     @property
     def in_attribute_scope(self):
         return self.namespace in self.attribute_scopes
 
-    def scope_for(
-        self, namespace: Tuple[str, ...]
-    ) -> Optional[CM[str, List[Occurrence]]]:  # pylint: disable=unsubscriptable-object
-        return self.scopes.get(namespace)
-
-    def lookup_existing(self, name: str) -> Optional[List[Occurrence]]:
-        from_current_scope = self.current_scope.get(name)
-        if from_current_scope:
-            return from_current_scope
-
-        if name in self.current_scope:
-            return self.current_scope[name]
-
-        alias = self.get_alias(name)
-        if alias:
-            return alias
-
-        prefix_alias = self.get_prefix_alias(name)
-        if prefix_alias:
-            return prefix_alias
-
-        return None
-
-    def lookup(self, name: str) -> List[Occurrence]:
-        existing = self.lookup_existing(name)
-        if existing:
-            return existing
-
-        return self.current_scope.setdefault(name, [])
-
-    def get_alias(self, name: str) -> Optional[List[Occurrence]]:
-        namespace = self.namespace
-        while namespace in self.aliases:
-            namespace = self.aliases[namespace]
-            alias_scope = self.scope_for(namespace)
-            if alias_scope and name in alias_scope:
-                return alias_scope[name]
-
-        return None
-
-    def get_prefix_alias(self, name: str) -> Optional[List[Occurrence]]:
-        namespace = self.namespace
-        for length in range(len(namespace), 0, -1):
-            prefix, suffix = namespace[:length], namespace[length:]
-            if prefix in self.aliases:
-                namespace = self.aliases[prefix] + suffix
-                alias_scope = self.scope_for(namespace)
-                if alias_scope and name in alias_scope:
-                    return alias_scope[name]
-
-        return None
-
     def process(self, event: Event):
         event.apply(self)
 
     def add_occurrence(self, occurrence: Occurrence) -> None:
-        existing = self.lookup_existing(occurrence.name)
-        if existing:
-            existing.append(occurrence)
-        elif self.in_attribute_scope:
-            self.lookup(occurrence.name).append(occurrence)
-        else:
-            # Use before definition, which means the definition has to come later. The
-            # only place that can happen is in the module scope.
-            assert self.module_scope is not None
-            self.module_scope.setdefault(occurrence.name, []).append(occurrence)
+        self.qualified_names[self.namespace + (occurrence.name,)].append(occurrence)
 
     def add_nonlocal(self, occurrence: Occurrence) -> None:
-        self.add_occurrence(occurrence)
-        existing = self.lookup_existing(occurrence.name)
-        mapping = self.current_scope.maps[0]
-        assert not mapping.get(occurrence.name)
-        assert isinstance(mapping, dict)
-        # XXX: this is kind of hacky: We're aliasing the name in the current namespace
-        # to the one in the outer namespace. It works for now, but I may have to do
-        # something more like the aliases for this.
-        mapping[occurrence.name] = existing
+        for index in range(1, len(self.namespace) + 1):
+            temp_scope = self.namespace[:-index]
+            outer = temp_scope + (occurrence.name,)
+            if outer in self.qualified_names:
+                self.aliases[self.namespace + (occurrence.name,)] = outer
+                with self.temp_namespace(temp_scope):
+                    self.add_occurrence(occurrence)
+                break
 
     def add_definition(self, occurrence: Occurrence) -> None:
-        mapping = self.current_scope.maps[0]
-        assert isinstance(mapping, dict)
-        mapping.setdefault(occurrence.name, []).append(occurrence)
+        self.qualified_names[self.namespace + (occurrence.name,)].append(occurrence)
 
-    def add_alias(self, new: Tuple[str, ...], existing: Tuple[str, ...]) -> None:
+    def add_alias(self, new: QualifiedName, existing: QualifiedName) -> None:
         self.aliases[self.namespace + new] = self.namespace + existing
+
+    def add_assignment(self, new: QualifiedName, existing: QualifiedName) -> None:
+        self.prefix_aliases[self.namespace + new] = self.namespace + existing
+
+    def add_base_class(self, sub_class: str, base_class: str):
+        self.base_classes[self.namespace + (sub_class,)].append(
+            self.namespace + (base_class,)
+        )
 
     def add_self(self, name: str) -> None:
         if self.namespace[:-1] in self.classes:
             full_name = self.namespace + (name,)
-            self.aliases[full_name] = full_name[:-2]
+            self.prefix_aliases[full_name] = full_name[:-2]
 
     def enter_modulte_scope(self, name: str) -> None:
         self.enter_scope(name)
-        self.module_scope = self.current_scope
 
     def enter_class_scope(self, name: str) -> None:
         self.enter_scope(name)
         self.classes.add(self.namespace)
 
     def enter_function_scope(self, name: str) -> None:
-        if self.namespace in self.classes:
-            new_scope = ChainMap(*self.current_scope.maps[1:]).new_child()
-        else:
-            new_scope = self.current_scope.new_child()
-        self._enter_scope(name, new_scope)
+        self._enter_scope(name)
 
     def enter_scope(self, name: str) -> None:
-        new_scope = self.current_scope.new_child()
-        self._enter_scope(name, new_scope)
+        self._enter_scope(name)
 
     def enter_attribute_scope(self, name: str) -> None:
-        full_name = self.namespace + (name,)
-        if full_name in self.aliases and self.aliases[full_name] in self.classes:
-            new_scope = self.scopes[self.aliases[full_name]]
-        else:
-            new_scope = ChainMap()
-        self._enter_scope(name, new_scope)
+        self._enter_scope(name)
         self.attribute_scopes.add(self.namespace)
 
     def enter_super_attribute_scope(self) -> None:
         if self.namespace[:-1] in self.classes:
             full_name = self.namespace[:-1]
-            new_scope = self.scopes[self.aliases[full_name]]
         else:
             full_name = ("super",)
-            new_scope = ChainMap()
-        self._enter_scope(full_name[-1], new_scope)
+        self._jump_to_scope(self.base_classes[full_name][0])
         self.attribute_scopes.add(self.namespace)
 
     def _enter_scope(
         self,
         name: str,
-        new_scope: CM[str, List[Occurrence]],  # pylint: disable=unsubscriptable-object
-    ):
-        self._namespace.append(name)
-        self.scopes.setdefault(self.namespace, new_scope)
+    ) -> None:
+        if self._namespace:
+            self._namespace.append(self.namespace + (name,))
+        else:
+            self._namespace.append((name,))
+
+    def _jump_to_scope(self, namespace: QualifiedName) -> None:
+        self._namespace.append(namespace)
 
     def leave_scope(self) -> None:
         self._namespace.pop()
+
+    def get_all_occurrences_for(
+        self, qualified_name: QualifiedName
+    ) -> List[Occurrence]:
+        canonical_name = self.rewrite(qualified_name)
+        definition = self.find_definition(canonical_name) or canonical_name
+        occurrences = self.canonicalized_names[definition][:]
+        for other, other_occurrences in self.canonicalized_names.items():
+            if self.find_definition(other) == definition:
+                occurrences.extend(other_occurrences)
+        return occurrences
+
+    @property
+    def canonicalized_names(self) -> Mapping[QualifiedName, List[Occurrence]]:
+        if self._canonicalized:
+            return self._canonicalized
+
+        self._canonicalized = defaultdict(list)
+        for name, occurrences in self.qualified_names.items():
+            rewritten = self.rewrite(name)
+            self._canonicalized[rewritten].extend(occurrences)
+        return self._canonicalized
+
+    def find_definition(self, qualified_name: QualifiedName) -> Optional[QualifiedName]:
+        assert len(qualified_name) > 1
+        if self.is_definition(qualified_name):
+            return qualified_name
+
+        if self.is_definition(qualified_name):
+            return qualified_name
+
+        prefix, identifier = qualified_name[:-1], qualified_name[-1]
+
+        if prefix in self.attribute_scopes:
+            return None
+
+        while prefix := prefix[:-1]:
+            if prefix in self.attribute_scopes:
+                return None
+            if prefix in self.classes:
+                continue
+            if prefix + (identifier,) in self.canonicalized_names:
+                return prefix + (identifier,)
+
+        return None
+
+    def rewrite(self, qualified_name: QualifiedName) -> QualifiedName:
+        result = qualified_name
+        result = self.rewrite_prefix_aliases(result)
+        result = self.rewrite_aliases(result)
+        return self.rewrite_base_classes(result)
+
+    def rewrite_prefix_aliases(self, qualified_name: QualifiedName) -> QualifiedName:
+        result = qualified_name
+        while True:
+            for alias, real_name in sorted(
+                self.prefix_aliases.items(),
+                key=lambda x: len(x[0]),
+                reverse=True,
+            ):
+                if not prefixes(alias, result):
+                    continue
+                result = substitute_prefix(qualified_name, alias, real_name)
+                break
+            else:
+                break
+        return result
+
+    def rewrite_aliases(self, qualified_name: QualifiedName) -> QualifiedName:
+        result = qualified_name
+        while True:
+            for alias, real_name in sorted(
+                self.aliases.items(), key=lambda x: len(x[0]), reverse=True
+            ):
+                if not prefixes(alias, result) and alias != result:
+                    continue
+                result = substitute_prefix(qualified_name, alias, real_name)
+                break
+            else:
+                break
+        return result
+
+    def rewrite_base_classes(self, qualified_name: QualifiedName) -> QualifiedName:
+        result = qualified_name
+        while result not in self.qualified_names:
+            old_result = result
+            prefix, identifier = result[:-1], result[-1]
+            if prefix in self.base_classes:
+                for base_class in self.base_classes[prefix]:
+                    result = base_class + (identifier,)
+                    if result in self.qualified_names:
+                        break
+            if old_result == result:
+                break
+
+        return result
+
+    def is_definition(self, qualified_name: QualifiedName):
+        return qualified_name in self.canonicalized_names and any(
+            isinstance(o, Definition) for o in self.canonicalized_names[qualified_name]
+        )
+
+
+def prefixes(possible_prefix: QualifiedName, name: QualifiedName) -> bool:
+    return (
+        len(possible_prefix) < len(name)
+        and name[: len(possible_prefix)] == possible_prefix
+    )
+
+
+def substitute_prefix(
+    name: QualifiedName, old_prefix: QualifiedName, new_prefix: QualifiedName
+) -> QualifiedName:
+    return new_prefix + name[len(old_prefix) :]
 
 
 def node_position(
@@ -316,7 +373,7 @@ def visit_class(node: ast.ClassDef, source: Source) -> Iterator[Event]:
 
     for base in node.bases:
         if isinstance(base, ast.Name):
-            yield Alias(new=(node.name,), existing=(base.id,))
+            yield BaseClass(sub_class=node.name, base_class=base.id)
         yield from visit(base, source)
 
     yield EnterClassScope(node.name)
@@ -400,7 +457,7 @@ def visit_assign(node: ast.Assign, source: Source) -> Iterator[Event]:
     value_names = get_names(node.value)
     for target, value in zip(target_names, value_names):
         if target and value:
-            yield Alias(new=target, existing=value)
+            yield Assignment(new=target, existing=value)
 
 
 @visit.register
@@ -467,7 +524,34 @@ def visit_name_definition(node: ast.Name, source: Source) -> Iterator[Event]:
     yield Definition(name=node.id, position=node_position(node, source), node=node)
 
 
-def get_names(value: ast.AST) -> List[Tuple[str, ...]]:
+@visit_definition.register
+def visit_tuple_definition(node: ast.Tuple, source: Source) -> Iterator[Event]:
+    for element in node.elts:
+        yield from visit_definition(element, source)
+
+
+@visit_definition.register
+def visit_attribute_definition(node: ast.Attribute, source: Source) -> Iterator[Event]:
+
+    yield from visit(node.value, source)
+    position = node_position(node, source)
+
+    names = names_from(node.value)
+    if isinstance(node.value, ast.Call) and names == ("super",):
+        yield EnterSuperAttributeScope()
+    else:
+        for name in names:
+            position = source.find_after(name, position)
+            yield EnterAttributeScope(name)
+
+    position = source.find_after(node.attr, position)
+    yield Definition(node.attr, position, node)
+
+    for _ in names:
+        yield LeaveScope()
+
+
+def get_names(value: ast.AST) -> List[QualifiedName]:
     if isinstance(value, ast.Tuple):
         return [names_for(v) for v in value.elts]
 
@@ -475,22 +559,22 @@ def get_names(value: ast.AST) -> List[Tuple[str, ...]]:
 
 
 @singledispatch
-def names_for(node: ast.AST) -> Tuple[str, ...]:  # pylint: disable= unused-argument
+def names_for(node: ast.AST) -> QualifiedName:  # pylint: disable= unused-argument
     return ()
 
 
 @names_for.register
-def names_for_name(node: ast.Name) -> Tuple[str, ...]:
+def names_for_name(node: ast.Name) -> QualifiedName:
     return (node.id,)
 
 
 @names_for.register
-def names_for_attribute(node: ast.Attribute) -> Tuple[str, ...]:
+def names_for_attribute(node: ast.Attribute) -> QualifiedName:
     return names_for(node.value) + (node.attr,)
 
 
 @names_for.register
-def names_for_call(node: ast.Call) -> Tuple[str, ...]:
+def names_for_call(node: ast.Call) -> QualifiedName:
     return names_for(node.func)
 
 
@@ -531,39 +615,44 @@ def generic_visit(node, source: Source) -> Iterator[Event]:
 
 
 @singledispatch
-def names_from(node: ast.AST) -> Tuple[str, ...]:  # pylint: disable=unused-argument
+def names_from(node: ast.AST) -> QualifiedName:  # pylint: disable=unused-argument
     return ()
 
 
 @names_from.register
-def name_names(node: ast.Name) -> Tuple[str, ...]:
+def name_names(node: ast.Name) -> QualifiedName:
     return (node.id,)
 
 
 @names_from.register
-def attribute_names(node: ast.Attribute) -> Tuple[str, ...]:
+def attribute_names(node: ast.Attribute) -> QualifiedName:
     return names_from(node.value) + (node.attr,)
 
 
 @names_from.register
-def call_names(node: ast.Call) -> Tuple[str, ...]:
+def call_names(node: ast.Call) -> QualifiedName:
     names = names_from(node.func)
     return names
 
 
-def all_occurrences_of(position: Position) -> List[Occurrence]:
-    found: List[Occurrence] = []
+def all_occurrences_of(position: Position) -> Sequence[Occurrence]:
     state = State()
+    qualified_name = None
     for event in visit(position.source.get_ast(), source=position.source):
         state.process(event)
         if isinstance(event, Occurrence) and event.position == position:
-            found = state.lookup(event.name) or []
+            qualified_name = state.namespace + (event.name,)
+
+    if not qualified_name:
+        return []
+
+    found = state.get_all_occurrences_for(qualified_name)
 
     return found
 
 
 def all_occurrence_positions(position: Position) -> List[Position]:
-    return sorted(o.position for o in all_occurrences_of(position))
+    return sorted(set(o.position for o in all_occurrences_of(position)))
 
 
 def all_events(source: Source) -> Iterator[Event]:
@@ -1234,8 +1323,41 @@ def test_rename_method_of_subclass():
     assert all_occurrence_positions(position) == [Position(source, 9, 8)]
 
 
+# TODO: do not yet know how to solve these (or even if it's worth it). Might be easier
+# to infer once I add type annotations.
 @mark.xfail()
 def test_rename_attribute_on_class_returned_from_function_call():
+    source = make_source(
+        """
+        class Foo:
+
+            def fun(self):
+                pass
+
+
+        class Bar:
+
+            def qux(self):
+                f = Foo()
+                return f
+
+        bar = Bar()
+        bar.qux().fun()
+        """
+    )
+
+    position = Position(source, 3, 8)
+
+    assert all_occurrence_positions(position) == [
+        Position(source, 3, 8),
+        Position(source, 13, 9),
+    ]
+
+
+# TODO: do not yet know how to solve these (or even if it's worth it). Might be easier
+# to infer once I add type annotations.
+@mark.xfail()
+def test_rename_attribute_on_class_returned_from_function_call_2():
     source = make_source(
         """
         class Foo:
@@ -1262,5 +1384,4 @@ def test_rename_attribute_on_class_returned_from_function_call():
     ]
 
 
-# TODO: calls in the middle of an attribute: foo.bar().qux
-# TODO: import as
+# TODO: imports
