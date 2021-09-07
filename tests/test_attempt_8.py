@@ -58,16 +58,6 @@ class EnterScope(Event):
         state.enter_scope(self.name)
 
 
-class EnterFunctionScope(EnterScope):
-    def apply(self, state: "State") -> None:
-        state.enter_function_scope(self.name)
-
-
-class EnterModuleScope(EnterScope):
-    def apply(self, state: "State") -> None:
-        state.enter_modulte_scope(self.name)
-
-
 class EnterClassScope(EnterScope):
     def apply(self, state: "State") -> None:
         state.enter_class_scope(self.name)
@@ -180,15 +170,9 @@ class State:  # pylint: disable=too-many-public-methods,too-many-instance-attrib
             full_name = self.namespace + (name,)
             self.prefix_aliases[full_name] = full_name[:-2]
 
-    def enter_modulte_scope(self, name: str) -> None:
-        self.enter_scope(name)
-
     def enter_class_scope(self, name: str) -> None:
         self.enter_scope(name)
         self.classes.add(self.namespace)
-
-    def enter_function_scope(self, name: str) -> None:
-        self._enter_scope(name)
 
     def enter_scope(self, name: str) -> None:
         self._enter_scope(name)
@@ -361,7 +345,7 @@ def visit_name(node: ast.Name, source: Source) -> Iterator[Event]:
 
 @visit.register
 def visit_module(node: ast.Module, source: Source) -> Iterator[Event]:
-    yield EnterModuleScope(source.module_name)
+    yield EnterScope(source.module_name)
     yield from generic_visit(node, source)
     yield LeaveScope()
 
@@ -388,7 +372,7 @@ def visit_class(node: ast.ClassDef, source: Source) -> Iterator[Event]:
 def visit_function(node: ast.FunctionDef, source: Source) -> Iterator[Event]:
     position = node_position(node, source, column_offset=len("def "))
     yield Definition(node.name, position, node)
-    yield EnterFunctionScope(node.name)
+    yield EnterScope(node.name)
 
     for i, arg in enumerate(node.args.args):
 
