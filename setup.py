@@ -47,6 +47,7 @@ setup(
             "isort",
             "mypy",
             "pytest",
+            "libcst",
         ],
         "docs": [],
     },

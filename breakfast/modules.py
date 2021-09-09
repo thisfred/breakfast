@@ -16,7 +16,7 @@ class Module:
         self.module_path = module_path
 
     def get_imported_modules(self) -> List[str]:
-        with open(self.path) as source:
+        with open(self.path, encoding="utf-8") as source:
             node = ast.parse(source.read())
         finder = ImportFinder()
         finder.visit(node)
@@ -52,3 +52,7 @@ class ImportFinder(ast.NodeVisitor):
     ) -> None:
         if node.module:
             self.imports[node.module] |= {a.asname or a.name for a in node.names}
+
+    def visit_Import(self, node: ast.Import) -> None:  # pylint: disable=invalid-name
+        for name in node.names:
+            self.imports[name.asname or name.name] = set()
