@@ -1262,5 +1262,4 @@ def test_rename_attribute_on_class_returned_from_function_call():
     ]
 
 
-# TODO: calls in the middle of an attribute: foo.bar().qux
 # TODO: import as

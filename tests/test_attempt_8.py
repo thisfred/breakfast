@@ -11,8 +11,6 @@ from dataclasses import dataclass
 from functools import singledispatch
 from typing import Dict, Iterator, List, Mapping, Optional, Sequence, Set, Tuple, Union
 
-from pytest import mark
-
 from breakfast.position import Position
 from breakfast.source import Source
 from tests import make_source
@@ -624,7 +622,7 @@ def all_occurrences_of(position: Position) -> Sequence[Occurrence]:
     qualified_name = None
     for event in visit(position.source.get_ast(), source=position.source):
         state.process(event)
-        if isinstance(event, Occurrence) and event.position == position:
+        if isinstance(event, Definition) and event.position == position:
             qualified_name = state.namespace + (event.name,)
 
     if not qualified_name:
@@ -871,7 +869,7 @@ def test_finds_definition_from_call():
     )
 
     assert [source.position(1, 4), source.position(5, 4)] == all_occurrence_positions(
-        source.position(5, 4)
+        source.position(1, 4)
     )
 
 
@@ -887,7 +885,7 @@ def test_finds_attribute_assignments():
                 return self.property
         """
     )
-    occurrences = all_occurrence_positions(source.position(7, 20))
+    occurrences = all_occurrence_positions(source.position(4, 13))
 
     assert [source.position(4, 13), source.position(7, 20)] == occurrences
 
@@ -901,7 +899,7 @@ def test_finds_dict_comprehension_variables():
         """
     )
 
-    position = source.position(row=2, column=7)
+    position = source.position(row=2, column=21)
 
     assert all_occurrence_positions(position) == [
         source.position(row=2, column=7),
@@ -920,7 +918,7 @@ def test_finds_list_comprehension_variables():
         """
     )
 
-    position = source.position(row=3, column=4)
+    position = source.position(row=3, column=12)
 
     assert all_occurrence_positions(position) == [
         source.position(row=3, column=4),
@@ -937,7 +935,7 @@ def test_finds_set_comprehension_variables() -> None:
         """
     )
 
-    position = source.position(row=2, column=7)
+    position = source.position(row=2, column=15)
 
     assert all_occurrence_positions(position) == [
         source.position(row=2, column=7),
@@ -954,7 +952,7 @@ def test_finds_generator_comprehension_variables() -> None:
         """
     )
 
-    position = source.position(row=2, column=7)
+    position = source.position(row=2, column=15)
 
     assert all_occurrence_positions(position) == [
         source.position(row=2, column=7),
@@ -974,7 +972,7 @@ def test_finds_loop_variables():
         """
     )
 
-    position = source.position(row=2, column=7)
+    position = source.position(row=1, column=0)
 
     assert all_occurrence_positions(position) == [
         source.position(row=1, column=0),
@@ -1058,7 +1056,7 @@ def test_finds_enclosing_scope_variable_from_comprehension():
     """
     )
 
-    position = source.position(row=2, column=42)
+    position = source.position(row=1, column=0)
 
     assert all_occurrence_positions(position) == [
         source.position(1, 0),
@@ -1122,7 +1120,7 @@ def test_finds_argument():
         """
     )
 
-    position = source.position(row=8, column=17)
+    position = source.position(row=3, column=18)
 
     assert all_occurrence_positions(position) == [
         source.position(3, 18),
@@ -1305,67 +1303,6 @@ def test_rename_method_of_subclass():
     position = Position(source, 9, 8)
 
     assert all_occurrence_positions(position) == [Position(source, 9, 8)]
-
-
-# TODO: do not yet know how to solve these (or even if it's worth it). Might be easier
-# to infer once I add type annotations.
-@mark.xfail()
-def test_rename_attribute_on_class_returned_from_function_call():
-    source = make_source(
-        """
-        class Foo:
-
-            def fun(self):
-                pass
-
-
-        class Bar:
-
-            def qux(self):
-                f = Foo()
-                return f
-
-        bar = Bar()
-        bar.qux().fun()
-        """
-    )
-
-    position = Position(source, 3, 8)
-
-    assert all_occurrence_positions(position) == [
-        Position(source, 3, 8),
-        Position(source, 13, 9),
-    ]
-
-
-# TODO: do not yet know how to solve these (or even if it's worth it). Might be easier
-# to infer once I add type annotations.
-@mark.xfail()
-def test_rename_attribute_on_class_returned_from_function_call_2():
-    source = make_source(
-        """
-        class Foo:
-
-            def fun(self):
-                pass
-
-
-        class Bar:
-
-            def qux(self):
-                return Foo()
-
-        bar = Bar()
-        bar.qux().fun()
-        """
-    )
-
-    position = Position(source, 3, 8)
-
-    assert all_occurrence_positions(position) == [
-        Position(source, 3, 8),
-        Position(source, 13, 9),
-    ]
 
 
 # TODO: imports
