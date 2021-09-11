@@ -229,9 +229,6 @@ class State:  # pylint: disable=too-many-public-methods,too-many-instance-attrib
         if self.is_definition(qualified_name):
             return qualified_name
 
-        if self.is_definition(qualified_name):
-            return qualified_name
-
         prefix, identifier = qualified_name[:-1], qualified_name[-1]
 
         if prefix in self.attribute_scopes:
