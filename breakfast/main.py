@@ -1,6 +1,6 @@
 import os
 
-from typing import TYPE_CHECKING, Iterator, List
+from typing import TYPE_CHECKING, Iterator, List, Set
 
 from breakfast.modules import Module
 from breakfast.names import Names
@@ -46,3 +46,11 @@ class Application:
                 yield Module(
                     path=os.path.join(dirpath, filename), module_path=module_path + name
                 )
+
+    def find_importers(self, path: str) -> Set[Module]:
+        importers = set()
+        for module in self.find_modules():
+            if path in module.get_imported_modules():
+                importers.add(module)
+
+        return importers

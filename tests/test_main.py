@@ -70,14 +70,13 @@ def test_reports_importers() -> None:
     assert found == ["tests.data.module1"]
 
 
-def ignore_finds_other_modules() -> None:
+def test_all_imports():
     with open(os.path.join("tests", "data", "module1.py"), "r") as source_file:
         source = Source(
             lines=tuple(line[:-1] for line in source_file.readlines()),
-            module_name="tests.data.module1",
-            file_name="tests/data/module1.py",
+            module_name="tests.data.module2",
+            file_name="tests/data/module2.py",
         )
     application = Application(source=source, root=ROOT)
-    assert "tests.data.module2" in [
-        m.path for m in application.get_additional_sources()
-    ]
+    importers = application.find_importers(source.module_name)
+    assert {i.module_path for i in importers} == {"tests.data.module1"}
