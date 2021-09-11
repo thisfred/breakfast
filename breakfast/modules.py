@@ -3,10 +3,11 @@ import ast
 from collections import defaultdict
 from typing import TYPE_CHECKING, DefaultDict, List, Optional, Set
 
+from breakfast.source import Source
+
 
 if TYPE_CHECKING:
     from breakfast.position import Position
-    from breakfast.source import Source  # noqa: F401
 
 
 class Module:
@@ -16,10 +17,16 @@ class Module:
         self.module_path = module_path
 
     def get_imported_modules(self) -> List[str]:
-        with open(self.path, encoding="utf-8") as source:
-            node = ast.parse(source.read())
+        if self.source is None:
+            with open(self.path, encoding="utf-8") as source_file:
+                self.source = Source(
+                    lines=tuple(line[:-1] for line in source_file.readlines()),
+                    module_name=self.module_path,
+                    file_name=self.path,
+                )
+
         finder = ImportFinder()
-        finder.visit(node)
+        finder.visit(self.source.get_ast())
         return list(finder.imports.keys())
 
     def imports(self, module_path: str) -> bool:
