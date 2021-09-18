@@ -1260,6 +1260,3 @@ def test_rename_attribute_on_class_returned_from_function_call():
         Position(source, 3, 8),
         Position(source, 13, 9),
     ]
-
-
-# TODO: import as

@@ -9,6 +9,7 @@ from collections import defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import singledispatch
+from itertools import chain
 from typing import Dict, Iterator, List, Mapping, Optional, Sequence, Set, Tuple, Union
 
 from breakfast.position import Position
@@ -48,6 +49,11 @@ class Definition(Occurrence):
         state.add_definition(self)
 
 
+class Import(Occurrence):
+    def apply(self, state: "State") -> None:
+        state.add_import(self)
+
+
 @dataclass
 class EnterScope(Event):
     name: str
@@ -73,6 +79,14 @@ class EnterAttributeScope(Event):
 class EnterSuperAttributeScope(Event):
     def apply(self, state: "State") -> None:
         state.enter_super_attribute_scope()
+
+
+@dataclass
+class EnterImportScope(Event):
+    name: str
+
+    def apply(self, state: "State") -> None:
+        state.enter_import_scope(self.name)
 
 
 @dataclass
@@ -139,6 +153,12 @@ class State:  # pylint: disable=too-many-public-methods,too-many-instance-attrib
     def add_occurrence(self, occurrence: Occurrence) -> None:
         self.qualified_names[self.namespace + (occurrence.name,)].append(occurrence)
 
+    def add_import(self, occurrence: Import) -> None:
+        self.aliases[self._namespace[-2] + (occurrence.name,)] = self.namespace + (
+            occurrence.name,
+        )
+        self.add_occurrence(occurrence)
+
     def add_nonlocal(self, occurrence: Occurrence) -> None:
         for index in range(1, len(self.namespace) + 1):
             temp_scope = self.namespace[:-index]
@@ -186,6 +206,9 @@ class State:  # pylint: disable=too-many-public-methods,too-many-instance-attrib
             full_name = ("super",)
         self._jump_to_scope(self.base_classes[full_name][0])
         self.attribute_scopes.add(self.namespace)
+
+    def enter_import_scope(self, name: str) -> None:
+        self._jump_to_scope((name,))
 
     def _enter_scope(
         self,
@@ -449,6 +472,18 @@ def visit_import(node: ast.Import, source: Source) -> Iterator[Event]:
 
 
 @visit.register
+def visit_import_from(node: ast.ImportFrom, source: Source) -> Iterator[Event]:
+    start = node_position(node, source)
+    assert isinstance(node.module, str)
+    yield EnterImportScope(node.module)
+    for alias in node.names:
+        name = alias.name
+        position = source.find_after(name, start)
+        yield Import(name, position, alias)
+    yield LeaveScope()
+
+
+@visit.register
 def visit_call(node: ast.Call, source: Source) -> Iterator[Event]:
     call_position = node_position(node, source)
 
@@ -614,10 +649,14 @@ def call_names(node: ast.Call) -> QualifiedName:
     return names
 
 
-def all_occurrences_of(position: Position) -> Sequence[Occurrence]:
+def all_occurrences_of(
+    position: Position, other_sources: List[Source]
+) -> Sequence[Occurrence]:
     state = State()
     qualified_name = None
-    for event in visit(position.source.get_ast(), source=position.source):
+    sources = [position.source] + other_sources
+    visitors = [visit(s.get_ast(), source=s) for s in sources]
+    for event in chain(*visitors):
         state.process(event)
         if isinstance(event, Definition) and event.position == position:
             qualified_name = state.namespace + (event.name,)
@@ -630,8 +669,12 @@ def all_occurrences_of(position: Position) -> Sequence[Occurrence]:
     return found
 
 
-def all_occurrence_positions(position: Position) -> List[Position]:
-    return sorted(set(o.position for o in all_occurrences_of(position)))
+def all_occurrence_positions(
+    position: Position, other_sources: Optional[List[Source]] = None
+) -> List[Position]:
+    return sorted(
+        set(o.position for o in all_occurrences_of(position, other_sources or []))
+    )
 
 
 def all_events(source: Source) -> Iterator[Event]:
@@ -1302,4 +1345,63 @@ def test_rename_method_of_subclass():
     assert all_occurrence_positions(position) == [Position(source, 9, 8)]
 
 
-# TODO: imports
+def test_does_not_rename_imported_names():
+    source = make_source(
+        """
+        from a import b
+
+
+        def foo():
+            b = 1
+            print(b)
+
+        b()
+        """
+    )
+    position = Position(source, 1, 14)
+
+    assert all_occurrence_positions(position) == []
+
+
+def test_does_not_rename_imported_names_2():
+    source = make_source(
+        """
+        from a import b
+
+
+        def foo():
+            b = 1
+            print(b)
+
+        b()
+        """
+    )
+    position = Position(source, 5, 4)
+
+    assert all_occurrence_positions(position) == [
+        Position(source, 5, 4),
+        Position(source, 6, 10),
+    ]
+
+
+def test_finds_across_files():
+    source1 = make_source(
+        """
+        def old():
+            pass
+        """,
+        module_name="foo",
+    )
+    source2 = make_source(
+        """
+        from foo import old
+        old()
+        """,
+        module_name="bar",
+    )
+    position = Position(source1, 1, 4)
+    assert all_occurrence_positions(position, other_sources=[source2]) == [
+        Position(source1, 1, 4),
+        Position(source2, 1, 16),
+        Position(source2, 2, 0),
+    ]

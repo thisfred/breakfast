@@ -513,7 +513,3 @@ def test_finds_method_in_super_call():
     occurrences = visitor.get_occurrences("bar", Position(source, 3, 8))
 
     assert [Position(source, 3, 8), Position(source, 10, 26)] == occurrences
-
-
-# TODO: calls in the middle of an attribute: foo.bar().qux
-# TODO: import as
