@@ -13,7 +13,12 @@ def test_simple_rename() -> None:
 
     result = list(
         vim_breakfast.do_rename(
-            root=".", buffer_contents=code, row=1, column=4, new_name="new"
+            root=".",
+            buffer_contents=code,
+            file_name="some_module.py",
+            row=1,
+            column=4,
+            new_name="new",
         )
     )
 

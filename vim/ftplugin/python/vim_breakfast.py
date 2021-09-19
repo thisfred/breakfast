@@ -4,10 +4,15 @@ from breakfast.main import Application
 from breakfast.source import Source
 
 
-def do_rename(
-    root: str, buffer_contents: List[str], row: int, column: int, new_name: str
+def do_rename(  # pylint: disable=too-many-arguments
+    root: str,
+    buffer_contents: List[str],
+    file_name: str,
+    row: int,
+    column: int,
+    new_name: str,
 ) -> Iterator[Tuple[int, str]]:
-    source = Source(tuple(buffer_contents), module_name="module")
+    source = Source(tuple(buffer_contents), module_name="module", file_name=file_name)
     application = Application(source=source, root=root)
     application.rename(row=row, column=column, new_name=new_name)
     for i, line in source.get_changes():
