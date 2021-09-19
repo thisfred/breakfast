@@ -143,10 +143,6 @@ class State:  # pylint: disable=too-many-public-methods,too-many-instance-attrib
         yield
         self._namespace.pop()
 
-    @property
-    def in_attribute_scope(self):
-        return self.namespace in self.attribute_scopes
-
     def process(self, event: Event):
         event.apply(self)
 
@@ -154,9 +150,10 @@ class State:  # pylint: disable=too-many-public-methods,too-many-instance-attrib
         self.qualified_names[self.namespace + (occurrence.name,)].append(occurrence)
 
     def add_import(self, occurrence: Import) -> None:
-        self.aliases[self._namespace[-2] + (occurrence.name,)] = self.namespace + (
-            occurrence.name,
-        )
+        existing = self.namespace + (occurrence.name,)
+        self._jump_to_scope(self._namespace[-2])
+        self.add_alias((occurrence.name,), existing)
+        self.leave_scope()
         self.add_occurrence(occurrence)
 
     def add_nonlocal(self, occurrence: Occurrence) -> None:
@@ -164,7 +161,7 @@ class State:  # pylint: disable=too-many-public-methods,too-many-instance-attrib
             temp_scope = self.namespace[:-index]
             outer = temp_scope + (occurrence.name,)
             if outer in self.qualified_names:
-                self.aliases[self.namespace + (occurrence.name,)] = outer
+                self.add_alias((occurrence.name,), outer)
                 with self.temp_namespace(temp_scope):
                     self.add_occurrence(occurrence)
                 break
@@ -173,7 +170,7 @@ class State:  # pylint: disable=too-many-public-methods,too-many-instance-attrib
         self.qualified_names[self.namespace + (occurrence.name,)].append(occurrence)
 
     def add_alias(self, new: QualifiedName, existing: QualifiedName) -> None:
-        self.aliases[self.namespace + new] = self.namespace + existing
+        self.aliases[self.namespace + new] = existing
 
     def add_assignment(self, new: QualifiedName, existing: QualifiedName) -> None:
         self.prefix_aliases[self.namespace + new] = self.namespace + existing
@@ -675,11 +672,6 @@ def all_occurrence_positions(
     return sorted(
         set(o.position for o in all_occurrences_of(position, other_sources or []))
     )
-
-
-def all_events(source: Source) -> Iterator[Event]:
-    for event in visit(source.get_ast(), source=source):
-        yield event
 
 
 def test_dogfood():
