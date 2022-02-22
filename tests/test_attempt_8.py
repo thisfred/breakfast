@@ -124,7 +124,7 @@ class SelfArgument(Event):
 
 class State:  # pylint: disable=too-many-public-methods,too-many-instance-attributes
     def __init__(self) -> None:
-        self._namespace: List[QualifiedName] = []
+        self._scopes: List[QualifiedName] = []
         self.aliases: Dict[QualifiedName, QualifiedName] = {}
         self.prefix_aliases: Dict[QualifiedName, QualifiedName] = {}
         self.base_classes: Dict[QualifiedName, List[QualifiedName]] = defaultdict(list)
@@ -134,75 +134,75 @@ class State:  # pylint: disable=too-many-public-methods,too-many-instance-attrib
         self._canonicalized: Dict[QualifiedName, List[Occurrence]] = defaultdict(list)
 
     @property
-    def namespace(self) -> QualifiedName:
-        return self._namespace[-1]
+    def current_scope(self) -> QualifiedName:
+        return self._scopes[-1]
 
     @contextmanager
-    def temp_namespace(self, namespace: QualifiedName):
-        self._namespace.append(namespace)
+    def temp_scope(self, scope: QualifiedName):
+        self._scopes.append(scope)
         yield
-        self._namespace.pop()
+        self._scopes.pop()
 
     def process(self, event: Event):
         event.apply(self)
 
     def add_occurrence(self, occurrence: Occurrence) -> None:
-        self.qualified_names[self.namespace + (occurrence.name,)].append(occurrence)
+        self.qualified_names[self.current_scope + (occurrence.name,)].append(occurrence)
 
     def add_import(self, occurrence: Import) -> None:
-        existing = self.namespace + (occurrence.name,)
-        self._jump_to_scope(self._namespace[-2])
+        existing = self.current_scope + (occurrence.name,)
+        self._jump_to_scope(self._scopes[-2])
         self.add_alias((occurrence.name,), existing)
         self.leave_scope()
         self.add_occurrence(occurrence)
 
     def add_nonlocal(self, occurrence: Occurrence) -> None:
-        for index in range(1, len(self.namespace) + 1):
-            temp_scope = self.namespace[:-index]
+        for index in range(1, len(self.current_scope) + 1):
+            temp_scope = self.current_scope[:-index]
             outer = temp_scope + (occurrence.name,)
             if outer in self.qualified_names:
                 self.add_alias((occurrence.name,), outer)
-                with self.temp_namespace(temp_scope):
+                with self.temp_scope(temp_scope):
                     self.add_occurrence(occurrence)
                 break
 
     def add_definition(self, occurrence: Occurrence) -> None:
-        self.qualified_names[self.namespace + (occurrence.name,)].append(occurrence)
+        self.qualified_names[self.current_scope + (occurrence.name,)].append(occurrence)
 
     def add_alias(self, new: QualifiedName, existing: QualifiedName) -> None:
-        self.aliases[self.namespace + new] = existing
+        self.aliases[self.current_scope + new] = existing
 
     def add_assignment(self, new: QualifiedName, existing: QualifiedName) -> None:
-        self.prefix_aliases[self.namespace + new] = self.namespace + existing
+        self.prefix_aliases[self.current_scope + new] = self.current_scope + existing
 
     def add_base_class(self, sub_class: str, base_class: str):
-        self.base_classes[self.namespace + (sub_class,)].append(
-            self.namespace + (base_class,)
+        self.base_classes[self.current_scope + (sub_class,)].append(
+            self.current_scope + (base_class,)
         )
 
     def add_self(self, name: str) -> None:
-        if self.namespace[:-1] in self.classes:
-            full_name = self.namespace + (name,)
+        if self.current_scope[:-1] in self.classes:
+            full_name = self.current_scope + (name,)
             self.prefix_aliases[full_name] = full_name[:-2]
 
     def enter_class_scope(self, name: str) -> None:
         self.enter_scope(name)
-        self.classes.add(self.namespace)
+        self.classes.add(self.current_scope)
 
     def enter_scope(self, name: str) -> None:
         self._enter_scope(name)
 
     def enter_attribute_scope(self, name: str) -> None:
         self._enter_scope(name)
-        self.attribute_scopes.add(self.namespace)
+        self.attribute_scopes.add(self.current_scope)
 
     def enter_super_attribute_scope(self) -> None:
-        if self.namespace[:-1] in self.classes:
-            full_name = self.namespace[:-1]
+        if self.current_scope[:-1] in self.classes:
+            full_name = self.current_scope[:-1]
         else:
             full_name = ("super",)
         self._jump_to_scope(self.base_classes[full_name][0])
-        self.attribute_scopes.add(self.namespace)
+        self.attribute_scopes.add(self.current_scope)
 
     def enter_import_scope(self, name: str) -> None:
         self._jump_to_scope((name,))
@@ -211,16 +211,16 @@ class State:  # pylint: disable=too-many-public-methods,too-many-instance-attrib
         self,
         name: str,
     ) -> None:
-        if self._namespace:
-            self._namespace.append(self.namespace + (name,))
+        if self._scopes:
+            self._scopes.append(self.current_scope + (name,))
         else:
-            self._namespace.append((name,))
+            self._scopes.append((name,))
 
     def _jump_to_scope(self, namespace: QualifiedName) -> None:
-        self._namespace.append(namespace)
+        self._scopes.append(namespace)
 
     def leave_scope(self) -> None:
-        self._namespace.pop()
+        self._scopes.pop()
 
     def get_all_occurrences_for(
         self, qualified_name: QualifiedName
@@ -656,7 +656,7 @@ def all_occurrences_of(
     for event in chain(*visitors):
         state.process(event)
         if isinstance(event, Definition) and event.position == position:
-            qualified_name = state.namespace + (event.name,)
+            qualified_name = state.current_scope + (event.name,)
 
     if not qualified_name:
         return []
