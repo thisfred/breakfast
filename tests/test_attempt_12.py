@@ -93,9 +93,9 @@ class State:
             self.current_node.occurrences.add(position)
             if position == self.position:
                 self.found = self.current_node
-        # print(
-        #     f"{self.current_path}: {[(o.row,o.column) for o in self.current_node.occurrences]}"
-        # )
+        print(
+            f"{self.current_path}: {[(o.row,o.column) for o in self.current_node.occurrences]}"
+        )
 
     def alias(self, path: QualifiedName) -> None:
         other_node = self.current_node
@@ -200,7 +200,6 @@ def visit_assign(node: ast.Assign, source: Source, state: State) -> None:
     target_names = get_names(node.targets[0])
     value_names = get_names(node.value)
     for target, value in zip(target_names, value_names):
-        print(repr(target), repr(value))
 
         if target and value:
             path: QualifiedName = ("..",)
@@ -230,8 +229,8 @@ def visit_function_definition(
 
         with state.scope("()"):
             for i, arg in enumerate(node.args.args):
-
                 position = node_position(arg, source)
+
                 with state.scope(arg.arg):
                     state.add_occurrence(position=position)
                     if i == 0 and is_method and not is_static_method(node):
@@ -245,11 +244,17 @@ def visit_function_definition(
 def visit_class(node: ast.ClassDef, source: Source, state: State) -> None:
     position = node_position(node, source, column_offset=len("class "))
 
+    for base in node.bases:
+        visit(base, source, state)
+
     with state.scope(node.name, lookup_scope=True, is_class=True):
         state.add_occurrence(position=position)
+
         with state.scope("()"):
             with state.scope("."):
                 state.alias(("..", "..", "."))
+                for base in node.bases:
+                    state.alias(("..", "..", "..") + names_from(base) + ("()", "."))
                 for statement in node.body:
                     visit(statement, source, state)
 
@@ -262,13 +267,14 @@ def visit_call(node: ast.Call, source: Source, state: State) -> None:
         visit(arg, source, state)
 
     visit(node.func, source, state)
-
     names = names_from(node.func)
-    # for name in names[:-1]:
-    #     state.enter_scope(name)
 
-    with state.scope(names[-1]):
-        with state.scope("()"):
+    with ExitStack() as stack:
+        if names:
+            stack.enter_context(state.scope(names[0]))
+            for name in names[1:]:
+                stack.enter_context(state.scope(name))
+            stack.enter_context(state.scope("()"))
 
             for keyword in node.keywords:
                 if not keyword.arg:
@@ -277,9 +283,6 @@ def visit_call(node: ast.Call, source: Source, state: State) -> None:
                 position = source.find_after(keyword.arg, call_position)
                 with state.scope(keyword.arg):
                     state.add_occurrence(position=position)
-
-    # for _ in names[:-1]:
-    #     state.leave_scope()
 
 
 @singledispatch
@@ -367,9 +370,6 @@ def all_occurrence_positions(
     source = position.source
     state = State(position)
     visit(source.get_ast(), source=source, state=state)
-    # from pprint import pprint
-
-    # pprint(state.root.flatten())
     if state.found:
         return sorted(state.found.occurrences)
 
@@ -674,4 +674,172 @@ def test_finds_generator_comprehension_variables() -> None:
         source.position(row=2, column=7),
         source.position(row=2, column=15),
         source.position(row=2, column=36),
+    ]
+
+
+def test_finds_loop_variables():
+    source = make_source(
+        """
+        old = None
+        for i, old in enumerate(['foo']):
+            print(i)
+            print(old)
+        print(old)
+        """
+    )
+
+    position = source.position(row=1, column=0)
+
+    assert all_occurrence_positions(position) == [
+        source.position(row=1, column=0),
+        source.position(row=2, column=7),
+        source.position(row=4, column=10),
+        source.position(row=5, column=6),
+    ]
+
+
+def test_finds_tuple_unpack():
+    source = make_source(
+        """
+    foo, old = 1, 2
+    print(old)
+    """
+    )
+
+    position = source.position(row=1, column=5)
+
+    assert all_occurrence_positions(position) == [
+        source.position(1, 5),
+        source.position(2, 6),
+    ]
+
+
+def test_finds_superclasses():
+    source = make_source(
+        """
+        class A:
+
+            def old(self):
+                pass
+
+        class B(A):
+            pass
+
+        b = B()
+        c = b
+        c.old()
+        """
+    )
+
+    position = source.position(row=3, column=8)
+
+    assert all_occurrence_positions(position) == [
+        source.position(row=3, column=8),
+        source.position(row=11, column=2),
+    ]
+
+
+def test_recognizes_multiple_assignments():
+    source = make_source(
+        """
+    class A:
+        def old(self):
+            pass
+
+    class B:
+        def old(self):
+            pass
+
+    foo, bar = A(), B()
+    foo.old()
+    bar.old()
+    """
+    )
+
+    position = source.position(row=2, column=8)
+
+    assert all_occurrence_positions(position) == [
+        source.position(2, 8),
+        source.position(10, 4),
+    ]
+
+
+def test_finds_enclosing_scope_variable_from_comprehension():
+    source = make_source(
+        """
+    old = 3
+    res = [foo for foo in range(100) if foo % old]
+    """
+    )
+
+    position = source.position(row=1, column=0)
+
+    assert all_occurrence_positions(position) == [
+        source.position(1, 0),
+        source.position(2, 42),
+    ]
+
+
+def test_finds_static_method():
+    source = make_source(
+        """
+        class A:
+
+            @staticmethod
+            def old(arg):
+                pass
+
+        a = A()
+        b = a.old('foo')
+        """
+    )
+
+    position = source.position(row=4, column=8)
+
+    assert all_occurrence_positions(position) == [
+        source.position(4, 8),
+        source.position(8, 6),
+    ]
+
+
+def test_finds_method_after_call():
+    source = make_source(
+        """
+        class A:
+
+            def old(arg):
+                pass
+
+        b = A().old('foo')
+        """
+    )
+
+    position = source.position(row=3, column=8)
+
+    assert all_occurrence_positions(position) == [
+        source.position(3, 8),
+        source.position(6, 8),
+    ]
+
+
+def test_finds_argument():
+    source = make_source(
+        """
+        class A:
+
+            def foo(self, arg):
+                print(arg)
+
+            def bar(self):
+                arg = "1"
+                self.foo(arg=arg)
+        """
+    )
+
+    position = source.position(row=3, column=18)
+
+    assert all_occurrence_positions(position) == [
+        source.position(3, 18),
+        source.position(4, 14),
+        source.position(8, 17),
     ]
