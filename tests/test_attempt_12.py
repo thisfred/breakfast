@@ -1,9 +1,10 @@
+# pylint: disable=too-many-lines
 import ast
 
 from collections import defaultdict
 from contextlib import ExitStack, contextmanager
 from functools import singledispatch
-from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
+from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
 
 from breakfast.position import Position
 from breakfast.source import Source
@@ -13,28 +14,52 @@ from tests import make_source
 QualifiedName = Tuple[str, ...]
 
 
+class TreeTraversalError(RuntimeError):
+    pass
+
+
+class AliasError(RuntimeError):
+    pass
+
+
 class Node:
-    def __init__(self, parent: Optional["Node"]):
+    def __init__(self, parent: Optional["Node"], path: QualifiedName = ()):
         self.parent = parent
         self.children: Dict[str, "Node"] = defaultdict(lambda: Node(parent=self))
         self.occurrences: Set[Position] = set()
         self.is_class = False
+        self.path = path
 
-    def add_occurrence(self, occurrence: Any):
+    def add_occurrence(self, occurrence: Position):
         self.occurrences.add(occurrence)
 
     def __getitem__(self, name: str) -> "Node":
-        return self.children[name]
+        node = self.children[name]
+
+        if not node.path:
+            node.path = self.path + (name,)
+
+        return node
 
     def __contains__(self, name: str) -> bool:
         return name in self.children
+
+    def alias_namespace(self, other: "Node") -> None:
+        if "." in other and "." not in self:
+            self.children["."] = other["."]
+        elif "." in self and "." not in other:
+            other.children["."] = self.children["."]
+        else:
+            self.children["."] = other["."]
 
     def alias(self, other: "Node") -> None:
         for name, value in other.children.items():
             if name not in self.children:
                 self.children[name] = value
-            else:
-                self.children[name].alias(value)
+
+        for name, value in self.children.items():
+            if name not in other.children:
+                other.children[name] = value
 
         other.children = self.children
         self.occurrences |= other.occurrences
@@ -42,9 +67,9 @@ class Node:
 
     def flatten(
         self,
-        prefix: Tuple[str, ...] = tuple(),
+        prefix: QualifiedName = tuple(),
         seen: Optional[Set[Position]] = None,
-    ) -> Dict[Tuple[str, ...], List[Tuple[int, int]]]:
+    ) -> Dict[QualifiedName, List[Tuple[int, int]]]:
         if not seen:
             seen = set()
 
@@ -56,12 +81,15 @@ class Node:
                 occurrence = next(iter(value.occurrences))
                 if occurrence in seen:
                     continue
+
                 positions = [(o.row, o.column) for o in value.occurrences]
                 result[new_prefix] = positions
                 seen |= value.occurrences
             next_values.append((new_prefix, value))
+
         for new_prefix, value in next_values:
             result.update(value.flatten(prefix=new_prefix, seen=seen))
+
         return result
 
 
@@ -88,25 +116,57 @@ class State:
         if lookup_scope:
             self.lookup_scopes.pop()
 
-    def add_occurrence(self, *, position: Optional[Position] = None) -> None:
-        if position:
-            self.current_node.occurrences.add(position)
-            if position == self.position:
-                self.found = self.current_node
-        print(
-            f"{self.current_path}: {[(o.row,o.column) for o in self.current_node.occurrences]}"
-        )
+    @contextmanager
+    def jump_to_scope(self, path: QualifiedName):
+        previous_node = self.current_node
+        previous_path = self.current_path
+        self.current_node = self.root
+        self.current_path = ()
+        for name in path:
+            self.current_node = self.current_node[name]
+            self.current_path += (name,)
+        yield
+        self.current_node = previous_node
+        self.current_path = previous_path
 
-    def alias(self, path: QualifiedName) -> None:
+    def check_found(self, position: Position):
+        if position == self.position:
+            self.found = self.current_node
+
+    def add_occurrence(self, position: Position) -> None:
+        self.current_node.add_occurrence(position)
+        self.check_found(position)
+
+    def follow_path(self, path: QualifiedName) -> Node:
         other_node = self.current_node
+        other_path = self.current_path
 
         for name in path:
-            if name == "..":
+            if name == "/":
+                other_path = ()
+                other_node = self.root
+            elif name == "~":
+                other_path = self.current_path[:2]
+                for _ in range(len(self.current_path) - 2):
+                    if other_node.parent:
+                        other_node = other_node.parent
+                    else:
+                        raise TreeTraversalError()
+
+            elif name == "..":
+                other_path = other_path[:-1]
                 if other_node.parent:
                     other_node = other_node.parent
-            else:
-                other_node = other_node[name]
+                else:
+                    raise TreeTraversalError()
 
+            else:
+                other_path += (name,)
+                other_node = other_node[name]
+        return other_node
+
+    def alias(self, path: QualifiedName) -> None:
+        other_node = self.follow_path(path)
         self.current_node.alias(other_node)
 
 
@@ -151,16 +211,19 @@ def visit_name(node: ast.Name, source: Source, state: State) -> None:
     position = node_position(node, source)
     if isinstance(node.ctx, ast.Store):
         with state.scope(node.id):
-            state.add_occurrence(position=position)
+            state.add_occurrence(position)
     else:
         if node.id not in state.current_node:
             for scope in state.lookup_scopes[::-1]:
                 if node.id in scope or scope is state.root:
-                    scope[node.id].alias(state.current_node[node.id])
+                    position = node_position(node, source)
+                    with state.scope(node.id):
+                        scope[node.id].add_occurrence(position)
+                    state.check_found(position)
                     break
-
-        with state.scope(node.id):
-            state.add_occurrence(position=node_position(node, source))
+        else:
+            with state.scope(node.id):
+                state.add_occurrence(node_position(node, source))
 
 
 @singledispatch
@@ -190,6 +253,32 @@ def get_names(value: ast.AST) -> List[QualifiedName]:
     return [names_for(value)]
 
 
+# @visit.register
+# def visit_import(node: ast.Import, source: Source, state: State) -> None:
+#     start = node_position(node, source)
+#     for alias in node.names:
+#         name = alias.name
+#         position = source.find_after(name, start)
+#         yield Regular(name, position, alias)
+
+
+@visit.register
+def visit_import_from(node: ast.ImportFrom, source: Source, state: State) -> None:
+    start = node_position(node, source)
+    assert isinstance(node.module, str)
+
+    current_path = ("/",) + state.current_path
+    with state.jump_to_scope((node.module,)):
+        with state.scope("."):
+            for alias in node.names:
+                name = alias.name
+                position = source.find_after(name, start)
+                with state.scope(name):
+                    state.add_occurrence(position)
+                    path = current_path + (name,)
+                    state.alias(path)
+
+
 @visit.register
 def visit_assign(node: ast.Assign, source: Source, state: State) -> None:
 
@@ -202,13 +291,17 @@ def visit_assign(node: ast.Assign, source: Source, state: State) -> None:
     for target, value in zip(target_names, value_names):
 
         if target and value:
-            path: QualifiedName = ("..",)
+            path: QualifiedName = ()
             with ExitStack() as stack:
-                for name in target:
+                for name in target[:-1]:
                     stack.enter_context(state.scope(name))
                     stack.enter_context(state.scope("."))
                     path += ("..",)
-                state.alias(path + value + (".",))
+                stack.enter_context(state.scope(target[-1]))
+                path += ("..",)
+
+                other_node = state.follow_path(path + value)
+                state.current_node.alias_namespace(other_node)
 
 
 def is_static_method(node: ast.FunctionDef) -> bool:
@@ -225,17 +318,17 @@ def visit_function_definition(
     position = node_position(node, source, column_offset=len("def "))
 
     with state.scope(node.name):
-        state.add_occurrence(position=position)
+        state.add_occurrence(position)
 
         with state.scope("()"):
             for i, arg in enumerate(node.args.args):
                 position = node_position(arg, source)
 
                 with state.scope(arg.arg):
-                    state.add_occurrence(position=position)
+                    state.add_occurrence(position)
                     if i == 0 and is_method and not is_static_method(node):
-                        with state.scope("."):
-                            state.alias(("..", "..", "..", ".."))
+                        other_node = state.follow_path(("..", "..", "..", ".."))
+                        state.current_node.alias_namespace(other_node)
 
             generic_visit(node, source, state)
 
@@ -246,15 +339,20 @@ def visit_class(node: ast.ClassDef, source: Source, state: State) -> None:
 
     for base in node.bases:
         visit(base, source, state)
+        if isinstance(base, ast.Name):
+            with state.scope(base.id):
+                with state.scope("()"):
+                    other_node = state.follow_path(("..", "..", node.name, "()"))
+                    state.current_node.alias_namespace(other_node)
 
     with state.scope(node.name, lookup_scope=True, is_class=True):
-        state.add_occurrence(position=position)
+        state.add_occurrence(position)
 
         with state.scope("()"):
+            other_node = state.follow_path(("..",))
+            state.current_node.alias_namespace(other_node)
+
             with state.scope("."):
-                state.alias(("..", "..", "."))
-                for base in node.bases:
-                    state.alias(("..", "..", "..") + names_from(base) + ("()", "."))
                 for statement in node.body:
                     visit(statement, source, state)
 
@@ -266,23 +364,30 @@ def visit_call(node: ast.Call, source: Source, state: State) -> None:
     for arg in node.args:
         visit(arg, source, state)
 
-    visit(node.func, source, state)
     names = names_from(node.func)
 
-    with ExitStack() as stack:
-        if names:
-            stack.enter_context(state.scope(names[0]))
-            for name in names[1:]:
-                stack.enter_context(state.scope(name))
-            stack.enter_context(state.scope("()"))
+    visit(node.func, source, state)
+    position = node_position(node, source)
+    lookup_scope = state.lookup_scopes[-1]
+    if names == ("super",) and lookup_scope:
+        with state.scope("super"):
+            with state.scope("()"):
+                state.current_node.alias_namespace(lookup_scope["()"])
+    else:
+        with ExitStack() as stack:
+            if names:
+                stack.enter_context(state.scope(names[0]))
+                for name in names[1:]:
+                    stack.enter_context(state.scope(name))
+                stack.enter_context(state.scope("()"))
 
-            for keyword in node.keywords:
-                if not keyword.arg:
-                    continue
+                for keyword in node.keywords:
+                    if not keyword.arg:
+                        continue
 
-                position = source.find_after(keyword.arg, call_position)
-                with state.scope(keyword.arg):
-                    state.add_occurrence(position=position)
+                    position = source.find_after(keyword.arg, call_position)
+                    with state.scope(keyword.arg):
+                        state.add_occurrence(position)
 
 
 @singledispatch
@@ -302,7 +407,7 @@ def attribute_names(node: ast.Attribute) -> QualifiedName:
 
 @names_from.register
 def call_names(node: ast.Call) -> QualifiedName:
-    names = names_from(node.func)
+    names = names_from(node.func) + ("()",)
     return names
 
 
@@ -316,11 +421,11 @@ def visit_attribute(node: ast.Attribute, source: Source, state: State) -> None:
         for name in names:
             position = source.find_after(name, position)
             stack.enter_context(state.scope(name))
-            stack.enter_context(state.scope("."))
 
+        stack.enter_context(state.scope("."))
         position = source.find_after(node.attr, position)
         stack.enter_context(state.scope(node.attr))
-        state.add_occurrence(position=position)
+        state.add_occurrence(position)
 
 
 def visit_comp(
@@ -364,12 +469,35 @@ def visit_generator_exp(node: ast.GeneratorExp, source: Source, state: State) ->
     visit_comp(node, source, state, node.elt)
 
 
+@visit.register
+def visit_global(node: ast.Global, source: Source, state: State) -> None:
+    position = node_position(node, source)
+    for name in node.names:
+        position = source.find_after(name, position)
+        with state.scope(name):
+            state.add_occurrence(position)
+            state.alias(("~", name))
+
+
+@visit.register
+def visit_nonlocal(node: ast.Nonlocal, source: Source, state: State) -> None:
+    position = node_position(node, source)
+    for name in node.names:
+        position = source.find_after(name, position)
+        with state.scope(name):
+            state.add_occurrence(position)
+            state.alias(("..", "..", "..", name))
+
+
 def all_occurrence_positions(
-    position: Position,
+    position: Position, other_sources: Optional[List[Source]] = None
 ) -> Iterable[Position]:
     source = position.source
     state = State(position)
     visit(source.get_ast(), source=source, state=state)
+    for other in other_sources or []:
+        visit(other.get_ast(), source=other, state=state)
+
     if state.found:
         return sorted(state.found.occurrences)
 
@@ -842,4 +970,225 @@ def test_finds_argument():
         source.position(3, 18),
         source.position(4, 14),
         source.position(8, 17),
+    ]
+
+
+def test_finds_method_but_not_function():
+    source = make_source(
+        """
+        class A:
+
+            def old(self):
+                pass
+
+            def foo(self):
+                self.old()
+
+            def bar(self):
+                old()
+
+        def old():
+            pass
+        """
+    )
+    position = source.position(3, 8)
+
+    assert all_occurrence_positions(position) == [
+        source.position(3, 8),
+        source.position(7, 13),
+    ]
+
+
+def test_finds_global_variable_in_method_scope():
+    source = make_source(
+        """
+    b = 12
+
+    class Foo:
+
+        def bar(self):
+            return b
+    """
+    )
+
+    position = Position(source, 1, 0)
+
+    assert all_occurrence_positions(position) == [
+        Position(source, 1, 0),
+        Position(source, 6, 15),
+    ]
+
+
+def test_treats_staticmethod_args_correctly():
+    source = make_source(
+        """
+    class ClassName:
+
+        def old(self):
+            pass
+
+        @staticmethod
+        def foo(whatever):
+            whatever.old()
+    """
+    )
+    position = Position(source, 3, 8)
+
+    assert all_occurrence_positions(position) == [Position(source, 3, 8)]
+
+
+def test_finds_global_variable():
+    source = make_source(
+        """
+    b = 12
+
+    def bar():
+        global b
+        b = 20
+    """
+    )
+
+    position = Position(source, 1, 0)
+
+    assert all_occurrence_positions(position) == [
+        Position(source, 1, 0),
+        Position(source, 4, 11),
+        Position(source, 5, 4),
+    ]
+
+
+def test_finds_nonlocal_variable():
+    source = make_source(
+        """
+    b = 12
+
+    def foo():
+        b = 20
+        def bar():
+            nonlocal b
+            b = 20
+        return b
+        b = 1
+
+    print(b)
+    """
+    )
+
+    position = Position(source, 4, 4)
+
+    assert all_occurrence_positions(position) == [
+        Position(source, 4, 4),
+        Position(source, 6, 17),
+        Position(source, 7, 8),
+        Position(source, 8, 11),
+        Position(source, 9, 4),
+    ]
+
+
+def test_finds_multiple_definitions():
+    source = make_source(
+        """
+    a = 12
+    if a > 10:
+        b = a + 100
+    else:
+        b = 3 - a
+    print(b)
+    """
+    )
+    position = Position(source, 3, 4)
+    assert all_occurrence_positions(position) == [
+        Position(source, 3, 4),
+        Position(source, 5, 4),
+        Position(source, 6, 6),
+    ]
+
+
+def test_finds_method_in_super_call():
+    source = make_source(
+        """
+    class Foo:
+
+        def bar(self):
+            pass
+
+
+    class Bar(Foo):
+
+        def bar(self):
+            super().bar()
+    """
+    )
+
+    position = Position(source, 3, 8)
+
+    assert all_occurrence_positions(position) == [
+        Position(source, 3, 8),
+        Position(source, 9, 8),
+        Position(source, 10, 16),
+    ]
+
+
+def test_finds_imports():
+    source = make_source(
+        """
+        from a import b
+
+
+        def foo():
+            b = 1
+            print(b)
+
+        b()
+        """
+    )
+    position = Position(source, 1, 14)
+
+    assert all_occurrence_positions(position) == [
+        Position(source, 1, 14),
+        Position(source, 8, 0),
+    ]
+
+
+def test_does_not_rename_imported_names_2():
+    source = make_source(
+        """
+        from a import b
+
+
+        def foo():
+            b = 1
+            print(b)
+
+        b()
+        """
+    )
+    position = Position(source, 5, 4)
+
+    assert all_occurrence_positions(position) == [
+        Position(source, 5, 4),
+        Position(source, 6, 10),
+    ]
+
+
+def test_finds_across_files():
+    source1 = make_source(
+        """
+        def old():
+            pass
+        """,
+        module_name="foo",
+    )
+    source2 = make_source(
+        """
+        from foo import old
+        old()
+        """,
+        module_name="bar",
+    )
+    position = Position(source1, 1, 4)
+    assert all_occurrence_positions(position, other_sources=[source2]) == [
+        Position(source1, 1, 4),
+        Position(source2, 1, 16),
+        Position(source2, 2, 0),
     ]
