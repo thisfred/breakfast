@@ -253,22 +253,29 @@ def get_names(value: ast.AST) -> List[QualifiedName]:
     return [names_for(value)]
 
 
-# @visit.register
-# def visit_import(node: ast.Import, source: Source, state: State) -> None:
-#     start = node_position(node, source)
-#     for alias in node.names:
-#         name = alias.name
-#         position = source.find_after(name, start)
-#         yield Regular(name, position, alias)
+@visit.register
+def visit_import(node: ast.Import, source: Source, state: State) -> None:
+    start = node_position(node, source)
+
+    current_path = ("/",) + state.current_path
+    with state.jump_to_scope(()):
+        for alias in node.names:
+            name = alias.name
+            position = source.find_after(name, start)
+            with state.scope(name):
+                state.add_occurrence(position)
+                path = current_path + (name,)
+                state.alias(path)
 
 
 @visit.register
 def visit_import_from(node: ast.ImportFrom, source: Source, state: State) -> None:
-    start = node_position(node, source)
+    start = node_position(node, source, column_offset=len("from "))
     assert isinstance(node.module, str)
 
     current_path = ("/",) + state.current_path
     with state.jump_to_scope((node.module,)):
+        state.add_occurrence(start)
         with state.scope("."):
             for alias in node.names:
                 name = alias.name
@@ -1150,7 +1157,7 @@ def test_finds_imports():
     ]
 
 
-def test_does_not_rename_imported_names_2():
+def test_does_not_rename_imported_names():
     source = make_source(
         """
         from a import b
@@ -1191,4 +1198,26 @@ def test_finds_across_files():
         Position(source1, 1, 4),
         Position(source2, 1, 16),
         Position(source2, 2, 0),
+    ]
+
+
+def test_finds_namespace_imports():
+    source1 = make_source(
+        """
+        def old():
+            pass
+        """,
+        module_name="foo",
+    )
+    source2 = make_source(
+        """
+        import foo
+        foo.old()
+        """,
+        module_name="bar",
+    )
+    position = Position(source1, 1, 4)
+    assert all_occurrence_positions(position, other_sources=[source2]) == [
+        Position(source1, 1, 4),
+        Position(source2, 2, 4),
     ]
