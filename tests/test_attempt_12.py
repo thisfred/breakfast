@@ -201,9 +201,11 @@ def visit(node: ast.AST, source: Source, state: State) -> None:
 
 @visit.register
 def visit_module(node: ast.Module, source: Source, state: State) -> None:
-    with state.scope(source.module_name):
-        with state.scope(".", lookup_scope=True):
-            generic_visit(node, source, state)
+    with ExitStack() as stack:
+        for name in source.module_name.split("."):
+            stack.enter_context(state.scope(name))
+            stack.enter_context(state.scope(".", lookup_scope=True))
+        generic_visit(node, source, state)
 
 
 @visit.register
@@ -226,31 +228,30 @@ def visit_name(node: ast.Name, source: Source, state: State) -> None:
                 state.add_occurrence(node_position(node, source))
 
 
-@singledispatch
-def names_for(node: ast.AST) -> QualifiedName:  # pylint: disable= unused-argument
-    return ()
-
-
-@names_for.register
-def names_for_name(node: ast.Name) -> QualifiedName:
-    return (node.id,)
-
-
-@names_for.register
-def names_for_attribute(node: ast.Attribute) -> QualifiedName:
-    return names_for(node.value) + (node.attr,)
-
-
-@names_for.register
-def names_for_call(node: ast.Call) -> QualifiedName:
-    return names_for(node.func) + ("()",)
-
-
 def get_names(value: ast.AST) -> List[QualifiedName]:
-    if isinstance(value, ast.Tuple):
-        return [names_for(v) for v in value.elts]
+    match value:
+        case ast.Tuple(elts=elements):
+            return [
+                i
+                for e in elements
+                for i in get_names(e)  # pylint: disable=not-an-iterable
+            ]
+        case other:
+            return [qualified_name_for(other)]
 
-    return [names_for(value)]
+
+def qualified_name_for(node: ast.AST) -> QualifiedName:
+    match node:
+        case ast.Name(id=name):
+            return (name,)
+        case ast.Attribute(value=value, attr=attr):
+            return qualified_name_for(value) + (attr,)
+        case ast.Name(id=name):
+            return (name,)
+        case ast.Call(func=function):
+            return qualified_name_for(function) + ("()",)
+        case _:
+            return ()
 
 
 @visit.register
@@ -259,13 +260,7 @@ def visit_import(node: ast.Import, source: Source, state: State) -> None:
 
     current_path = ("/",) + state.current_path
     with state.jump_to_scope(()):
-        for alias in node.names:
-            name = alias.name
-            position = source.find_after(name, start)
-            with state.scope(name):
-                state.add_occurrence(position)
-                path = current_path + (name,)
-                state.alias(path)
+        _handle_imports(node, source, state, start, current_path)
 
 
 @visit.register
@@ -274,16 +269,31 @@ def visit_import_from(node: ast.ImportFrom, source: Source, state: State) -> Non
     assert isinstance(node.module, str)
 
     current_path = ("/",) + state.current_path
-    with state.jump_to_scope((node.module,)):
+    node_module_path: QualifiedName = tuple()
+    for name in node.module.split("."):
+        node_module_path += (name, ".")
+    node_module_path = node_module_path[:-1]
+
+    with state.jump_to_scope(node_module_path):
         state.add_occurrence(start)
         with state.scope("."):
-            for alias in node.names:
-                name = alias.name
-                position = source.find_after(name, start)
-                with state.scope(name):
-                    state.add_occurrence(position)
-                    path = current_path + (name,)
-                    state.alias(path)
+            _handle_imports(node, source, state, start, current_path)
+
+
+def _handle_imports(
+    node: Union[ast.Import, ast.ImportFrom],
+    source: Source,
+    state: State,
+    start: Position,
+    current_path: QualifiedName,
+):
+    for alias in node.names:
+        name = alias.name
+        position = source.find_after(name, start)
+        with state.scope(name):
+            state.add_occurrence(position)
+            path = current_path + (name,)
+            state.alias(path)
 
 
 @visit.register
@@ -1220,4 +1230,27 @@ def test_finds_namespace_imports():
     assert all_occurrence_positions(position, other_sources=[source2]) == [
         Position(source1, 1, 4),
         Position(source2, 2, 4),
+    ]
+
+
+def test_finds_imports_with_paths():
+    source1 = make_source(
+        """
+        def old():
+            pass
+        """,
+        module_name="foo.bar",
+    )
+    source2 = make_source(
+        """
+        from foo.bar import old
+        old()
+        """,
+        module_name="qux",
+    )
+    position = Position(source1, 1, 4)
+    assert all_occurrence_positions(position, other_sources=[source2]) == [
+        Position(source1, 1, 4),
+        Position(source2, 1, 20),
+        Position(source2, 2, 0),
     ]
