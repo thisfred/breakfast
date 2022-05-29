@@ -117,16 +117,13 @@ def test_finds_across_files():
     visitor.visit_source(source)
     visitor.visit_source(other_source)
 
-    assert (
-        sorted(
-            [
-                Position(other_source, 1, 16),
-                Position(other_source, 2, 0),
-                Position(source, 1, 4),
-            ]
-        )
-        == sorted(visitor.get_occurrences("old", Position(other_source, 2, 0)))
-    )
+    assert sorted(
+        [
+            Position(other_source, 1, 16),
+            Position(other_source, 2, 0),
+            Position(source, 1, 4),
+        ]
+    ) == sorted(visitor.get_occurrences("old", Position(other_source, 2, 0)))
 
 
 def test_finds_multiple_imports_on_one_line():
@@ -153,16 +150,13 @@ def test_finds_multiple_imports_on_one_line():
     visitor.visit_source(source)
     visitor.visit_source(other_source)
 
-    assert (
-        sorted(
-            [
-                Position(other_source, 1, 21),
-                Position(other_source, 2, 0),
-                Position(source, 1, 4),
-            ]
-        )
-        == sorted(visitor.get_occurrences("old", Position(other_source, 2, 0)))
-    )
+    assert sorted(
+        [
+            Position(other_source, 1, 21),
+            Position(other_source, 2, 0),
+            Position(source, 1, 4),
+        ]
+    ) == sorted(visitor.get_occurrences("old", Position(other_source, 2, 0)))
 
 
 @mark.skip
