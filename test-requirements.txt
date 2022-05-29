@@ -127,32 +127,6 @@ isort==5.10.1 \
     --hash=sha256:6f62d78e2f89b4500b080fe3a81690850cd254227f27f75c3a0c491a1f351ba7 \
     --hash=sha256:e8443a5e7a020e9d7f97f1d7d9cd17c88bcb3bc7e218bf9cf5095fe550be2951
     # via -r test-requirements.in
-libcst==0.4.3 \
-    --hash=sha256:0c982387b8e23ad18efbd0287004924931a0b05c91ed5630453faf224bb0b185 \
-    --hash=sha256:1a395129ecf6c6ce429427f34100ccd99f35898a98187764a4559d9f92166cd0 \
-    --hash=sha256:1c3d33da8f9b088e118bfc6ecacdd627ac237baeb490f4d7a383af4df4ea4f82 \
-    --hash=sha256:231a9ca446570f9b63d8c2c6dbf6c796fb939a5e4ef9dc0dd9304a21a6c0da16 \
-    --hash=sha256:28f35b9a21b2f8982a8ed3f53b1fdbc5435252409d34d061a3229dc4b413b8c7 \
-    --hash=sha256:3cb70e7e5118234e75d309fcf04931e20f282f16c80dda464fc1b88ef02e52e4 \
-    --hash=sha256:3d9191c764645dddf94d49885e590433fa0ee6d347b07eec86566786e6d2ada5 \
-    --hash=sha256:6c8c00b24ab39facff463b18b9abc8df7dd063ae0ce9fe2e78e199c9a8572e37 \
-    --hash=sha256:826ea5f10a84625db861ccf35946317f4f29e575261e44c0cd6c24c4dde5c2bb \
-    --hash=sha256:88ab371aab82f7241448e263ec42abced649a77cdd21df960268e6df70b3f3f7 \
-    --hash=sha256:a6f57056a743853c01bbd21bfd96c2a1b4c317bbc66920f5f2c9999b3dca7233 \
-    --hash=sha256:afc793c95af79e5adc5905713ccddff034d0de3e3da748424b722edf890227de \
-    --hash=sha256:b08e7a56950479c856183ad6fdf0a21df028d6732e1d19822ec1593e32f700ca \
-    --hash=sha256:bc4c25aca45df5f86a6a1c8c219e8c7a90acdaef02b53eb01eafa563381cb0ce \
-    --hash=sha256:bea98a8be2b1725784ae01e89519121eba7d81280dcbee40ae03ececd7277cf3 \
-    --hash=sha256:c0f22e9787e44304e7cd9744e543602ab2c1bca8b922cb6237ea08d9a0be3fdd \
-    --hash=sha256:ca00819affafccb02b2582ec47706712b995c9887cad02bb8efe94a066830f37 \
-    --hash=sha256:cab5b23796ce66303398bb7b2d27bcb17d2416dacd3d00229c961aed87d79a3b \
-    --hash=sha256:d744d4a6301c75322f1d88365dccfe402a51e724583a2edc4cba474462cc9419 \
-    --hash=sha256:df5f51a837fc10cdbf5c61acb467f6c15d5f9ca1d94a84a6a29c4f20ce7b437e \
-    --hash=sha256:ed0f15545eddfdd6270069ce0b2d4c253298817bd676a1a6adddaa1d66c7e28b \
-    --hash=sha256:f744f60057c8998b856d9baf28765c65574992f4a49830ca350010fc31f4eac4 \
-    --hash=sha256:f79ab61287505d97ed57ead14b78777f48cd6ec5339ca4978987e4c35957a465 \
-    --hash=sha256:ff147dd77b6ea72e4f2f0abfcd1be11a3108c28cb65e6da666c0b77142033f7c
-    # via -r test-requirements.in
 mccabe==0.6.1 \
     --hash=sha256:ab8a6258860da4b6677da4bd2fe5dc2c659cff31b3ee4f7f5d64e79735b80d42 \
     --hash=sha256:dd8d182285a0fe56bace7f45b5e7d1a6ebcbf524e8f3bd87eb0f125271b8831f
@@ -188,7 +162,6 @@ mypy-extensions==0.4.3 \
     # via
     #   black
     #   mypy
-    #   typing-inspect
 nodeenv==1.6.0 \
     --hash=sha256:3ef13ff90291ba2a4a7a4ff9a979b63ffdd00a464dbe04acf0ea6471517a4c2b \
     --hash=sha256:621e6b7076565ddcacd2db0294c0381e01fd28945ab36bcf00f41c5daf63bef7
@@ -284,9 +257,7 @@ pyyaml==6.0 \
     --hash=sha256:daf496c58a8c52083df09b80c860005194014c3698698d1a57cbcfa182142a3a \
     --hash=sha256:e61ceaab6f49fb8bdfaa0f92c4b57bcfbea54c09277b1b4f7ac376bfb7a7c174 \
     --hash=sha256:f84fbc98b019fef2ee9a1cb3ce93e3187a6df0b2538a651bfb890254ba9f90b5
-    # via
-    #   libcst
-    #   pre-commit
+    # via pre-commit
 rerun==1.0.30 \
     --hash=sha256:33bf86cb3d9dcdb51c6a6712b0cefcdebd7cdffce654d6bc9c8d7aae51e500e9
     # via -r test-requirements.in
@@ -316,15 +287,7 @@ tox==3.25.0 \
 typing-extensions==4.2.0 \
     --hash=sha256:6657594ee297170d19f67d55c05852a874e7eb634f4f753dbd667855e07c1708 \
     --hash=sha256:f1c24655a0da0d1b67f07e17a5e6b2a105894e6824b92096378bb3668ef02376
-    # via
-    #   libcst
-    #   mypy
-    #   typing-inspect
-typing-inspect==0.7.1 \
-    --hash=sha256:047d4097d9b17f46531bf6f014356111a1b6fb821a24fe7ac909853ca2a782aa \
-    --hash=sha256:3cd7d4563e997719a710a3bfe7ffb544c6b72069b6812a02e9b414a8fa3aaa6b \
-    --hash=sha256:b1f56c0783ef0f25fb064a01be6e5407e54cf4a4bf4f3ba3fe51e0bd6dcea9e5
-    # via libcst
+    # via mypy
 virtualenv==20.14.1 \
     --hash=sha256:e617f16e25b42eb4f6e74096b9c9e37713cf10bf30168fb4a739f3fa8f898a3a \
     --hash=sha256:ef589a79795589aada0c1c5b319486797c03b67ac3984c48c669c0e4f50df3a5

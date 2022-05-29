@@ -1,10 +1,10 @@
-import os
+from pathlib import Path
 
 from breakfast.main import Application
 from breakfast.source import Source
 
 
-ROOT = os.path.sep.join(os.path.dirname(__file__).split(os.path.sep)[:-1])
+ROOT = str(Path(__file__).parent.parent.resolve())
 
 
 def test_renames_function_from_lines() -> None:
@@ -27,9 +27,9 @@ def test_renames_function_from_lines() -> None:
 
 def test_returns_paths() -> None:
     application = Application(source=Source(("",)), root=ROOT)
-    found = list(
-        "/".join(f.path.split(os.path.sep)[-3:]) for f in application.find_modules()
-    )
+    found = [
+        str(Path(f.path).relative_to(Path(ROOT))) for f in application.find_modules()
+    ]
     assert "tests/data/__init__.py" in found
     assert "tests/data/module1.py" in found
     assert "tests/data/module2.py" in found
@@ -70,8 +70,9 @@ def test_reports_importers() -> None:
     assert found == ["tests.data.module1"]
 
 
-def test_all_imports():
-    with open(os.path.join("tests", "data", "module1.py"), "r") as source_file:
+def test_all_imports() -> None:
+    path = Path("tests") / "data" / "module1.py"
+    with path.open("r", encoding="utf-8") as source_file:
         source = Source(
             lines=tuple(line[:-1] for line in source_file.readlines()),
             module_name="tests.data.module2",
