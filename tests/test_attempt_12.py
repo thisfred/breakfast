@@ -4,7 +4,7 @@ import ast
 from collections import defaultdict
 from contextlib import ExitStack, contextmanager
 from functools import singledispatch
-from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
+from typing import Dict, Iterable, Iterator, List, Optional, Set, Tuple, Union
 
 from breakfast.position import Position
 from breakfast.source import Source
@@ -30,7 +30,7 @@ class Node:
         self.is_class = False
         self.path = path
 
-    def add_occurrence(self, occurrence: Position):
+    def add_occurrence(self, occurrence: Position) -> None:
         self.occurrences.add(occurrence)
 
     def __getitem__(self, name: str) -> "Node":
@@ -103,7 +103,9 @@ class State:
         self.found: Optional[Node] = None
 
     @contextmanager
-    def scope(self, name: str, lookup_scope: bool = False, is_class: bool = False):
+    def scope(
+        self, name: str, lookup_scope: bool = False, is_class: bool = False
+    ) -> Iterator[None]:
         previous_node = self.current_node
         self.current_node = self.current_node[name]
         self.current_node.is_class = is_class
@@ -117,7 +119,7 @@ class State:
             self.lookup_scopes.pop()
 
     @contextmanager
-    def jump_to_scope(self, path: QualifiedName):
+    def jump_to_scope(self, path: QualifiedName) -> Iterator[None]:
         previous_node = self.current_node
         previous_path = self.current_path
         self.current_node = self.root
@@ -129,7 +131,7 @@ class State:
         self.current_node = previous_node
         self.current_path = previous_path
 
-    def check_found(self, position: Position):
+    def check_found(self, position: Position) -> None:
         if position == self.position:
             self.found = self.current_node
 
@@ -171,7 +173,7 @@ class State:
 
 
 def node_position(
-    node: ast.AST, source: Source, row_offset=0, column_offset=0
+    node: ast.AST, source: Source, row_offset: int = 0, column_offset: int = 0
 ) -> Position:
     return source.position(
         row=(node.lineno - 1) + row_offset, column=node.col_offset + column_offset
@@ -286,7 +288,7 @@ def _handle_imports(
     state: State,
     start: Position,
     current_path: QualifiedName,
-):
+) -> None:
     for alias in node.names:
         name = alias.name
         position = source.find_after(name, start)
@@ -449,7 +451,7 @@ def visit_comp(
     node: Union[ast.DictComp, ast.ListComp, ast.SetComp, ast.GeneratorExp],
     source: Source,
     state: State,
-    *sub_nodes,
+    *sub_nodes: ast.AST,
 ) -> None:
     position = node_position(node, source)
     name = f"{type(node)}-{position.row},{position.column}"
@@ -521,7 +523,7 @@ def all_occurrence_positions(
     return []
 
 
-def test_distinguishes_local_variables_from_global():
+def test_distinguishes_local_variables_from_global() -> None:
     source = make_source(
         """
         def fun():
@@ -544,7 +546,7 @@ def test_distinguishes_local_variables_from_global():
     ]
 
 
-def test_finds_non_local_variable():
+def test_finds_non_local_variable() -> None:
     source = make_source(
         """
     old = 12
@@ -566,7 +568,7 @@ def test_finds_non_local_variable():
     ]
 
 
-def test_does_not_rename_random_attributes():
+def test_does_not_rename_random_attributes() -> None:
     source = make_source(
         """
         import os
@@ -580,7 +582,7 @@ def test_does_not_rename_random_attributes():
     assert all_occurrence_positions(position) == [source.position(row=3, column=0)]
 
 
-def test_finds_parameter():
+def test_finds_parameter() -> None:
     source = make_source(
         """
         def fun(old=1):
@@ -598,7 +600,7 @@ def test_finds_parameter():
     ]
 
 
-def test_finds_function():
+def test_finds_function() -> None:
     source = make_source(
         """
         def fun_old():
@@ -612,7 +614,7 @@ def test_finds_function():
     )
 
 
-def test_finds_class():
+def test_finds_class() -> None:
     source = make_source(
         """
         class OldClass:
@@ -627,7 +629,7 @@ def test_finds_class():
     )
 
 
-def test_finds_method_name():
+def test_finds_method_name() -> None:
     source = make_source(
         """
         class A:
@@ -647,7 +649,7 @@ def test_finds_method_name():
     ]
 
 
-def test_finds_passed_argument():
+def test_finds_passed_argument() -> None:
     source = make_source(
         """
         old = 2
@@ -662,7 +664,7 @@ def test_finds_passed_argument():
     )
 
 
-def test_finds_parameter_with_unusual_indentation():
+def test_finds_parameter_with_unusual_indentation() -> None:
     source = make_source(
         """
         def fun(arg, arg2):
@@ -681,7 +683,7 @@ def test_finds_parameter_with_unusual_indentation():
     ] == all_occurrence_positions(source.position(1, 8))
 
 
-def test_does_not_find_method_of_unrelated_class():
+def test_does_not_find_method_of_unrelated_class() -> None:
     source = make_source(
         """
         class ClassThatShouldHaveMethodRenamed:
@@ -718,7 +720,7 @@ def test_does_not_find_method_of_unrelated_class():
     ] == occurrences
 
 
-def test_finds_definition_from_call():
+def test_finds_definition_from_call() -> None:
     source = make_source(
         """
         def old():
@@ -734,7 +736,7 @@ def test_finds_definition_from_call():
     )
 
 
-def test_finds_attribute_assignments():
+def test_finds_attribute_assignments() -> None:
     source = make_source(
         """
         class ClassName:
@@ -751,7 +753,7 @@ def test_finds_attribute_assignments():
     assert [source.position(4, 13), source.position(7, 20)] == occurrences
 
 
-def test_finds_dict_comprehension_variables():
+def test_finds_dict_comprehension_variables() -> None:
     source = make_source(
         """
         old = 1
@@ -769,7 +771,7 @@ def test_finds_dict_comprehension_variables():
     ]
 
 
-def test_finds_list_comprehension_variables():
+def test_finds_list_comprehension_variables() -> None:
     source = make_source(
         """
         old = 100
@@ -822,7 +824,7 @@ def test_finds_generator_comprehension_variables() -> None:
     ]
 
 
-def test_finds_loop_variables():
+def test_finds_loop_variables() -> None:
     source = make_source(
         """
         old = None
@@ -843,7 +845,7 @@ def test_finds_loop_variables():
     ]
 
 
-def test_finds_tuple_unpack():
+def test_finds_tuple_unpack() -> None:
     source = make_source(
         """
     foo, old = 1, 2
@@ -859,7 +861,7 @@ def test_finds_tuple_unpack():
     ]
 
 
-def test_finds_superclasses():
+def test_finds_superclasses() -> None:
     source = make_source(
         """
         class A:
@@ -884,7 +886,7 @@ def test_finds_superclasses():
     ]
 
 
-def test_recognizes_multiple_assignments():
+def test_recognizes_multiple_assignments() -> None:
     source = make_source(
         """
     class A:
@@ -909,7 +911,7 @@ def test_recognizes_multiple_assignments():
     ]
 
 
-def test_finds_enclosing_scope_variable_from_comprehension():
+def test_finds_enclosing_scope_variable_from_comprehension() -> None:
     source = make_source(
         """
     old = 3
@@ -925,7 +927,7 @@ def test_finds_enclosing_scope_variable_from_comprehension():
     ]
 
 
-def test_finds_static_method():
+def test_finds_static_method() -> None:
     source = make_source(
         """
         class A:
@@ -947,7 +949,7 @@ def test_finds_static_method():
     ]
 
 
-def test_finds_method_after_call():
+def test_finds_method_after_call() -> None:
     source = make_source(
         """
         class A:
@@ -967,7 +969,7 @@ def test_finds_method_after_call():
     ]
 
 
-def test_finds_argument():
+def test_finds_argument() -> None:
     source = make_source(
         """
         class A:
@@ -990,7 +992,7 @@ def test_finds_argument():
     ]
 
 
-def test_finds_method_but_not_function():
+def test_finds_method_but_not_function() -> None:
     source = make_source(
         """
         class A:
@@ -1016,7 +1018,7 @@ def test_finds_method_but_not_function():
     ]
 
 
-def test_finds_global_variable_in_method_scope():
+def test_finds_global_variable_in_method_scope() -> None:
     source = make_source(
         """
     b = 12
@@ -1036,7 +1038,7 @@ def test_finds_global_variable_in_method_scope():
     ]
 
 
-def test_treats_staticmethod_args_correctly():
+def test_treats_staticmethod_args_correctly() -> None:
     source = make_source(
         """
     class ClassName:
@@ -1054,7 +1056,7 @@ def test_treats_staticmethod_args_correctly():
     assert all_occurrence_positions(position) == [Position(source, 3, 8)]
 
 
-def test_finds_global_variable():
+def test_finds_global_variable() -> None:
     source = make_source(
         """
     b = 12
@@ -1074,7 +1076,7 @@ def test_finds_global_variable():
     ]
 
 
-def test_finds_nonlocal_variable():
+def test_finds_nonlocal_variable() -> None:
     source = make_source(
         """
     b = 12
@@ -1102,7 +1104,7 @@ def test_finds_nonlocal_variable():
     ]
 
 
-def test_finds_multiple_definitions():
+def test_finds_multiple_definitions() -> None:
     source = make_source(
         """
     a = 12
@@ -1121,7 +1123,7 @@ def test_finds_multiple_definitions():
     ]
 
 
-def test_finds_method_in_super_call():
+def test_finds_method_in_super_call() -> None:
     source = make_source(
         """
     class Foo:
@@ -1146,7 +1148,7 @@ def test_finds_method_in_super_call():
     ]
 
 
-def test_finds_imports():
+def test_finds_imports() -> None:
     source = make_source(
         """
         from a import b
@@ -1167,7 +1169,7 @@ def test_finds_imports():
     ]
 
 
-def test_does_not_rename_imported_names():
+def test_does_not_rename_imported_names() -> None:
     source = make_source(
         """
         from a import b
@@ -1188,7 +1190,7 @@ def test_does_not_rename_imported_names():
     ]
 
 
-def test_finds_across_files():
+def test_finds_across_files() -> None:
     source1 = make_source(
         """
         def old():
@@ -1211,7 +1213,7 @@ def test_finds_across_files():
     ]
 
 
-def test_finds_namespace_imports():
+def test_finds_namespace_imports() -> None:
     source1 = make_source(
         """
         def old():
@@ -1233,7 +1235,7 @@ def test_finds_namespace_imports():
     ]
 
 
-def test_finds_imports_with_paths():
+def test_finds_imports_with_paths() -> None:
     source1 = make_source(
         """
         def old():
