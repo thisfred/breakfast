@@ -1,463 +1,521 @@
 import ast
 
 from collections import defaultdict
-from contextlib import contextmanager
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    DefaultDict,
-    Dict,
-    Iterable,
-    Iterator,
-    List,
-    Optional,
-    Set,
-    Tuple,
-    Union,
-)
+from contextlib import ExitStack, contextmanager
+from functools import singledispatch
+from typing import Dict, Iterator, List, Optional, Set, Tuple, Union
 
 from breakfast.position import Position
+from breakfast.source import Source
 
 
-if TYPE_CHECKING:
-    from breakfast.source import Source
+QualifiedName = Tuple[str, ...]
 
 
-class Collector:  # pylint: disable=too-many-instance-attributes
-    def __init__(self) -> None:
-        self.in_method = False
-        self._definitions: DefaultDict[Tuple[str, ...], List[Position]] = defaultdict(
-            list
-        )
-        self._occurrences: DefaultDict[Tuple[str, ...], List[Position]] = defaultdict(
-            list
-        )
-        self._class_aliases: Dict[Tuple[str, ...], Tuple[str, ...]] = {}
-        self._current_namespace: Tuple[str, ...] = tuple()
-        self._aliases: Dict[Tuple[str, ...], Tuple[str, ...]] = {}
-        self._classes: Set[Tuple[str, ...]] = set()
-        self._superclasses: DefaultDict[
-            Tuple[str, ...], List[Tuple[str, ...]]
-        ] = defaultdict(list)
-        self._imports: Dict[Tuple[str, ...], Tuple[str, ...]] = {}
-        self._scopes: Set[Tuple[str, ...]] = set()
-        self._method_scopes: Set[Tuple[str, ...]] = set()
-        self._in_class: bool = False
-        self._rewrites: Dict[Tuple[str, ...], Tuple[str, ...]] = {}
+class TreeTraversalError(RuntimeError):
+    pass
 
-    @contextmanager
-    def namespaces(self, names: Iterable[str]) -> Iterator[None]:
-        for name in names:
-            self._enter_namespace(name)
-        yield
-        for _ in names:
-            self._leave_namespace()
 
-    @contextmanager
-    def enter_class(self, name: str) -> Iterator[None]:
-        old = self._in_class
-        self._in_class = True
-        with self.namespace(name):
-            yield
-        self._in_class = old
+class AliasError(RuntimeError):
+    pass
 
-    @contextmanager
-    def enter_function(self, name: str) -> Iterator[None]:
-        old_in_method = self.in_method
-        self.in_method = self._in_class
-        self.add_scope(name, self.in_method)
-        with self.namespace(name):
-            old_in_class = self._in_class
-            self._in_class = False
-            yield
-        self._in_class = old_in_class
-        self.in_method = old_in_method
 
-    @contextmanager
-    def namespace(self, name: str) -> Iterator[None]:
-        self._enter_namespace(name)
-        yield
-        self._leave_namespace()
+class Node:
+    def __init__(self, parent: Optional["Node"], path: QualifiedName = ()):
+        self.parent = parent
+        self.children: Dict[str, "Node"] = defaultdict(lambda: Node(parent=self))
+        self.occurrences: Set[Position] = set()
+        self.is_class = False
+        self.path = path
 
-    def get_positions(self, position: Position) -> List[Position]:
-        self._post_process()
-        for name, positions in self._occurrences.items():
-            if name in self._definitions and any(position == p for p in positions):
-                return sorted(positions)
-        return []
+    def add_occurrence(self, occurrence: Position) -> None:
+        self.occurrences.add(occurrence)
 
-    def add_global(self, name: str) -> None:
-        full_name = self.get_namespaced(name)
-        self._rewrites[full_name] = full_name[:1] + full_name[-1:]
+    def __getitem__(self, name: str) -> "Node":
+        node = self.children[name]
 
-    def add_nonlocal(self, name: str) -> None:
-        full_name = self.get_namespaced(name)
-        self._rewrites[full_name] = full_name[:-2] + full_name[-1:]
+        if not node.path:
+            node.path = self.path + (name,)
 
-    def add_scope(self, name: str, is_method: bool = False) -> None:
-        if is_method:
-            self._method_scopes.add(self.get_namespaced(name))
+        return node
+
+    def __contains__(self, name: str) -> bool:
+        return name in self.children
+
+    def alias_namespace(self, other: "Node") -> None:
+        if "." in other and "." not in self:
+            self.children["."] = other["."]
+        elif "." in self and "." not in other:
+            other.children["."] = self.children["."]
         else:
-            self._scopes.add(self.get_namespaced(name))
+            self.children["."] = other["."]
 
-    def add_definition(self, name: str, position: Position) -> None:
-        full_name = self.get_namespaced(name)
-        self._definitions[full_name].append(position)
-        self._add_namespaced_occurrence(full_name, position)
+    def alias(self, other: "Node") -> None:
+        for name, value in other.children.items():
+            if name not in self.children:
+                self.children[name] = value
 
-    def add_occurrence(self, name: str, position: Position) -> None:
-        full_name = self.get_namespaced(name)
-        self._add_namespaced_occurrence(full_name, position)
+        for name, value in self.children.items():
+            if name not in other.children:
+                other.children[name] = value
 
-    def get_namespaced(self, name: str) -> Tuple[str, ...]:
-        return self._current_namespace + (name,)
+        other.children = self.children
+        self.occurrences |= other.occurrences
+        other.occurrences = self.occurrences
 
-    def add_alias(self, alias: str, name: str) -> None:
-        self._aliases[self.get_namespaced(name)] = self.get_namespaced(alias)
+    def flatten(
+        self,
+        prefix: QualifiedName = tuple(),
+        seen: Optional[Set[Position]] = None,
+    ) -> Dict[QualifiedName, List[Tuple[int, int]]]:
+        if not seen:
+            seen = set()
 
-    def add_superclass(self, subclass: str, superclass: str) -> None:
-        namespaced_superclass = self.get_namespaced(superclass)
-        if namespaced_superclass in self._imports:
-            namespaced_superclass = self._imports[namespaced_superclass]
-        self._superclasses[self.get_namespaced(subclass)].append(namespaced_superclass)
+        result = {}
+        next_values = []
+        for key, value in self.children.items():
+            new_prefix = prefix + (key,)
+            if value.occurrences:
+                occurrence = next(iter(value.occurrences))
+                if occurrence in seen:
+                    continue
 
-    def add_class_alias(self, alias: str) -> None:
-        full_name = self.get_namespaced(alias)
-        self._class_aliases[full_name] = full_name[:-2]
+                positions = [(o.row, o.column) for o in value.occurrences]
+                result[new_prefix] = positions
+                seen |= value.occurrences
+            next_values.append((new_prefix, value))
 
-    def add_import(self, name: str, full_name: Tuple[str, ...]) -> None:
-        self._imports[self.get_namespaced(name)] = full_name
+        for new_prefix, value in next_values:
+            result.update(value.flatten(prefix=new_prefix, seen=seen))
 
-    def add_class(self, name: str) -> None:
-        self._classes.add(self.get_namespaced(name))
+        return result
 
-    def _post_process(self) -> None:
-        self._rewrite_self()
-        for name in self._occurrences.copy():
-            if name in self._rewrites:
-                new_name = self._rewrites[name]
-                self._occurrences[new_name] += self._occurrences[name]
-                del self._occurrences[name]
-                continue
 
-            if name not in self._definitions:
-                rewritten = self._rewrite(name)
-                if rewritten in self._definitions:
-                    self._occurrences[rewritten] += self._occurrences[name]
+class State:
+    def __init__(self, position: Position):
+        self.position = position
+        self.root = Node(parent=None)
+        self.current_node = self.root
+        self.current_path: QualifiedName = tuple()
+        self.lookup_scopes = [self.root]
+        self.found: Optional[Node] = None
+
+    @contextmanager
+    def scope(
+        self, name: str, lookup_scope: bool = False, is_class: bool = False
+    ) -> Iterator[None]:
+        previous_node = self.current_node
+        self.current_node = self.current_node[name]
+        self.current_node.is_class = is_class
+        if lookup_scope:
+            self.lookup_scopes.append(self.current_node)
+        self.current_path += (name,)
+        yield
+        self.current_node = previous_node
+        self.current_path = self.current_path[:-1]
+        if lookup_scope:
+            self.lookup_scopes.pop()
+
+    @contextmanager
+    def jump_to_scope(self, path: QualifiedName) -> Iterator[None]:
+        previous_node = self.current_node
+        previous_path = self.current_path
+        self.current_node = self.root
+        self.current_path = ()
+        for name in path:
+            self.current_node = self.current_node[name]
+            self.current_path += (name,)
+        yield
+        self.current_node = previous_node
+        self.current_path = previous_path
+
+    def check_found(self, position: Position) -> None:
+        if position == self.position:
+            self.found = self.current_node
+
+    def add_occurrence(self, position: Position) -> None:
+        self.current_node.add_occurrence(position)
+        self.check_found(position)
+
+    def follow_path(self, path: QualifiedName) -> Node:
+        other_node = self.current_node
+        other_path = self.current_path
+
+        for name in path:
+            if name == "/":
+                other_path = ()
+                other_node = self.root
+            elif name == "~":
+                other_path = self.current_path[:2]
+                for _ in range(len(self.current_path) - 2):
+                    if other_node.parent:
+                        other_node = other_node.parent
+                    else:
+                        raise TreeTraversalError()
+
+            elif name == "..":
+                other_path = other_path[:-1]
+                if other_node.parent:
+                    other_node = other_node.parent
                 else:
-                    definition = self._get_from_outer_scope(name)
-                    if definition and definition in self._definitions:
-                        self._occurrences[definition] += self._occurrences[name]
-                del self._occurrences[name]
+                    raise TreeTraversalError()
 
-    def _get_from_outer_scope(self, name: Tuple[str, ...]) -> Optional[Tuple[str, ...]]:
-        for scope in self._scopes:
-            if is_prefix(scope, name):
-                return scope[:-1] + name[len(scope) :]
-
-        for scope in self._method_scopes:
-            if is_prefix(scope, name):
-                return scope[:-2] + name[len(scope) :]
-
-        return None
-
-    def _enter_namespace(self, name: str) -> None:
-        self._current_namespace = self.get_namespaced(name)
-
-    def _leave_namespace(self) -> None:
-        self._current_namespace = self._current_namespace[:-1]
-
-    def _add_namespaced_occurrence(
-        self, full_name: Tuple[str, ...], position: Position
-    ) -> None:
-        self._occurrences[full_name].append(position)
-
-    def _rewrite(self, full_name: Tuple[str, ...]) -> Tuple[str, ...]:
-        if full_name in self._imports:
-            return self._imports[full_name]
-
-        prefix = full_name[:-1]
-        while prefix in self._aliases:
-            full_name = self._aliases[prefix] + full_name[-1:]
-            prefix = full_name[:-1]
-
-        if full_name not in self._definitions and full_name[:-1] in self._classes:
-            inherited = self._get_inherited_definition(full_name)
-            if inherited:
-                return inherited
-
-        return full_name
-
-    def _rewrite_self(self) -> None:
-        for name in self._occurrences.copy():
-            for alias, value in self._class_aliases.items():
-                if is_prefix(alias, name):
-                    new_name = value + name[len(alias) :]
-                    self._occurrences[new_name].extend(self._occurrences[name])
-                    del self._occurrences[name]
-                    if name in self._definitions:
-                        self._definitions[new_name].extend(self._definitions[name])
-                        del self._definitions[name]
-
-    def _get_inherited_definition(
-        self, full_name: Tuple[str, ...]
-    ) -> Optional[Tuple[str, ...]]:
-        cls = full_name[:-1]
-        if cls not in self._superclasses:
-            return None
-
-        supers = self._superclasses[cls]
-        seen: Set[Tuple[str, ...]] = set()
-        name = full_name[-1]
-        while supers:
-            cls = supers[0]
-            supers = supers[1:]
-            if cls in seen:
-                continue
-
-            seen.add(cls)
-            supername = cls + (name,)
-            if supername in self._definitions:
-                return supername
-
-            if cls not in self._superclasses:
-                continue
-
-            new_supers = self._superclasses[cls]
-            supers.extend(new_supers)
-
-        return None
-
-
-class Names(ast.NodeVisitor):
-    def __init__(self, source: "Source") -> None:
-        self.current_source = source
-        self.collector = Collector()
-
-    def visit_source(self, source: "Source") -> None:
-        self.current_source = source
-        parsed = self.current_source.get_ast()
-        self.visit(parsed)
-
-    def get_occurrences(self, _: Any, position: Position) -> List[Position]:
-        return self.collector.get_positions(position)
-
-    def visit_Module(self, node: ast.Module) -> None:  # pylint: disable=invalid-name
-        with self.collector.namespace(self.current_source.module_name):
-            self.generic_visit(node)
-
-    def visit_Name(self, node: ast.Name) -> None:  # pylint: disable=invalid-name
-        if self._is_definition(node):
-            action = self.collector.add_definition
-        else:
-            action = self.collector.add_occurrence
-        position = self._position_from_node(node)
-        name = node.id
-        action(name, position=position)
-
-    def visit_ClassDef(  # pylint: disable=invalid-name
-        self, node: ast.ClassDef
-    ) -> None:
-        position = self._position_from_node(
-            node=node, row_offset=len(node.decorator_list), column_offset=len("class ")
-        )
-        self.collector.add_class(node.name)
-        self.collector.add_definition(name=node.name, position=position)
-        for base in node.bases:
-            if isinstance(base, ast.Name):
-                self.collector.add_superclass(node.name, base.id)
-            self.visit(base)
-        with self.collector.enter_class(node.name):
-            for statement in node.body:
-                self.visit(statement)
-
-    def visit_FunctionDef(  # pylint: disable=invalid-name
-        self, node: ast.FunctionDef
-    ) -> None:
-        position = self._position_from_node(
-            node=node, row_offset=len(node.decorator_list), column_offset=len("def ")
-        )
-        self.collector.add_definition(name=node.name, position=position)
-        is_static = is_staticmethod(node)
-        with self.collector.enter_function(node.name):
-            for i, arg in enumerate(node.args.args):
-                if i == 0 and self.collector.in_method and not is_static:
-                    # this is 'self' in a method definition
-                    self._add_self(arg)
-                self._add_parameter(arg)
-            self.generic_visit(node)
-
-    def visit_Call(self, node: ast.Call) -> None:  # pylint: disable=invalid-name
-        start = self._position_from_node(node)
-        self.visit(node.func)
-        names = self._names_from(node.func)
-        with self.collector.namespaces(names):
-            if self.current_source:
-                for keyword in node.keywords:
-                    if not keyword.arg or not start:
-                        continue
-                    position = self.current_source.find_after(keyword.arg, start)
-                    self.collector.add_occurrence(name=keyword.arg, position=position)
-        for arg in node.args:
-            self.visit(arg)
-        for keyword in node.keywords:
-            self.visit(keyword.value)
-
-    def visit_Import(self, node: ast.Import) -> None:  # pylint: disable=invalid-name
-        start = self._position_from_node(node)
-        for alias in node.names:
-            name = alias.name
-            position = self.current_source.find_after(name, start)
-            self.collector.add_occurrence(name, position)
-
-    def visit_ImportFrom(  # pylint: disable=invalid-name
-        self, node: ast.ImportFrom
-    ) -> None:
-        start = self._position_from_node(node)
-        for imported in node.names:
-            name = imported.name
-            alias = imported.asname
-            full_name: Tuple[str, ...] = tuple(name)
-            if node.module:
-                full_name = (node.module, name)
-            self.collector.add_import(alias or name, full_name)
-            position = self.current_source.find_after(name, start)
-            self.collector.add_occurrence(name, position)
-            if alias:
-                position = self.current_source.find_after(alias, start)
-                self.collector.add_definition(alias, position)
-
-    def visit_Attribute(  # pylint: disable=invalid-name
-        self, node: ast.Attribute
-    ) -> None:
-        start = self._position_from_node(node)
-        self.visit(node.value)
-        names = self._names_from(node.value)
-        with self.collector.namespaces(names):
-            name = node.attr
-            position = self.current_source.find_after(name, start)
-            if self._is_definition(node):
-                self.collector.add_definition(name, position)
             else:
-                self.collector.add_occurrence(name, position)
+                other_path += (name,)
+                other_node = other_node[name]
+        return other_node
 
-    def visit_Assign(self, node: ast.Assign) -> None:  # pylint: disable=invalid-name
-        target_names = self._get_names(node.targets[0])
-        value_names = self._get_names(node.value)
-        self.generic_visit(node)
-        for target, value in zip(target_names, value_names):
-            if target and value:
-                self.collector.add_alias(value, target)
-
-    def visit_DictComp(  # pylint: disable=invalid-name
-        self, node: ast.DictComp
-    ) -> None:
-        self._comp_visit(node, node.key, node.value)
-
-    def visit_SetComp(self, node: ast.SetComp) -> None:  # pylint: disable=invalid-name
-        self._comp_visit(node, node.elt)
-
-    def visit_ListComp(  # pylint: disable=invalid-name
-        self, node: ast.ListComp
-    ) -> None:
-        self._comp_visit(node, node.elt)
-
-    def visit_Global(self, node: ast.Global) -> None:  # pylint: disable=invalid-name
-        start = self._position_from_node(node)
-        for name in node.names:
-            position = self.current_source.find_after(name, start)
-            self.collector.add_occurrence(name, position)
-            self.collector.add_global(name)
-
-        self.generic_visit(node)
-
-    def visit_Nonlocal(  # pylint: disable=invalid-name
-        self, node: ast.Nonlocal
-    ) -> None:
-        start = self._position_from_node(node)
-        for name in node.names:
-            position = self.current_source.find_after(name, start)
-            self.collector.add_occurrence(name, position)
-            self.collector.add_nonlocal(name)
-
-    def _comp_visit(
-        self, node: Union[ast.DictComp, ast.SetComp, ast.ListComp], *rest: ast.AST
-    ) -> None:
-        position = self._position_from_node(node)
-        # The dashes make sure it can never clash with an actual Python name.
-        name = "comprehension-%s-%s" % (position.row, position.column)
-        # ns = self.current.add_namespace(
-        #     name, inherit_namespace_from=self.current)
-        self.collector.add_scope(name)
-        with self.collector.namespace(name):
-            # visit the generators *before* the expression that uses the
-            # generated values, to make sure the generator expression is
-            # defined before use.
-            for generator in node.generators:
-                self.visit(generator)
-            for sub_node in rest:
-                self.visit(sub_node)
-
-    def _add_self(self, arg: ast.arg) -> None:
-        alias = arg.arg
-        self.collector.add_class_alias(alias)
-
-    def _add_parameter(self, arg: ast.arg) -> None:
-        position = self._position_from_node(arg)
-        self.collector.add_definition(name=arg.arg, position=position)
-
-    def _names_from(self, node: ast.AST) -> Tuple[str, ...]:
-        if isinstance(node, ast.Name):
-            return (node.id,)
-
-        if isinstance(node, ast.Attribute):
-            return self._names_from(node.value) + (node.attr,)
-
-        if isinstance(node, ast.Subscript):
-            return self._names_from(node.value)
-
-        return tuple()
-
-    def _position_from_node(
-        self, node: ast.AST, row_offset: int = 0, column_offset: int = 0
-    ) -> Position:
-        return Position(
-            source=self.current_source,
-            row=(node.lineno - 1) + row_offset,
-            column=node.col_offset + column_offset,
-        )
-
-    @staticmethod
-    def _is_definition(node: Union[ast.Name, ast.Attribute]) -> bool:
-        return isinstance(node.ctx, (ast.Param, ast.Store))
-
-    def _get_names(self, value: ast.AST) -> List[Optional[str]]:
-        if isinstance(value, ast.Tuple):
-            return [self._get_value_name(v) for v in value.elts]
-
-        return [self._get_value_name(value)]
-
-    def _get_value_name(self, value: ast.AST) -> Optional[str]:
-        if isinstance(value, ast.Attribute):
-            return value.attr
-
-        if isinstance(value, ast.Name):
-            return value.id
-
-        if isinstance(value, ast.Call):
-            return self._get_value_name(value.func)
-
-        return None
+    def alias(self, path: QualifiedName) -> None:
+        other_node = self.follow_path(path)
+        self.current_node.alias(other_node)
 
 
-def is_staticmethod(node: ast.FunctionDef) -> bool:
+def node_position(
+    node: ast.AST, source: Source, row_offset: int = 0, column_offset: int = 0
+) -> Position:
+    return source.position(
+        row=(node.lineno - 1) + row_offset, column=node.col_offset + column_offset
+    )
+
+
+def generic_visit(node: ast.AST, source: Source, state: State) -> None:
+    """Called if no explicit visitor function exists for a node.
+
+    Adapted from NodeVisitor in:
+
+    https://github.com/python/cpython/blob/master/Lib/ast.py
+    """
+    for _, value in ast.iter_fields(node):
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, ast.AST):
+                    visit(item, source, state)
+        elif isinstance(value, ast.AST):
+            visit(value, source, state)
+
+
+@singledispatch
+def visit(node: ast.AST, source: Source, state: State) -> None:
+    generic_visit(node, source, state)
+
+
+@visit.register
+def visit_module(node: ast.Module, source: Source, state: State) -> None:
+    with ExitStack() as stack:
+        for name in source.module_name.split("."):
+            stack.enter_context(state.scope(name))
+            stack.enter_context(state.scope(".", lookup_scope=True))
+        generic_visit(node, source, state)
+
+
+@visit.register
+def visit_name(node: ast.Name, source: Source, state: State) -> None:
+    position = node_position(node, source)
+    if isinstance(node.ctx, ast.Store):
+        with state.scope(node.id):
+            state.add_occurrence(position)
+    else:
+        if node.id not in state.current_node:
+            for scope in state.lookup_scopes[::-1]:
+                if node.id in scope or scope is state.root:
+                    position = node_position(node, source)
+                    with state.scope(node.id):
+                        scope[node.id].add_occurrence(position)
+                    state.check_found(position)
+                    break
+        else:
+            with state.scope(node.id):
+                state.add_occurrence(node_position(node, source))
+
+
+def get_names(value: ast.AST) -> List[QualifiedName]:
+    match value:
+        case ast.Tuple(elts=elements):
+            return [
+                i
+                for e in elements
+                for i in get_names(e)  # pylint: disable=not-an-iterable
+            ]
+        case other:
+            return [qualified_name_for(other)]
+
+
+def qualified_name_for(node: ast.AST) -> QualifiedName:
+    match node:
+        case ast.Name(id=name):
+            return (name,)
+        case ast.Attribute(value=value, attr=attr):
+            return qualified_name_for(value) + (attr,)
+        case ast.Name(id=name):
+            return (name,)
+        case ast.Call(func=function):
+            return qualified_name_for(function) + ("()",)
+        case _:
+            return ()
+
+
+@visit.register
+def visit_import(node: ast.Import, source: Source, state: State) -> None:
+    start = node_position(node, source)
+
+    current_path = ("/",) + state.current_path
+    with state.jump_to_scope(()):
+        _handle_imports(node, source, state, start, current_path)
+
+
+@visit.register
+def visit_import_from(node: ast.ImportFrom, source: Source, state: State) -> None:
+    start = node_position(node, source, column_offset=len("from "))
+    assert isinstance(node.module, str)
+
+    current_path = ("/",) + state.current_path
+    node_module_path: QualifiedName = tuple()
+    for name in node.module.split("."):
+        node_module_path += (name, ".")
+    node_module_path = node_module_path[:-1]
+
+    with state.jump_to_scope(node_module_path):
+        state.add_occurrence(start)
+        with state.scope("."):
+            _handle_imports(node, source, state, start, current_path)
+
+
+def _handle_imports(
+    node: Union[ast.Import, ast.ImportFrom],
+    source: Source,
+    state: State,
+    start: Position,
+    current_path: QualifiedName,
+) -> None:
+    for alias in node.names:
+        name = alias.name
+        position = source.find_after(name, start)
+        with state.scope(name):
+            state.add_occurrence(position)
+            path = current_path + (name,)
+            state.alias(path)
+
+
+@visit.register
+def visit_assign(node: ast.Assign, source: Source, state: State) -> None:
+
+    for node_target in node.targets:
+        visit(node_target, source, state)
+    visit(node.value, source, state)
+
+    target_names = get_names(node.targets[0])
+    value_names = get_names(node.value)
+    for target, value in zip(target_names, value_names):
+
+        if target and value:
+            path: QualifiedName = ()
+            with ExitStack() as stack:
+                for name in target[:-1]:
+                    stack.enter_context(state.scope(name))
+                    stack.enter_context(state.scope("."))
+                    path += ("..",)
+                stack.enter_context(state.scope(target[-1]))
+                path += ("..",)
+
+                other_node = state.follow_path(path + value)
+                state.current_node.alias_namespace(other_node)
+
+
+def is_static_method(node: ast.FunctionDef) -> bool:
     return any(
         n.id == "staticmethod" for n in node.decorator_list if isinstance(n, ast.Name)
     )
 
 
-def is_prefix(prefix: Tuple[str, ...], full_name: Tuple[str, ...]) -> bool:
-    if len(full_name) <= len(prefix):
-        return False
+@visit.register
+def visit_function_definition(
+    node: ast.FunctionDef, source: Source, state: State
+) -> None:
+    is_method = state.lookup_scopes[-1] and state.lookup_scopes[-1].is_class
+    position = node_position(node, source, column_offset=len("def "))
 
-    return full_name[: len(prefix)] == prefix
+    with state.scope(node.name):
+        state.add_occurrence(position)
+
+        with state.scope("()"):
+            for i, arg in enumerate(node.args.args):
+                position = node_position(arg, source)
+
+                with state.scope(arg.arg):
+                    state.add_occurrence(position)
+                    if i == 0 and is_method and not is_static_method(node):
+                        other_node = state.follow_path(("..", "..", "..", ".."))
+                        state.current_node.alias_namespace(other_node)
+
+            generic_visit(node, source, state)
+
+
+@visit.register
+def visit_class(node: ast.ClassDef, source: Source, state: State) -> None:
+    position = node_position(node, source, column_offset=len("class "))
+
+    for base in node.bases:
+        visit(base, source, state)
+        if isinstance(base, ast.Name):
+            with state.scope(base.id):
+                with state.scope("()"):
+                    other_node = state.follow_path(("..", "..", node.name, "()"))
+                    state.current_node.alias_namespace(other_node)
+
+    with state.scope(node.name, lookup_scope=True, is_class=True):
+        state.add_occurrence(position)
+
+        with state.scope("()"):
+            other_node = state.follow_path(("..",))
+            state.current_node.alias_namespace(other_node)
+
+            with state.scope("."):
+                for statement in node.body:
+                    visit(statement, source, state)
+
+
+@visit.register
+def visit_call(node: ast.Call, source: Source, state: State) -> None:
+    call_position = node_position(node, source)
+
+    for arg in node.args:
+        visit(arg, source, state)
+
+    names = names_from(node.func)
+
+    visit(node.func, source, state)
+    position = node_position(node, source)
+    lookup_scope = state.lookup_scopes[-1]
+    if names == ("super",) and lookup_scope:
+        with state.scope("super"):
+            with state.scope("()"):
+                state.current_node.alias_namespace(lookup_scope["()"])
+    else:
+        with ExitStack() as stack:
+            if names:
+                stack.enter_context(state.scope(names[0]))
+                for name in names[1:]:
+                    stack.enter_context(state.scope(name))
+                stack.enter_context(state.scope("()"))
+
+                for keyword in node.keywords:
+                    if not keyword.arg:
+                        continue
+
+                    position = source.find_after(keyword.arg, call_position)
+                    with state.scope(keyword.arg):
+                        state.add_occurrence(position)
+
+
+@singledispatch
+def names_from(node: ast.AST) -> QualifiedName:  # pylint: disable=unused-argument
+    return ()
+
+
+@names_from.register
+def name_names(node: ast.Name) -> QualifiedName:
+    return (node.id,)
+
+
+@names_from.register
+def attribute_names(node: ast.Attribute) -> QualifiedName:
+    return names_from(node.value) + (".", node.attr)
+
+
+@names_from.register
+def call_names(node: ast.Call) -> QualifiedName:
+    names = names_from(node.func) + ("()",)
+    return names
+
+
+@visit.register
+def visit_attribute(node: ast.Attribute, source: Source, state: State) -> None:
+    visit(node.value, source, state)
+    position = node_position(node, source)
+
+    names = names_from(node.value)
+    with ExitStack() as stack:
+        for name in names:
+            position = source.find_after(name, position)
+            stack.enter_context(state.scope(name))
+
+        stack.enter_context(state.scope("."))
+        position = source.find_after(node.attr, position)
+        stack.enter_context(state.scope(node.attr))
+        state.add_occurrence(position)
+
+
+def visit_comp(
+    node: Union[ast.DictComp, ast.ListComp, ast.SetComp, ast.GeneratorExp],
+    source: Source,
+    state: State,
+    *sub_nodes: ast.AST,
+) -> None:
+    position = node_position(node, source)
+    name = f"{type(node)}-{position.row},{position.column}"
+
+    with state.scope(name):
+
+        for generator in node.generators:
+            visit(generator.target, source, state)
+            visit(generator.iter, source, state)
+            for if_node in generator.ifs:
+                visit(if_node, source, state)
+
+        for sub_node in sub_nodes:
+            visit(sub_node, source, state)
+
+
+@visit.register
+def visit_dict_comp(node: ast.DictComp, source: Source, state: State) -> None:
+    visit_comp(node, source, state, node.key, node.value)
+
+
+@visit.register
+def visit_list_comp(node: ast.ListComp, source: Source, state: State) -> None:
+    visit_comp(node, source, state, node.elt)
+
+
+@visit.register
+def visit_set_comp(node: ast.SetComp, source: Source, state: State) -> None:
+    visit_comp(node, source, state, node.elt)
+
+
+@visit.register
+def visit_generator_exp(node: ast.GeneratorExp, source: Source, state: State) -> None:
+    visit_comp(node, source, state, node.elt)
+
+
+@visit.register
+def visit_global(node: ast.Global, source: Source, state: State) -> None:
+    position = node_position(node, source)
+    for name in node.names:
+        position = source.find_after(name, position)
+        with state.scope(name):
+            state.add_occurrence(position)
+            state.alias(("~", name))
+
+
+@visit.register
+def visit_nonlocal(node: ast.Nonlocal, source: Source, state: State) -> None:
+    position = node_position(node, source)
+    for name in node.names:
+        position = source.find_after(name, position)
+        with state.scope(name):
+            state.add_occurrence(position)
+            state.alias(("..", "..", "..", name))
+
+
+def all_occurrence_positions(
+    position: Position, other_sources: Optional[List[Source]] = None
+) -> List[Position]:
+    source = position.source
+    state = State(position)
+    visit(source.get_ast(), source=source, state=state)
+    for other in other_sources or []:
+        visit(other.get_ast(), source=other, state=state)
+
+    if state.found:
+        return sorted(state.found.occurrences)
+
+    return []

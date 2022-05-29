@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 class Module:
     def __init__(self, path: str, module_path: str, source: Optional["Source"] = None):
         self.path = path
-        self.source = source
+        self.source: Optional[Source] = source
         self.module_path = module_path
 
     def get_imported_modules(self) -> List[str]:

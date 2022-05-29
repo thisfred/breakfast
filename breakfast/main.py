@@ -3,7 +3,7 @@ import os
 from typing import TYPE_CHECKING, Iterator, List, Set
 
 from breakfast.modules import Module
-from breakfast.names import Names
+from breakfast.names import all_occurrence_positions
 from breakfast.position import Position
 
 
@@ -19,13 +19,17 @@ class Application:
     def rename(self, row: int, column: int, new_name: str) -> None:
         position = Position(self._initial_source, row=row, column=column)
         old_name = self._initial_source.get_name_at(position)
-        visitor = Names(self._initial_source)
-        visitor.visit_source(self._initial_source)
-        for module in self.get_additional_sources():
-            if module.source:
-                visitor.visit_source(module.source)
 
-        for occurrence in reversed(visitor.get_occurrences(old_name, position)):
+        occurrences = all_occurrence_positions(
+            position,
+            [
+                source
+                for module in self.get_additional_sources()
+                if (source := module.source)
+            ],
+        )
+
+        for occurrence in reversed(occurrences):
             occurrence.source.replace(position=occurrence, old=old_name, new=new_name)
 
     @staticmethod
