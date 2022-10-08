@@ -445,7 +445,7 @@ def visit_attribute(node: ast.Attribute, source: Source, state: State) -> None:
         state.add_occurrence(position)
 
 
-def visit_comp(
+def visit_comprehension(
     node: Union[ast.DictComp, ast.ListComp, ast.SetComp, ast.GeneratorExp],
     source: Source,
     state: State,
@@ -467,23 +467,25 @@ def visit_comp(
 
 
 @visit.register
-def visit_dict_comp(node: ast.DictComp, source: Source, state: State) -> None:
-    visit_comp(node, source, state, node.key, node.value)
+def visit_dictionary_comprehension(
+    node: ast.DictComp, source: Source, state: State
+) -> None:
+    visit_comprehension(node, source, state, node.key, node.value)
 
 
 @visit.register
-def visit_list_comp(node: ast.ListComp, source: Source, state: State) -> None:
-    visit_comp(node, source, state, node.elt)
+def visit_list_comprehension(node: ast.ListComp, source: Source, state: State) -> None:
+    visit_comprehension(node, source, state, node.elt)
 
 
 @visit.register
-def visit_set_comp(node: ast.SetComp, source: Source, state: State) -> None:
-    visit_comp(node, source, state, node.elt)
+def visit_set_comprehension(node: ast.SetComp, source: Source, state: State) -> None:
+    visit_comprehension(node, source, state, node.elt)
 
 
 @visit.register
 def visit_generator_exp(node: ast.GeneratorExp, source: Source, state: State) -> None:
-    visit_comp(node, source, state, node.elt)
+    visit_comprehension(node, source, state, node.elt)
 
 
 @visit.register
