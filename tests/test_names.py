@@ -48,6 +48,25 @@ def test_finds_non_local_variable() -> None:
     ]
 
 
+def test_finds_non_local_variable_defined_after_use() -> None:
+    source = make_source(
+        """
+    def fun():
+        result = old + 1
+        return result
+
+    old = 20
+    """
+    )
+
+    position = source.position(5, 0)
+
+    assert all_occurrence_positions(position) == [
+        Position(source, 2, 13),
+        Position(source, 5, 0),
+    ]
+
+
 def test_does_not_rename_random_attributes() -> None:
     source = make_source(
         """

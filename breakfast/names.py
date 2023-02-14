@@ -228,7 +228,7 @@ def visit_name(node: ast.Name, source: Source, state: State) -> None:
                 state.add_occurrence(node_position(node, source))
 
 
-def get_names(value: ast.AST) -> List[QualifiedName]:
+def get_names(value: ast.AST) -> list[QualifiedName]:
     match value:
         case ast.Tuple(elts=elements):
             return [
@@ -246,8 +246,6 @@ def qualified_name_for(node: ast.AST) -> QualifiedName:
             return (name,)
         case ast.Attribute(value=value, attr=attr):
             return qualified_name_for(value) + (attr,)
-        case ast.Name(id=name):
-            return (name,)
         case ast.Call(func=function):
             return qualified_name_for(function) + ("()",)
         case _:
