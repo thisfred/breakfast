@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from enum import Enum
 from functools import singledispatch
 from typing import Protocol
-from uuid import UUID, uuid4
 
 from breakfast.position import Position
 from breakfast.source import Source
@@ -24,6 +23,14 @@ class Precondition(Protocol):
         ...
 
 
+class NotFoundError(Exception):
+    pass
+
+
+class NotInScopeError(Exception):
+    pass
+
+
 @dataclass
 class Edge:
     precondition: Callable[[Path], bool] | None = None
@@ -38,36 +45,40 @@ class NodeType(Enum):
 
 @dataclass
 class ScopeNode:
-    node_id: UUID
+    node_id: int
     name: str | None
     position: Position | None
-    node_type: NodeType = NodeType.SCOPE
 
     def __init__(
         self,
+        node_id: int,
         name: str | None = None,
         position: Position | None = None,
-        node_type: NodeType = NodeType.SCOPE,
     ):
-        self.node_id = uuid4()
+        self.node_id = node_id
         self.name = name
         self.position = position
-        self.node_type = node_type
 
 
 @dataclass
 class ScopeGraph:
-    nodes: dict[UUID, ScopeNode]
-    edges: dict[UUID, dict[UUID, Edge]]
+    nodes: dict[int, ScopeNode]
+    edges: dict[int, dict[int, Edge]]
     root: ScopeNode
 
     def __init__(self) -> None:
-        self.root = ScopeNode()
+        self.max_id = 0
+        self.root = ScopeNode(node_id=self.new_id())
         self.nodes = {self.root.node_id: self.root}
         self.edges = defaultdict(dict)
 
+    def new_id(self) -> int:
+        new_id = self.max_id
+        self.max_id += 1
+        return new_id
+
     def add_scope(self, *, parent_scope: ScopeNode | None = None) -> ScopeNode:
-        new_scope = ScopeNode()
+        new_scope = ScopeNode(node_id=self.new_id())
         self._add_node(new_scope)
         if parent_scope:
             self.edges[new_scope.node_id] = {parent_scope.node_id: Edge()}
@@ -75,15 +86,11 @@ class ScopeGraph:
 
     def add_node(
         self,
-        links_to: ScopeNode | None = None,
         name: str | None = None,
         position: Position | None = None,
-        node_type: NodeType = NodeType.SCOPE,
     ) -> ScopeNode:
-        node = ScopeNode(name=name, position=position, node_type=node_type)
+        node = ScopeNode(node_id=self.new_id(), name=name, position=position)
         self._add_node(node)
-        if links_to:
-            self.edges[node.node_id] = {links_to.node_id: Edge()}
         return node
 
     def _add_node(self, node: ScopeNode) -> None:
@@ -123,24 +130,22 @@ def traverse(graph: ScopeGraph, scope: ScopeNode, stack: Path) -> ScopeNode:
     queue = deque(
         (node_id, edge, stack) for node_id, edge in graph.edges[node_id].items()
     )
-    seen = defaultdict(int)
     while queue:
         (next_id, edge, stack) = queue.popleft()
-        seen[next_id] += 1
 
-        if edge.precondition is None or edge.precondition(stack):
-            if edge.action:
-                stack = edge.action(stack)
-            if not stack:
-                return graph.nodes[next_id]
-            else:
-                queue.extend(
-                    [
-                        (next_id, edge, stack)
-                        for (next_id, edge) in graph.edges[next_id].items()
-                        if seen[next_id] < 5
-                    ]
-                )
+        if edge.action:
+            stack = edge.action(stack)
+
+        if not stack:
+            return graph.nodes[next_id]
+
+        queue.extend(
+            [
+                (next_id, edge, stack)
+                for (next_id, edge) in graph.edges[next_id].items()
+                if edge.precondition is None or edge.precondition(stack)
+            ]
+        )
 
     raise NotFoundError
 
@@ -154,10 +159,7 @@ def node_position(
 
 
 def generic_visit(
-    node: ast.AST,
-    source: Source,
-    graph: ScopeGraph,
-    current_scope: ScopeNode,
+    node: ast.AST, source: Source, graph: ScopeGraph, current_scope: ScopeNode
 ) -> ScopeNode:
     """Called if no explicit visitor function exists for a node.
 
@@ -177,20 +179,14 @@ def generic_visit(
 
 @singledispatch
 def visit(
-    node: ast.AST,
-    source: Source,
-    graph: ScopeGraph,
-    current_scope: ScopeNode,
+    node: ast.AST, source: Source, graph: ScopeGraph, current_scope: ScopeNode
 ) -> ScopeNode:
     return generic_visit(node, source, graph, current_scope)
 
 
 @visit.register
 def visit_module(
-    node: ast.Module,
-    source: Source,
-    graph: ScopeGraph,
-    current_scope: ScopeNode,
+    node: ast.Module, source: Source, graph: ScopeGraph, current_scope: ScopeNode
 ) -> ScopeNode:
     current_scope = graph.add_scope()
 
@@ -209,57 +205,44 @@ def visit_module(
 
 @visit.register
 def visit_name(
-    node: ast.Name,
-    source: Source,
-    graph: ScopeGraph,
-    current_scope: ScopeNode,
+    node: ast.Name, source: Source, graph: ScopeGraph, current_scope: ScopeNode
 ) -> ScopeNode:
     name = node.id
     position = node_position(node, source)
 
     if isinstance(node.ctx, ast.Store):
-        definition = graph.add_node(
-            name=name, position=position, node_type=NodeType.DEFINITION
-        )
-
+        definition = graph.add_node(name=name, position=position)
         graph.link(current_scope, definition, precondition=Top((name,)), action=Pop(1))
-
         return definition
 
-    else:
-        reference = graph.add_node(
-            name=name, position=position, node_type=NodeType.REFERENCE
-        )
-
-        graph.link(reference, current_scope, action=Push((name,)))
-        return reference
+    reference = graph.add_node(name=name, position=position)
+    graph.link(reference, current_scope, action=Push((name,)))
+    return reference
 
 
 @visit.register
 def visit_assign(
-    node: ast.Assign,
-    source: Source,
-    graph: ScopeGraph,
-    current_scope: ScopeNode,
+    node: ast.Assign, source: Source, graph: ScopeGraph, current_scope: ScopeNode
 ) -> ScopeNode:
-    first_scope = new_scope = graph.add_node(links_to=current_scope)
+    first_scope = current_scope
+
+    parent_scope = next(
+        graph.nodes[other_id]
+        for other_id, edge in graph.edges[first_scope.node_id].items()
+        if not (edge.precondition or edge.action)
+    )
 
     for node_target in node.targets:
-        new_scope = visit(node_target, source, graph, new_scope)
+        current_scope = visit(node_target, source, graph, current_scope)
 
-    current_scope = visit(node.value, source, graph, current_scope)
-
-    graph.link(new_scope, current_scope)
-
+    reference_scope = visit(node.value, source, graph, parent_scope)
+    graph.link(current_scope, reference_scope)
     return first_scope
 
 
 @visit.register
 def visit_attribute(
-    node: ast.Attribute,
-    source: Source,
-    graph: ScopeGraph,
-    current_scope: ScopeNode,
+    node: ast.Attribute, source: Source, graph: ScopeGraph, current_scope: ScopeNode
 ) -> ScopeNode:
     current_scope = visit(node.value, source, graph, current_scope)
 
@@ -272,49 +255,21 @@ def visit_attribute(
     return attribute
 
 
-@singledispatch
-def names_from(node: ast.AST) -> Path:  # pylint: disable=unused-argument
-    return ()
+@visit.register
+def visit_call(
+    node: ast.Call, source: Source, graph: ScopeGraph, current_scope: ScopeNode
+) -> ScopeNode:
+    current_scope = visit(node.func, source, graph, current_scope)
 
+    new_scope = graph.add_scope(parent_scope=current_scope)
+    graph.link(current_scope, new_scope, action=Push(("()",)))
 
-@names_from.register
-def name_names(node: ast.Name) -> Path:
-    return (node.id,)
-
-
-@names_from.register
-def attribute_names(node: ast.Attribute) -> Path:
-    return names_from(node.value) + (".", node.attr)
-
-
-@names_from.register
-def call_names(node: ast.Call) -> Path:
-    names = names_from(node.func) + ("()",)
-    return names
-
-
-# @visit.register
-# def visit_call(
-#     node: ast.Call,
-#     source: Source,
-#     graph: ScopeGraph,
-#     current_node: ScopeNode | None = None,
-# ) -> ScopeNode:
-
-#     current_node = visit(node.func, source, graph, current_node)
-
-#     new_scope = graph.add_node(links_to=current_node)
-#     graph.link(current_node, new_scope, action=push(("()",)))
-
-#     return new_scope
+    return new_scope
 
 
 @visit.register
 def visit_function_definition(
-    node: ast.FunctionDef,
-    source: Source,
-    graph: ScopeGraph,
-    current_scope: ScopeNode,
+    node: ast.FunctionDef, source: Source, graph: ScopeGraph, current_scope: ScopeNode
 ) -> ScopeNode:
     name = node.name
     position = node_position(node, source, column_offset=len("def "))
@@ -330,10 +285,7 @@ def visit_function_definition(
 
 @visit.register
 def visit_class_definition(
-    node: ast.ClassDef,
-    source: Source,
-    graph: ScopeGraph,
-    current_scope: ScopeNode | None = None,
+    node: ast.ClassDef, source: Source, graph: ScopeGraph, current_scope: ScopeNode
 ) -> ScopeNode:
     name = node.name
     position = node_position(node, source, column_offset=len("class "))
@@ -355,10 +307,7 @@ def visit_class_definition(
 
 @visit.register
 def visit_import_from(
-    node: ast.ImportFrom,
-    source: Source,
-    graph: ScopeGraph,
-    current_scope: ScopeNode | None = None,
+    node: ast.ImportFrom, source: Source, graph: ScopeGraph, current_scope: ScopeNode
 ) -> ScopeNode:
     start = node_position(node, source, column_offset=len("from "))
     if node.module is None:
@@ -425,12 +374,25 @@ class Sequence:
         return stack
 
 
-class NotFoundError(Exception):
-    pass
+@singledispatch
+def names_from(node: ast.AST) -> Path:  # pylint: disable=unused-argument
+    return ()
 
 
-class NotInScopeError(Exception):
-    pass
+@names_from.register
+def name_names(node: ast.Name) -> Path:
+    return (node.id,)
+
+
+@names_from.register
+def attribute_names(node: ast.Attribute) -> Path:
+    return names_from(node.value) + (".", node.attr)
+
+
+@names_from.register
+def call_names(node: ast.Call) -> Path:
+    names = names_from(node.func) + ("()",)
+    return names
 
 
 def build_graph(sources: Iterable[Source]) -> ScopeGraph:
@@ -544,6 +506,5 @@ def test_assignment() -> None:
     )
     graph = build_graph([source1, source2, source3])
 
-    breakpoint()
     definition = traverse(graph, graph.root, stack=("chef", ".", "stove", ".", "broil"))
     assert definition.position == Position(source3, 5, 8)
