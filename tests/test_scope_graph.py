@@ -2,7 +2,6 @@ import ast
 from collections import defaultdict, deque
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
-from enum import Enum
 from functools import singledispatch
 from typing import Protocol
 
@@ -35,12 +34,6 @@ class NotInScopeError(Exception):
 class Edge:
     precondition: Callable[[Path], bool] | None = None
     action: Callable[[Path], Path] | None = None
-
-
-class NodeType(Enum):
-    SCOPE = "SCOPE"
-    DEFINITION = "DEFINITION"
-    REFERENCE = "REFERENCE"
 
 
 @dataclass
