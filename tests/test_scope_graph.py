@@ -270,12 +270,15 @@ def visit_attribute(
 def visit_call(
     node: ast.Call, source: Source, graph: ScopeGraph, scope_pointers: ScopePointers
 ) -> ScopeNode:
-    current_scope = visit(node.func, source, graph, scope_pointers)
+    scope_pointers = replace(
+        scope_pointers, current=visit(node.func, source, graph, scope_pointers)
+    )
+    original_scope = scope_pointers.current
 
-    new_scope = graph.add_scope(parent_scope=current_scope)
-    graph.link(current_scope, new_scope, action=Push(("()",)))
+    scope_pointers = graph.add_child(scope_pointers)
+    graph.link(original_scope, scope_pointers.current, action=Push(("()",)))
 
-    return new_scope
+    return scope_pointers.current
 
 
 @visit.register
