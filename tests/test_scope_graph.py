@@ -1,6 +1,6 @@
 import ast
 from collections import defaultdict, deque
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from functools import singledispatch
 from typing import Protocol
@@ -105,19 +105,6 @@ class ScopeGraph:
 
     def _add_node(self, node: ScopeNode) -> None:
         self.nodes[node.node_id] = node
-
-    def walk(self, node: ScopeNode) -> Iterator[tuple[ScopeNode, Edge | None]]:
-        yield node, None
-        queue = deque(
-            (node_id, edge) for node_id, edge in self.edges[node.node_id].items()
-        )
-        while queue:
-            next_id, edge = queue.popleft()
-            node = self.nodes[next_id]
-            yield self.nodes[next_id], edge
-            queue.extend(
-                (next_id, edge) for (next_id, edge) in self.edges[next_id].items()
-            )
 
     def link(
         self,
