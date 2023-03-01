@@ -80,15 +80,21 @@ class ScopeGraph:
         self.max_id += 1
         return new_id
 
-    def add_scope(self, *, parent_scope: ScopeNode | None = None) -> ScopeNode:
+    def _add_scope(self, *, parent_scope: ScopeNode | None = None) -> ScopeNode:
         new_scope = ScopeNode(node_id=self.new_id())
         self._add_node(new_scope)
         if parent_scope:
             self.edges[new_scope.node_id] = {parent_scope.node_id: Edge()}
         return new_scope
 
+    def add_top_scope(self, scope_pointers: ScopePointers) -> ScopePointers:
+        scope_pointers = replace(
+            scope_pointers, current=self._add_scope(), parent=NULL_SCOPE
+        )
+        return scope_pointers
+
     def add_child(self, scope_pointers: ScopePointers) -> ScopePointers:
-        new_scope = self.add_scope(parent_scope=scope_pointers.current)
+        new_scope = self._add_scope(parent_scope=scope_pointers.current)
         scope_pointers = replace(
             scope_pointers, parent=scope_pointers.current, current=new_scope
         )
@@ -191,9 +197,7 @@ def visit(
 def visit_module(
     node: ast.Module, source: Source, graph: ScopeGraph, scope_pointers: ScopePointers
 ) -> ScopeNode:
-    scope_pointers = replace(
-        scope_pointers, current=graph.add_scope(), parent=NULL_SCOPE
-    )
+    scope_pointers = graph.add_top_scope(scope_pointers)
 
     for statement_or_expression in node.body:
         scope_pointers = graph.add_child(scope_pointers)
@@ -294,9 +298,7 @@ def visit_function_definition(
     current_scope = scope_pointers.current
     graph.link(current_scope, definition, precondition=Top((name,)), action=Pop(1))
 
-    scope_pointers = replace(
-        scope_pointers, current=graph.add_scope(), parent=NULL_SCOPE
-    )
+    scope_pointers = graph.add_top_scope(scope_pointers)
     for statement in node.body:
         scope_pointers = replace(
             scope_pointers,
@@ -317,9 +319,7 @@ def visit_class_definition(
     definition = graph.add_node(name=name, position=position)
     graph.link(current_scope, definition, precondition=Top((name,)), action=Pop(1))
 
-    scope_pointers = replace(
-        scope_pointers, current=graph.add_scope(), parent=NULL_SCOPE
-    )
+    scope_pointers = graph.add_top_scope(scope_pointers)
     for statement in node.body:
         scope_pointers = replace(
             scope_pointers,
