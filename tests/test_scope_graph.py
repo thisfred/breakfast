@@ -2,6 +2,7 @@ import ast
 from collections import defaultdict, deque
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
+from enum import Enum, auto
 from functools import singledispatch
 from typing import Protocol
 
@@ -30,6 +31,12 @@ class NotInScopeError(Exception):
     pass
 
 
+class NodeType(Enum):
+    SCOPE = auto()
+    DEFINITION = auto()
+    REFERENCE = auto()
+
+
 @dataclass
 class ScopeNode:
     node_id: int
@@ -37,6 +44,7 @@ class ScopeNode:
     position: Position | None = None
     precondition: Callable[[Path], bool] | None = None
     action: Callable[[Path], Path] | None = None
+    node_type: NodeType = NodeType.SCOPE
 
 
 NULL_SCOPE = ScopeNode(-1)
@@ -74,6 +82,7 @@ class ScopeGraph:
         parent_scope: ScopeNode | None = None,
         precondition: Precondition | None = None,
         action: Action | None = None,
+        node_type: NodeType = NodeType.SCOPE
     ) -> ScopeNode:
         new_scope = ScopeNode(
             node_id=self.new_id(),
@@ -81,6 +90,7 @@ class ScopeGraph:
             position=position,
             precondition=precondition,
             action=action,
+            node_type=node_type,
         )
         self._add_node(new_scope)
         if parent_scope:
@@ -103,12 +113,18 @@ class ScopeGraph:
         position: Position | None = None,
         precondition: Precondition | None = None,
         action: Action | None = None,
+        is_definition: bool = False,
     ) -> ScopePointers:
+        if is_definition:
+            node_type = NodeType.DEFINITION
+        else:
+            node_type = NodeType.SCOPE
         new_scope = self._add_scope(
             name=name,
             position=position,
             precondition=precondition,
             action=action,
+            node_type=node_type,
         )
         self.link(scope_pointers.current, new_scope)
         scope_pointers = replace(
@@ -404,6 +420,7 @@ def visit_import_from(
                 position=position,
                 precondition=Top((local_name,)),
                 action=Sequence((Pop(1), Push(module_path + (name,)))),
+                is_definition=True,
             )
             graph.link(scope_pointers.parent, graph.root)
     return current_scope
