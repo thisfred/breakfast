@@ -41,6 +41,8 @@ class ScopeNode:
     node_id: int
     name: str | None
     position: Position | None
+    precondition: Callable[[Path], bool] | None = None
+    action: Callable[[Path], Path] | None = None
 
     def __init__(
         self,
