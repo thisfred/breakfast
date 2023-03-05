@@ -316,7 +316,9 @@ def visit_function_definition(
 ) -> ScopeNode:
     name = node.name
     position = node_position(node, source, column_offset=len("def "))
-    definition = graph.add_node(name=name, position=position)
+    definition = graph.add_node(
+        name=name, position=position, precondition=Top((name,)), action=Pop(1)
+    )
     current_scope = scope_pointers.current
     graph.link(current_scope, definition, precondition=Top((name,)), action=Pop(1))
 
@@ -338,7 +340,9 @@ def visit_class_definition(
     current_scope = scope_pointers.current
     name = node.name
     position = node_position(node, source, column_offset=len("class "))
-    definition = graph.add_node(name=name, position=position)
+    definition = graph.add_node(
+        name=name, position=position, precondition=Top((name,)), action=Pop(1)
+    )
     graph.link(current_scope, definition, precondition=Top((name,)), action=Pop(1))
 
     scope_pointers = graph.add_top_scope(scope_pointers)
