@@ -39,20 +39,10 @@ class Edge:
 @dataclass
 class ScopeNode:
     node_id: int
-    name: str | None
-    position: Position | None
+    name: str | None = None
+    position: Position | None = None
     precondition: Callable[[Path], bool] | None = None
     action: Callable[[Path], Path] | None = None
-
-    def __init__(
-        self,
-        node_id: int,
-        name: str | None = None,
-        position: Position | None = None,
-    ):
-        self.node_id = node_id
-        self.name = name
-        self.position = position
 
 
 NULL_SCOPE = ScopeNode(-1)
@@ -82,8 +72,16 @@ class ScopeGraph:
         self.max_id += 1
         return new_id
 
-    def _add_scope(self, *, parent_scope: ScopeNode | None = None) -> ScopeNode:
-        new_scope = ScopeNode(node_id=self.new_id())
+    def _add_scope(
+        self,
+        *,
+        parent_scope: ScopeNode | None = None,
+        precondition: Precondition | None = None,
+        action: Action | None = None,
+    ) -> ScopeNode:
+        new_scope = ScopeNode(
+            node_id=self.new_id(), precondition=precondition, action=action
+        )
         self._add_node(new_scope)
         if parent_scope:
             self.edges[new_scope.node_id] = {parent_scope.node_id: Edge()}
@@ -101,7 +99,11 @@ class ScopeGraph:
         precondition: Precondition | None = None,
         action: Action | None = None,
     ) -> ScopePointers:
-        new_scope = self._add_scope(parent_scope=scope_pointers.current)
+        new_scope = self._add_scope(
+            parent_scope=scope_pointers.current,
+            precondition=precondition,
+            action=action,
+        )
         scope_pointers = replace(
             scope_pointers, parent=scope_pointers.current, current=new_scope
         )
