@@ -31,12 +31,6 @@ class NotInScopeError(Exception):
 
 
 @dataclass
-class Edge:
-    precondition: Callable[[Path], bool] | None = None
-    action: Callable[[Path], Path] | None = None
-
-
-@dataclass
 class ScopeNode:
     node_id: int
     name: str | None = None
