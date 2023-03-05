@@ -96,7 +96,7 @@ class ScopeGraph:
             current=self._add_scope(precondition=precondition, action=action)
         )
 
-    def add_child(
+    def add_scope_linked_to_current(
         self,
         scope_pointers: ScopePointers,
         name: str | None = None,
@@ -216,10 +216,10 @@ def visit_module(
     scope_pointers = graph.add_top_scope()
 
     for statement_or_expression in node.body:
-        scope_pointers = graph.add_child(scope_pointers)
+        scope_pointers = graph.add_scope_linked_to_current(scope_pointers)
         visit(statement_or_expression, source, graph, scope_pointers)
 
-    scope_pointers = graph.add_child(
+    scope_pointers = graph.add_scope_linked_to_current(
         scope_pointers, precondition=Top((source.module_name, ".")), action=Pop(2)
     )
     graph.link(
@@ -321,7 +321,7 @@ def visit_function_definition(
 
     scope_pointers = graph.add_top_scope()
     for statement in node.body:
-        scope_pointers = graph.add_child(scope_pointers)
+        scope_pointers = graph.add_scope_linked_to_current(scope_pointers)
         visit(statement, source, graph, scope_pointers)
 
     return current_scope
@@ -341,10 +341,10 @@ def visit_class_definition(
 
     scope_pointers = graph.add_top_scope()
     for statement in node.body:
-        scope_pointers = graph.add_child(scope_pointers)
+        scope_pointers = graph.add_scope_linked_to_current(scope_pointers)
         visit(statement, source, graph, scope_pointers)
 
-    scope_pointers = graph.add_child(
+    scope_pointers = graph.add_scope_linked_to_current(
         scope_pointers, precondition=Top(("()", ".")), action=Pop(2)
     )
     # TODO: split this in two when we have to handle class attributes differently
