@@ -247,7 +247,7 @@ def visit_name(
         graph.link(current_scope, definition, precondition=Top((name,)), action=Pop(1))
         return definition
 
-    reference = graph.add_node(name=name, position=position)
+    reference = graph.add_node(name=name, position=position, action=Push((name,)))
     graph.link(reference, current_scope, action=Push((name,)))
     return reference
 
