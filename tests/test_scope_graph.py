@@ -58,14 +58,14 @@ class ScopePointers:
 @dataclass
 class ScopeGraph:
     nodes: dict[int, ScopeNode]
-    edges: dict[int, dict[int, Edge]]
+    edges: dict[int, set[int]]
     root: ScopeNode
 
     def __init__(self) -> None:
         self.max_id = 0
         self.root = ScopeNode(node_id=self.new_id())
         self.nodes = {self.root.node_id: self.root}
-        self.edges = defaultdict(dict)
+        self.edges = defaultdict(set)
 
     def new_id(self) -> int:
         new_id = self.max_id
@@ -84,7 +84,7 @@ class ScopeGraph:
         )
         self._add_node(new_scope)
         if parent_scope:
-            self.edges[new_scope.node_id] = {parent_scope.node_id: Edge()}
+            self.edges[new_scope.node_id].add(parent_scope.node_id)
         return new_scope
 
     def add_top_scope(
@@ -143,9 +143,7 @@ class ScopeGraph:
         precondition: Precondition | None = None,
         action: Action | None = None,
     ) -> None:
-        self.edges[scope_from.node_id][scope_to.node_id] = Edge(
-            precondition=precondition, action=action
-        )
+        self.edges[scope_from.node_id].add(scope_to.node_id)
 
 
 def traverse(graph: ScopeGraph, scope: ScopeNode, stack: Path) -> ScopeNode:
@@ -154,14 +152,14 @@ def traverse(graph: ScopeGraph, scope: ScopeNode, stack: Path) -> ScopeNode:
 
     node_id = scope.node_id
 
-    queue: deque[tuple[ScopeNode, Edge, Path]] = deque()
-    for next_id, edge in graph.edges[node_id].items():
+    queue: deque[tuple[ScopeNode, Path]] = deque()
+    for next_id in graph.edges[node_id]:
         next_node = graph.nodes[next_id]
         if next_node.precondition is None or next_node.precondition(stack):
-            queue.append((next_node, edge, stack))
+            queue.append((next_node, stack))
 
     while queue:
-        (node, edge, stack) = queue.popleft()
+        (node, stack) = queue.popleft()
 
         if node.action:
             stack = node.action(stack)
@@ -169,10 +167,10 @@ def traverse(graph: ScopeGraph, scope: ScopeNode, stack: Path) -> ScopeNode:
         if not stack:
             return node
 
-        for next_id, edge in graph.edges[node.node_id].items():
+        for next_id in graph.edges[node.node_id]:
             next_node = graph.nodes[next_id]
             if next_node.precondition is None or next_node.precondition(stack):
-                queue.append((next_node, edge, stack))
+                queue.append((next_node, stack))
 
     raise NotFoundError
 
@@ -267,8 +265,8 @@ def visit_assign(
 
     parent_scope = next(
         graph.nodes[other_id]
-        for other_id, edge in graph.edges[first_scope.node_id].items()
-        if not (edge.precondition or edge.action)
+        for other_id in graph.edges[first_scope.node_id]
+        if not (graph.nodes[other_id].precondition or graph.nodes[other_id].action)
     )
 
     for node_target in node.targets:
