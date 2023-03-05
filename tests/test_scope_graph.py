@@ -126,13 +126,7 @@ class ScopeGraph:
     def _add_node(self, node: ScopeNode) -> None:
         self.nodes[node.node_id] = node
 
-    def link(
-        self,
-        scope_from: ScopeNode,
-        scope_to: ScopeNode,
-        precondition: Precondition | None = None,
-        action: Action | None = None,
-    ) -> None:
+    def link(self, scope_from: ScopeNode, scope_to: ScopeNode) -> None:
         self.edges[scope_from.node_id].add(scope_to.node_id)
 
 
@@ -221,8 +215,6 @@ def visit_module(
     graph.link(
         graph.root,
         scope_pointers.current,
-        precondition=Top((source.module_name, ".")),
-        action=Pop(2),
     )
     return graph.root
 
@@ -233,17 +225,16 @@ def visit_name(
 ) -> ScopeNode:
     name = node.id
     position = node_position(node, source)
-    current_scope = scope_pointers.current
 
     if isinstance(node.ctx, ast.Store):
         definition = graph.add_node(
             name=name, position=position, precondition=Top((name,)), action=Pop(1)
         )
-        graph.link(current_scope, definition, precondition=Top((name,)), action=Pop(1))
+        graph.link(scope_pointers.current, definition)
         return definition
 
     reference = graph.add_node(name=name, position=position, action=Push((name,)))
-    graph.link(reference, current_scope, action=Push((name,)))
+    graph.link(reference, scope_pointers.current)
     return reference
 
 
@@ -285,7 +276,7 @@ def visit_attribute(
     attribute = graph.add_node(
         name=node.attr, position=position, action=Push((".", node.attr))
     )
-    graph.link(attribute, current_scope, action=Push((".", node.attr)))
+    graph.link(attribute, current_scope)
     return attribute
 
 
@@ -299,7 +290,7 @@ def visit_call(
     original_scope = scope_pointers.current
 
     scope_pointers = graph.add_top_scope(action=Push(("()",)))
-    graph.link(scope_pointers.current, original_scope, action=Push(("()",)))
+    graph.link(scope_pointers.current, original_scope)
     return scope_pointers.current
 
 
@@ -316,7 +307,7 @@ def visit_function_definition(
         name=name, position=position, precondition=Top((name,)), action=Pop(1)
     )
     current_scope = scope_pointers.current
-    graph.link(current_scope, definition, precondition=Top((name,)), action=Pop(1))
+    graph.link(current_scope, definition)
 
     scope_pointers = graph.add_top_scope()
     for statement in node.body:
@@ -336,7 +327,7 @@ def visit_class_definition(
     definition = graph.add_node(
         name=name, position=position, precondition=Top((name,)), action=Pop(1)
     )
-    graph.link(current_scope, definition, precondition=Top((name,)), action=Pop(1))
+    graph.link(current_scope, definition)
 
     scope_pointers = graph.add_top_scope()
     for statement in node.body:
@@ -348,9 +339,7 @@ def visit_class_definition(
     )
     # TODO: split this in two when we have to handle class attributes differently
     # from instance attributes
-    graph.link(
-        definition, scope_pointers.current, precondition=Top(("()", ".")), action=Pop(2)
-    )
+    graph.link(definition, scope_pointers.current)
 
     return current_scope
 
@@ -377,11 +366,7 @@ def visit_import_from(
                 action=Push(module_path),
             )
             graph.link(scope_pointers.current, import_scope)
-            graph.link(
-                import_scope,
-                graph.root,
-                action=Push(module_path),
-            )
+            graph.link(import_scope, graph.root)
         else:
             local_name = alias.asname or name
             position = source.find_after(name, start)
@@ -392,12 +377,7 @@ def visit_import_from(
                 precondition=Top((local_name,)),
                 action=Sequence((Pop(1), Push(module_path + (name,)))),
             )
-            graph.link(
-                current_scope,
-                import_scope,
-                precondition=Top((local_name,)),
-                action=Sequence((Pop(1), Push(module_path + (name,)))),
-            )
+            graph.link(current_scope, import_scope)
             graph.link(import_scope, graph.root)
     return current_scope
 
