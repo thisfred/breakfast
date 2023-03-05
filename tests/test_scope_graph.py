@@ -116,7 +116,13 @@ class ScopeGraph:
         precondition: Precondition | None = None,
         action: Action | None = None,
     ) -> ScopeNode:
-        node = ScopeNode(node_id=self.new_id(), name=name, position=position)
+        node = ScopeNode(
+            node_id=self.new_id(),
+            name=name,
+            position=position,
+            precondition=precondition,
+            action=action,
+        )
         self._add_node(node)
         return node
 
