@@ -386,7 +386,12 @@ def visit_import_from(
             local_name = alias.asname or name
             position = source.find_after(name, start)
 
-            import_scope = graph.add_node(name=local_name, position=position)
+            import_scope = graph.add_node(
+                name=local_name,
+                position=position,
+                precondition=Top((local_name,)),
+                action=Sequence((Pop(1), Push(module_path + (name,)))),
+            )
             graph.link(
                 current_scope,
                 import_scope,
