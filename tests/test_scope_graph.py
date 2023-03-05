@@ -136,23 +136,6 @@ class ScopeGraph:
         )
         return scope_pointers
 
-    def add_node(
-        self,
-        name: str | None = None,
-        position: Position | None = None,
-        precondition: Precondition | None = None,
-        action: Action | None = None,
-    ) -> ScopeNode:
-        node = ScopeNode(
-            node_id=self.new_id(),
-            name=name,
-            position=position,
-            precondition=precondition,
-            action=action,
-        )
-        self._add_node(node)
-        return node
-
     def _add_node(self, node: ScopeNode) -> None:
         self.nodes[node.node_id] = node
 
@@ -407,23 +390,22 @@ def visit_import_from(
     for alias in node.names:
         name = alias.name
         if name == "*":
-            import_scope = graph.add_node(
-                action=Push(module_path),
+            scope_pointers = graph.add_outgoing_link(
+                scope_pointers, action=Push(module_path)
             )
-            graph.link(scope_pointers.current, import_scope)
-            graph.link(import_scope, graph.root)
+            graph.link(scope_pointers.parent, graph.root)
         else:
             local_name = alias.asname or name
             position = source.find_after(name, start)
 
-            import_scope = graph.add_node(
+            scope_pointers = graph.add_outgoing_link(
+                scope_pointers,
                 name=local_name,
                 position=position,
                 precondition=Top((local_name,)),
                 action=Sequence((Pop(1), Push(module_path + (name,)))),
             )
-            graph.link(current_scope, import_scope)
-            graph.link(import_scope, graph.root)
+            graph.link(scope_pointers.parent, graph.root)
     return current_scope
 
 
