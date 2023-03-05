@@ -113,6 +113,8 @@ class ScopeGraph:
         self,
         name: str | None = None,
         position: Position | None = None,
+        precondition: Precondition | None = None,
+        action: Action | None = None,
     ) -> ScopeNode:
         node = ScopeNode(node_id=self.new_id(), name=name, position=position)
         self._add_node(node)
@@ -233,7 +235,9 @@ def visit_name(
     current_scope = scope_pointers.current
 
     if isinstance(node.ctx, ast.Store):
-        definition = graph.add_node(name=name, position=position)
+        definition = graph.add_node(
+            name=name, position=position, precondition=Top((name,)), action=Pop(1)
+        )
         graph.link(current_scope, definition, precondition=Top((name,)), action=Pop(1))
         return definition
 
