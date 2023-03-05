@@ -324,11 +324,8 @@ def visit_function_definition(
 
     scope_pointers = graph.add_top_scope(scope_pointers)
     for statement in node.body:
-        scope_pointers = replace(
-            scope_pointers,
-            parent=scope_pointers.current,
-            current=visit(statement, source, graph, scope_pointers),
-        )
+        scope_pointers = graph.add_child(scope_pointers)
+        visit(statement, source, graph, scope_pointers)
 
     return current_scope
 
@@ -347,11 +344,9 @@ def visit_class_definition(
 
     scope_pointers = graph.add_top_scope(scope_pointers)
     for statement in node.body:
-        scope_pointers = replace(
-            scope_pointers,
-            parent=scope_pointers.current,
-            current=visit(statement, source, graph, scope_pointers),
-        )
+        scope_pointers = graph.add_child(scope_pointers)
+        visit(statement, source, graph, scope_pointers)
+
     # TODO: split this in two when we have to handle class attributes differently
     # from instance attributes
     graph.link(
