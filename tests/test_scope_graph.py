@@ -69,12 +69,18 @@ class ScopeGraph:
     def _add_scope(
         self,
         *,
+        name: str | None = None,
+        position: Position | None = None,
         parent_scope: ScopeNode | None = None,
         precondition: Precondition | None = None,
         action: Action | None = None,
     ) -> ScopeNode:
         new_scope = ScopeNode(
-            node_id=self.new_id(), precondition=precondition, action=action
+            node_id=self.new_id(),
+            name=name,
+            position=position,
+            precondition=precondition,
+            action=action,
         )
         self._add_node(new_scope)
         if parent_scope:
@@ -93,10 +99,14 @@ class ScopeGraph:
     def add_child(
         self,
         scope_pointers: ScopePointers,
+        name: str | None = None,
+        position: Position | None = None,
         precondition: Precondition | None = None,
         action: Action | None = None,
     ) -> ScopePointers:
         new_scope = self._add_scope(
+            name=name,
+            position=position,
             parent_scope=scope_pointers.current,
             precondition=precondition,
             action=action,
