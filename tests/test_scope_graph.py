@@ -94,7 +94,9 @@ class ScopeGraph:
         action: Action | None = None,
     ) -> ScopePointers:
         scope_pointers = replace(
-            scope_pointers, current=self._add_scope(), parent=NULL_SCOPE
+            scope_pointers,
+            current=self._add_scope(precondition=precondition, action=action),
+            parent=NULL_SCOPE,
         )
         return scope_pointers
 
@@ -152,26 +154,25 @@ def traverse(graph: ScopeGraph, scope: ScopeNode, stack: Path) -> ScopeNode:
 
     node_id = scope.node_id
 
-    queue = deque(
-        (graph.nodes[node_id], edge, stack)
-        for node_id, edge in graph.edges[node_id].items()
-    )
+    queue: deque[tuple[ScopeNode, Edge, Path]] = deque()
+    for next_id, edge in graph.edges[node_id].items():
+        next_node = graph.nodes[next_id]
+        if next_node.precondition is None or next_node.precondition(stack):
+            queue.append((next_node, edge, stack))
+
     while queue:
         (node, edge, stack) = queue.popleft()
 
-        if edge.action:
-            stack = edge.action(stack)
+        if node.action:
+            stack = node.action(stack)
 
         if not stack:
             return node
 
-        queue.extend(
-            [
-                (graph.nodes[next_id], edge, stack)
-                for (next_id, edge) in graph.edges[node.node_id].items()
-                if edge.precondition is None or edge.precondition(stack)
-            ]
-        )
+        for next_id, edge in graph.edges[node.node_id].items():
+            next_node = graph.nodes[next_id]
+            if next_node.precondition is None or next_node.precondition(stack):
+                queue.append((next_node, edge, stack))
 
     raise NotFoundError
 
