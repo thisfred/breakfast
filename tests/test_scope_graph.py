@@ -82,8 +82,13 @@ class ScopeGraph:
         parent_scope: ScopeNode | None = None,
         precondition: Precondition | None = None,
         action: Action | None = None,
-        node_type: NodeType = NodeType.SCOPE
+        is_definition: bool = False
     ) -> ScopeNode:
+        if is_definition:
+            node_type = NodeType.DEFINITION
+        else:
+            node_type = NodeType.REFERENCE if name else NodeType.SCOPE
+
         new_scope = ScopeNode(
             node_id=self.new_id(),
             name=name,
@@ -115,16 +120,12 @@ class ScopeGraph:
         action: Action | None = None,
         is_definition: bool = False,
     ) -> ScopePointers:
-        if is_definition:
-            node_type = NodeType.DEFINITION
-        else:
-            node_type = NodeType.SCOPE
         new_scope = self._add_scope(
             name=name,
             position=position,
             precondition=precondition,
             action=action,
-            node_type=node_type,
+            is_definition=is_definition,
         )
         self.link(scope_pointers.current, new_scope)
         scope_pointers = replace(
@@ -139,6 +140,7 @@ class ScopeGraph:
         position: Position | None = None,
         precondition: Precondition | None = None,
         action: Action | None = None,
+        is_definition: bool = False,
     ) -> ScopePointers:
         new_scope = self._add_scope(
             name=name,
@@ -146,6 +148,7 @@ class ScopeGraph:
             parent_scope=scope_pointers.current,
             precondition=precondition,
             action=action,
+            is_definition=is_definition,
         )
         scope_pointers = replace(
             scope_pointers, parent=scope_pointers.current, current=new_scope
@@ -262,6 +265,7 @@ def visit_name(
             position=position,
             precondition=Top((name,)),
             action=Pop(1),
+            is_definition=True,
         )
         return scope_pointers.parent
 
