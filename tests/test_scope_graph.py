@@ -96,6 +96,26 @@ class ScopeGraph:
             current=self._add_scope(precondition=precondition, action=action)
         )
 
+    def add_scope_linked_from_current(
+        self,
+        scope_pointers: ScopePointers,
+        name: str | None = None,
+        position: Position | None = None,
+        precondition: Precondition | None = None,
+        action: Action | None = None,
+    ) -> ScopePointers:
+        new_scope = self._add_scope(
+            name=name,
+            position=position,
+            precondition=precondition,
+            action=action,
+        )
+        self.link(scope_pointers.current, new_scope)
+        scope_pointers = replace(
+            scope_pointers, parent=new_scope, current=scope_pointers.current
+        )
+        return scope_pointers
+
     def add_scope_linked_to_current(
         self,
         scope_pointers: ScopePointers,
@@ -237,15 +257,19 @@ def visit_name(
     position = node_position(node, source)
 
     if isinstance(node.ctx, ast.Store):
-        definition = graph.add_node(
-            name=name, position=position, precondition=Top((name,)), action=Pop(1)
+        scope_pointers = graph.add_scope_linked_from_current(
+            scope_pointers,
+            name=name,
+            position=position,
+            precondition=Top((name,)),
+            action=Pop(1),
         )
-        graph.link(scope_pointers.current, definition)
-        return definition
+        return scope_pointers.parent
 
-    reference = graph.add_node(name=name, position=position, action=Push((name,)))
-    graph.link(reference, scope_pointers.current)
-    return reference
+    scope_pointers = graph.add_scope_linked_to_current(
+        scope_pointers, name=name, position=position, action=Push((name,))
+    )
+    return scope_pointers.current
 
 
 @visit.register
