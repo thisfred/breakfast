@@ -87,7 +87,12 @@ class ScopeGraph:
             self.edges[new_scope.node_id] = {parent_scope.node_id: Edge()}
         return new_scope
 
-    def add_top_scope(self, scope_pointers: ScopePointers) -> ScopePointers:
+    def add_top_scope(
+        self,
+        scope_pointers: ScopePointers,
+        precondition: Precondition | None = None,
+        action: Action | None = None,
+    ) -> ScopePointers:
         scope_pointers = replace(
             scope_pointers, current=self._add_scope(), parent=NULL_SCOPE
         )
@@ -303,9 +308,8 @@ def visit_call(
     )
     original_scope = scope_pointers.current
 
-    scope_pointers = graph.add_child(scope_pointers)
-    graph.link(original_scope, scope_pointers.current, action=Push(("()",)))
-
+    scope_pointers = graph.add_top_scope(scope_pointers, action=Push(("()",)))
+    graph.link(scope_pointers.current, original_scope, action=Push(("()",)))
     return scope_pointers.current
 
 
