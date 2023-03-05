@@ -287,7 +287,9 @@ def visit_attribute(
     names = names_from(node.value)
     for name in names:
         position = source.find_after(name, position)
-    attribute = graph.add_node(name=node.attr, position=position)
+    attribute = graph.add_node(
+        name=node.attr, position=position, action=Push((".", node.attr))
+    )
     graph.link(attribute, current_scope, action=Push((".", node.attr)))
     return attribute
 
