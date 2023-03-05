@@ -383,8 +383,12 @@ def visit_import_from(
     for alias in node.names:
         name = alias.name
         if name == "*":
+            import_scope = graph.add_node(
+                action=Push(module_path),
+            )
+            graph.link(scope_pointers.current, import_scope)
             graph.link(
-                current_scope,
+                import_scope,
                 graph.root,
                 action=Push(module_path),
             )
