@@ -363,27 +363,30 @@ def visit_function_definition(
 def visit_class_definition(
     node: ast.ClassDef, source: Source, graph: ScopeGraph, scope_pointers: ScopePointers
 ) -> ScopeNode:
-    current_scope = scope_pointers.current
     name = node.name
     position = node_position(node, source, column_offset=len("class "))
-    definition = graph.add_node(
-        name=name, position=position, precondition=Top((name,)), action=Pop(1)
+
+    scope_pointers = graph.add_scope_linked_from_current(
+        scope_pointers,
+        name=name,
+        position=position,
+        precondition=Top((name,)),
+        action=Pop(1),
     )
-    graph.link(current_scope, definition)
 
-    scope_pointers = graph.add_top_scope()
+    class_scope_pointers = graph.add_top_scope()
     for statement in node.body:
-        scope_pointers = graph.add_scope_linked_to_current(scope_pointers)
-        visit(statement, source, graph, scope_pointers)
+        class_scope_pointers = graph.add_scope_linked_to_current(class_scope_pointers)
+        visit(statement, source, graph, class_scope_pointers)
 
-    scope_pointers = graph.add_scope_linked_to_current(
-        scope_pointers, precondition=Top(("()", ".")), action=Pop(2)
+    class_scope_pointers = graph.add_scope_linked_to_current(
+        class_scope_pointers, precondition=Top(("()", ".")), action=Pop(2)
     )
     # TODO: split this in two when we have to handle class attributes differently
     # from instance attributes
-    graph.link(definition, scope_pointers.current)
+    graph.link(scope_pointers.parent, class_scope_pointers.current)
 
-    return current_scope
+    return scope_pointers.current
 
 
 @visit.register
