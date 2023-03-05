@@ -96,7 +96,7 @@ class ScopeGraph:
             current=self._add_scope(precondition=precondition, action=action)
         )
 
-    def add_scope_linked_from_current(
+    def add_outgoing_link(
         self,
         scope_pointers: ScopePointers,
         name: str | None = None,
@@ -116,7 +116,7 @@ class ScopeGraph:
         )
         return scope_pointers
 
-    def add_scope_linked_to_current(
+    def add_incoming_link(
         self,
         scope_pointers: ScopePointers,
         name: str | None = None,
@@ -236,10 +236,10 @@ def visit_module(
     scope_pointers = graph.add_top_scope()
 
     for statement_or_expression in node.body:
-        scope_pointers = graph.add_scope_linked_to_current(scope_pointers)
+        scope_pointers = graph.add_incoming_link(scope_pointers)
         visit(statement_or_expression, source, graph, scope_pointers)
 
-    scope_pointers = graph.add_scope_linked_to_current(
+    scope_pointers = graph.add_incoming_link(
         scope_pointers, precondition=Top((source.module_name, ".")), action=Pop(2)
     )
     graph.link(
@@ -257,7 +257,7 @@ def visit_name(
     position = node_position(node, source)
 
     if isinstance(node.ctx, ast.Store):
-        scope_pointers = graph.add_scope_linked_from_current(
+        scope_pointers = graph.add_outgoing_link(
             scope_pointers,
             name=name,
             position=position,
@@ -266,7 +266,7 @@ def visit_name(
         )
         return scope_pointers.parent
 
-    scope_pointers = graph.add_scope_linked_to_current(
+    scope_pointers = graph.add_incoming_link(
         scope_pointers, name=name, position=position, action=Push((name,))
     )
     return scope_pointers.current
@@ -310,7 +310,7 @@ def visit_attribute(
     for name in names:
         position = source.find_after(name, position)
 
-    scope_pointers = graph.add_scope_linked_to_current(
+    scope_pointers = graph.add_incoming_link(
         scope_pointers, name=node.attr, position=position, action=Push((".", node.attr))
     )
 
@@ -341,7 +341,7 @@ def visit_function_definition(
     name = node.name
     position = node_position(node, source, column_offset=len("def "))
 
-    scope_pointers = graph.add_scope_linked_from_current(
+    scope_pointers = graph.add_outgoing_link(
         scope_pointers,
         name=name,
         position=position,
@@ -353,7 +353,7 @@ def visit_function_definition(
 
     scope_pointers = graph.add_top_scope()
     for statement in node.body:
-        scope_pointers = graph.add_scope_linked_to_current(scope_pointers)
+        scope_pointers = graph.add_incoming_link(scope_pointers)
         visit(statement, source, graph, scope_pointers)
 
     return current_scope
@@ -366,7 +366,7 @@ def visit_class_definition(
     name = node.name
     position = node_position(node, source, column_offset=len("class "))
 
-    scope_pointers = graph.add_scope_linked_from_current(
+    scope_pointers = graph.add_outgoing_link(
         scope_pointers,
         name=name,
         position=position,
@@ -376,10 +376,10 @@ def visit_class_definition(
 
     class_scope_pointers = graph.add_top_scope()
     for statement in node.body:
-        class_scope_pointers = graph.add_scope_linked_to_current(class_scope_pointers)
+        class_scope_pointers = graph.add_incoming_link(class_scope_pointers)
         visit(statement, source, graph, class_scope_pointers)
 
-    class_scope_pointers = graph.add_scope_linked_to_current(
+    class_scope_pointers = graph.add_incoming_link(
         class_scope_pointers, precondition=Top(("()", ".")), action=Pop(2)
     )
     # TODO: split this in two when we have to handle class attributes differently
