@@ -301,17 +301,20 @@ def visit_attribute(
     graph: ScopeGraph,
     scope_pointers: ScopePointers,
 ) -> ScopeNode:
-    current_scope = visit(node.value, source, graph, scope_pointers)
+    scope_pointers = replace(
+        scope_pointers, current=visit(node.value, source, graph, scope_pointers)
+    )
 
     position = node_position(node, source)
     names = names_from(node.value)
     for name in names:
         position = source.find_after(name, position)
-    attribute = graph.add_node(
-        name=node.attr, position=position, action=Push((".", node.attr))
+
+    scope_pointers = graph.add_scope_linked_to_current(
+        scope_pointers, name=node.attr, position=position, action=Push((".", node.attr))
     )
-    graph.link(attribute, current_scope)
-    return attribute
+
+    return scope_pointers.current
 
 
 @visit.register
@@ -337,11 +340,16 @@ def visit_function_definition(
 ) -> ScopeNode:
     name = node.name
     position = node_position(node, source, column_offset=len("def "))
-    definition = graph.add_node(
-        name=name, position=position, precondition=Top((name,)), action=Pop(1)
+
+    scope_pointers = graph.add_scope_linked_from_current(
+        scope_pointers,
+        name=name,
+        position=position,
+        precondition=Top((name,)),
+        action=Pop(1),
     )
+
     current_scope = scope_pointers.current
-    graph.link(current_scope, definition)
 
     scope_pointers = graph.add_top_scope()
     for statement in node.body:
