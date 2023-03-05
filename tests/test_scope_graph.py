@@ -83,16 +83,12 @@ class ScopeGraph:
 
     def add_top_scope(
         self,
-        scope_pointers: ScopePointers,
         precondition: Precondition | None = None,
         action: Action | None = None,
     ) -> ScopePointers:
-        scope_pointers = replace(
-            scope_pointers,
-            current=self._add_scope(precondition=precondition, action=action),
-            parent=NULL_SCOPE,
+        return ScopePointers(
+            current=self._add_scope(precondition=precondition, action=action)
         )
-        return scope_pointers
 
     def add_child(
         self,
@@ -213,7 +209,7 @@ def visit(
 def visit_module(
     node: ast.Module, source: Source, graph: ScopeGraph, scope_pointers: ScopePointers
 ) -> ScopeNode:
-    scope_pointers = graph.add_top_scope(scope_pointers)
+    scope_pointers = graph.add_top_scope()
 
     for statement_or_expression in node.body:
         scope_pointers = graph.add_child(scope_pointers)
@@ -302,7 +298,7 @@ def visit_call(
     )
     original_scope = scope_pointers.current
 
-    scope_pointers = graph.add_top_scope(scope_pointers, action=Push(("()",)))
+    scope_pointers = graph.add_top_scope(action=Push(("()",)))
     graph.link(scope_pointers.current, original_scope, action=Push(("()",)))
     return scope_pointers.current
 
@@ -322,7 +318,7 @@ def visit_function_definition(
     current_scope = scope_pointers.current
     graph.link(current_scope, definition, precondition=Top((name,)), action=Pop(1))
 
-    scope_pointers = graph.add_top_scope(scope_pointers)
+    scope_pointers = graph.add_top_scope()
     for statement in node.body:
         scope_pointers = graph.add_child(scope_pointers)
         visit(statement, source, graph, scope_pointers)
@@ -342,7 +338,7 @@ def visit_class_definition(
     )
     graph.link(current_scope, definition, precondition=Top((name,)), action=Pop(1))
 
-    scope_pointers = graph.add_top_scope(scope_pointers)
+    scope_pointers = graph.add_top_scope()
     for statement in node.body:
         scope_pointers = graph.add_child(scope_pointers)
         visit(statement, source, graph, scope_pointers)
