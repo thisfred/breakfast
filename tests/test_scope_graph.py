@@ -153,21 +153,22 @@ def traverse(graph: ScopeGraph, scope: ScopeNode, stack: Path) -> ScopeNode:
     node_id = scope.node_id
 
     queue = deque(
-        (node_id, edge, stack) for node_id, edge in graph.edges[node_id].items()
+        (graph.nodes[node_id], edge, stack)
+        for node_id, edge in graph.edges[node_id].items()
     )
     while queue:
-        (next_id, edge, stack) = queue.popleft()
+        (node, edge, stack) = queue.popleft()
 
         if edge.action:
             stack = edge.action(stack)
 
         if not stack:
-            return graph.nodes[next_id]
+            return node
 
         queue.extend(
             [
-                (next_id, edge, stack)
-                for (next_id, edge) in graph.edges[next_id].items()
+                (graph.nodes[next_id], edge, stack)
+                for (next_id, edge) in graph.edges[node.node_id].items()
                 if edge.precondition is None or edge.precondition(stack)
             ]
         )
