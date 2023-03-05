@@ -95,7 +95,12 @@ class ScopeGraph:
         )
         return scope_pointers
 
-    def add_child(self, scope_pointers: ScopePointers) -> ScopePointers:
+    def add_child(
+        self,
+        scope_pointers: ScopePointers,
+        precondition: Precondition | None = None,
+        action: Action | None = None,
+    ) -> ScopePointers:
         new_scope = self._add_scope(parent_scope=scope_pointers.current)
         scope_pointers = replace(
             scope_pointers, parent=scope_pointers.current, current=new_scope
@@ -205,6 +210,9 @@ def visit_module(
         scope_pointers = graph.add_child(scope_pointers)
         visit(statement_or_expression, source, graph, scope_pointers)
 
+    scope_pointers = graph.add_child(
+        scope_pointers, precondition=Top((source.module_name, ".")), action=Pop(2)
+    )
     graph.link(
         graph.root,
         scope_pointers.current,
