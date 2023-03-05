@@ -347,6 +347,9 @@ def visit_class_definition(
         scope_pointers = graph.add_child(scope_pointers)
         visit(statement, source, graph, scope_pointers)
 
+    scope_pointers = graph.add_child(
+        scope_pointers, precondition=Top(("()", ".")), action=Pop(2)
+    )
     # TODO: split this in two when we have to handle class attributes differently
     # from instance attributes
     graph.link(
