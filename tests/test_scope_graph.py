@@ -37,7 +37,7 @@ class NodeType(Enum):
     REFERENCE = auto()
 
 
-@dataclass
+@dataclass(frozen=True)
 class ScopeNode:
     node_id: int
     name: str | None = None
@@ -62,12 +62,16 @@ class ScopeGraph:
     nodes: dict[int, ScopeNode]
     edges: dict[int, set[int]]
     root: ScopeNode
+    names: dict[str, list[ScopeNode]]
+    positions: dict[Position, list[ScopeNode]]
 
     def __init__(self) -> None:
         self.max_id = 0
         self.root = ScopeNode(node_id=self.new_id())
         self.nodes = {self.root.node_id: self.root}
         self.edges = defaultdict(set)
+        self.names = defaultdict(list)
+        self.positions = defaultdict(list)
 
     def new_id(self) -> int:
         new_id = self.max_id
@@ -157,6 +161,10 @@ class ScopeGraph:
 
     def _add_node(self, node: ScopeNode) -> None:
         self.nodes[node.node_id] = node
+        if node.name:
+            self.names[node.name].append(node)
+        if node.position:
+            self.positions[node.position].append(node)
 
     def link(self, scope_from: ScopeNode, scope_to: ScopeNode) -> None:
         self.edges[scope_from.node_id].add(scope_to.node_id)
@@ -189,6 +197,34 @@ def traverse(graph: ScopeGraph, scope: ScopeNode, stack: Path) -> ScopeNode:
                 queue.append((next_node, stack))
 
     raise NotFoundError
+
+
+def find_all_occurrences(
+    position: Position, sources: Iterable[Source]
+) -> list[Position]:
+    graph = build_graph(sources)
+    scopes_for_position = graph.positions.get(position)
+    if not scopes_for_position:
+        raise NotFoundError
+
+    for scope in scopes_for_position:
+        if scope.name is not None:
+            found = scope
+            name = scope.name
+            possible_occurrences = graph.names[name]
+            break
+    else:
+        raise NotFoundError
+
+    definitions: dict[ScopeNode, list[ScopeNode]] = defaultdict(list)
+    for occurrence in possible_occurrences:
+        definition = traverse(graph, occurrence, stack=(name,))
+
+        definitions[definition].append(occurrence)
+        if occurrence == found:
+            found_definition = definition
+
+    return [d.position for d in definitions[found_definition] if d.position]
 
 
 def node_position(
@@ -242,7 +278,10 @@ def visit_module(
         visit(statement_or_expression, source, graph, scope_pointers)
 
     scope_pointers = graph.add_incoming_link(
-        scope_pointers, precondition=Top((source.module_name, ".")), action=Pop(2)
+        scope_pointers, precondition=Top((".",)), action=Pop(1)
+    )
+    scope_pointers = graph.add_incoming_link(
+        scope_pointers, precondition=Top((source.module_name,)), action=Pop(1)
     )
     graph.link(
         graph.root,
@@ -313,8 +352,11 @@ def visit_attribute(
     for name in names:
         position = source.find_after(name, position)
 
+    scope_pointers = graph.add_incoming_link(scope_pointers, action=Push((".",)))
+
+    position = source.find_after(node.attr, position)
     scope_pointers = graph.add_incoming_link(
-        scope_pointers, name=node.attr, position=position, action=Push((".", node.attr))
+        scope_pointers, name=node.attr, position=position, action=Push((node.attr,))
     )
 
     return scope_pointers.current
@@ -383,10 +425,11 @@ def visit_class_definition(
         visit(statement, source, graph, class_scope_pointers)
 
     class_scope_pointers = graph.add_incoming_link(
-        class_scope_pointers, precondition=Top(("()", ".")), action=Pop(2)
+        class_scope_pointers, precondition=Top((".",)), action=Pop(1)
     )
-    # TODO: split this in two when we have to handle class attributes differently
-    # from instance attributes
+    class_scope_pointers = graph.add_incoming_link(
+        class_scope_pointers, precondition=Top(("()",)), action=Pop(1)
+    )
     graph.link(scope_pointers.parent, class_scope_pointers.current)
 
     return scope_pointers.current
@@ -426,11 +469,12 @@ def visit_import_from(
                 action=Sequence((Pop(1), Push(module_path + (name,)))),
                 is_definition=True,
             )
+
             graph.link(scope_pointers.parent, graph.root)
     return current_scope
 
 
-@dataclass
+@dataclass(frozen=True)
 class Top:
     path: Path
 
@@ -438,7 +482,7 @@ class Top:
         return stack[: len(self.path)] == self.path
 
 
-@dataclass
+@dataclass(frozen=True)
 class Pop:
     number: int
 
@@ -446,7 +490,7 @@ class Pop:
         return stack[self.number :]
 
 
-@dataclass
+@dataclass(frozen=True)
 class Push:
     path: Path
 
@@ -454,7 +498,7 @@ class Push:
         return self.path + stack
 
 
-@dataclass
+@dataclass(frozen=True)
 class Sequence:
     actions: tuple[Action, ...]
 
@@ -598,7 +642,7 @@ def test_assignment() -> None:
     """,
         module_name="stove",
     )
-    graph = build_graph([source1, source2, source3])
 
+    graph = build_graph([source1, source2, source3])
     definition = traverse(graph, graph.root, stack=("chef", ".", "stove", ".", "broil"))
     assert definition.position == Position(source3, 5, 8)
