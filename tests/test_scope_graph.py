@@ -199,10 +199,10 @@ def traverse(graph: ScopeGraph, scope: ScopeNode, stack: Path) -> ScopeNode:
     raise NotFoundError
 
 
-def find_all_occurrences(
-    position: Position, sources: Iterable[Source]
+def all_occurrence_positions(
+    position: Position, *, sources: Iterable[Source] | None = None
 ) -> set[Position]:
-    graph = build_graph(sources)
+    graph = build_graph(sources or [position.source])
     scopes_for_position = graph.positions.get(position)
     if not scopes_for_position:
         raise NotFoundError
@@ -685,10 +685,10 @@ def test_assignment_occurrences() -> None:
     """,
         module_name="stove",
     )
-    all_occurrence_positions = find_all_occurrences(
+    positions = all_occurrence_positions(
         Position(source1, 4, 6), sources=[source1, source2, source3]
     )
-    assert all_occurrence_positions == {
+    assert positions == {
         Position(source3, 5, 8),
         Position(source1, 4, 6),
     }
