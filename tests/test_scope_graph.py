@@ -1,7 +1,7 @@
 import ast
 from collections import defaultdict, deque
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from enum import Enum, auto
 from functools import singledispatch
 from typing import Protocol
@@ -48,13 +48,6 @@ class ScopeNode:
 
 
 NULL_SCOPE = ScopeNode(-1)
-
-
-@dataclass
-class ScopePointers:
-    module: ScopeNode = NULL_SCOPE
-    parent: ScopeNode = NULL_SCOPE
-    current: ScopeNode = NULL_SCOPE
 
 
 @dataclass
@@ -110,10 +103,9 @@ class ScopeGraph:
         self,
         precondition: Precondition | None = None,
         action: Action | None = None,
-    ) -> ScopePointers:
-        return ScopePointers(
-            current=self._add_scope(precondition=precondition, action=action)
-        )
+    ) -> ScopeNode:
+        new_scope = self._add_scope(precondition=precondition, action=action)
+        return new_scope
 
     def add_outgoing_link(
         self,
@@ -136,25 +128,22 @@ class ScopeGraph:
 
     def add_incoming_link(
         self,
-        scope_pointers: ScopePointers,
+        current_scope: ScopeNode,
         name: str | None = None,
         position: Position | None = None,
         precondition: Precondition | None = None,
         action: Action | None = None,
         is_definition: bool = False,
-    ) -> ScopePointers:
+    ) -> tuple[ScopeNode, ScopeNode]:
         new_scope = self._add_scope(
             name=name,
             position=position,
-            parent_scope=scope_pointers.current,
+            parent_scope=current_scope,
             precondition=precondition,
             action=action,
             is_definition=is_definition,
         )
-        scope_pointers = replace(
-            scope_pointers, parent=scope_pointers.current, current=new_scope
-        )
-        return scope_pointers
+        return new_scope, current_scope
 
     def _add_node(self, node: ScopeNode) -> None:
         self.nodes[node.node_id] = node
@@ -236,7 +225,10 @@ def node_position(
 
 
 def generic_visit(
-    node: ast.AST, source: Source, graph: ScopeGraph, scope_pointers: ScopePointers
+    node: ast.AST,
+    source: Source,
+    graph: ScopeGraph,
+    current_scope: ScopeNode,
 ) -> ScopeNode:
     """Called if no explicit visitor function exists for a node.
 
@@ -248,61 +240,69 @@ def generic_visit(
         if isinstance(value, list):
             for item in value:
                 if isinstance(item, ast.AST):
-                    scope_pointers = replace(
-                        scope_pointers,
-                        current=visit(item, source, graph, scope_pointers),
-                    )
+                    current_scope = visit(item, source, graph, current_scope)
         elif isinstance(value, ast.AST):
-            scope_pointers = replace(
-                scope_pointers,
-                current=visit(value, source, graph, scope_pointers),
-            )
-    return scope_pointers.current
+            current_scope = visit(value, source, graph, current_scope)
+    return current_scope
 
 
 @singledispatch
 def visit(
-    node: ast.AST, source: Source, graph: ScopeGraph, scope_pointers: ScopePointers
+    node: ast.AST,
+    source: Source,
+    graph: ScopeGraph,
+    current_scope: ScopeNode,
 ) -> ScopeNode:
-    return generic_visit(node, source, graph, scope_pointers)
+    return generic_visit(node, source, graph, current_scope)
 
 
 @visit.register
 def visit_module(
-    node: ast.Module, source: Source, graph: ScopeGraph, scope_pointers: ScopePointers
+    node: ast.Module,
+    source: Source,
+    graph: ScopeGraph,
+    current_scope: ScopeNode,
 ) -> ScopeNode:
-    scope_pointers = graph.add_top_scope()
+    current = graph.add_top_scope()
 
     for statement_or_expression in node.body:
-        scope_pointers = graph.add_incoming_link(scope_pointers)
-        visit(statement_or_expression, source, graph, scope_pointers)
+        current, _ = graph.add_incoming_link(current)
+        visit(
+            statement_or_expression,
+            source,
+            graph,
+            current,
+        )
 
-    scope_pointers = graph.add_incoming_link(
-        scope_pointers, precondition=Top((".",)), action=Pop(1)
+    current, _ = graph.add_incoming_link(
+        current, precondition=Top((".",)), action=Pop(1)
     )
-    scope_pointers = graph.add_incoming_link(
-        scope_pointers,
+    current, _ = graph.add_incoming_link(
+        current,
         precondition=Top((source.module_name,)),
         action=Pop(1),
         is_definition=True,
     )
     graph.link(
         graph.root,
-        scope_pointers.current,
+        current,
     )
     return graph.root
 
 
 @visit.register
 def visit_name(
-    node: ast.Name, source: Source, graph: ScopeGraph, scope_pointers: ScopePointers
+    node: ast.Name,
+    source: Source,
+    graph: ScopeGraph,
+    current_scope: ScopeNode,
 ) -> ScopeNode:
     name = node.id
     position = node_position(node, source)
 
     if isinstance(node.ctx, ast.Store):
         _, parent = graph.add_outgoing_link(
-            scope_pointers.current,
+            current_scope,
             name=name,
             position=position,
             precondition=Top((name,)),
@@ -311,17 +311,23 @@ def visit_name(
         )
         return parent
 
-    scope_pointers = graph.add_incoming_link(
-        scope_pointers, name=name, position=position, action=Push((name,))
+    current, _ = graph.add_incoming_link(
+        current_scope,
+        name=name,
+        position=position,
+        action=Push((name,)),
     )
-    return scope_pointers.current
+    return current
 
 
 @visit.register
 def visit_assign(
-    node: ast.Assign, source: Source, graph: ScopeGraph, scope_pointers: ScopePointers
+    node: ast.Assign,
+    source: Source,
+    graph: ScopeGraph,
+    current_scope: ScopeNode,
 ) -> ScopeNode:
-    first_scope = scope_pointers.current
+    first_scope = current_scope
 
     parent_scope = next(
         graph.nodes[other_id]
@@ -330,11 +336,10 @@ def visit_assign(
     )
 
     for node_target in node.targets:
-        current_scope = visit(node_target, source, graph, scope_pointers)
+        current_scope = visit(node_target, source, graph, current_scope)
 
     # XXX: set parent?
-    scope_pointers = replace(scope_pointers, current=parent_scope)
-    reference_scope = visit(node.value, source, graph, scope_pointers)
+    reference_scope = visit(node.value, source, graph, parent_scope)
     graph.link(current_scope, reference_scope)
     return first_scope
 
@@ -344,39 +349,41 @@ def visit_attribute(
     node: ast.Attribute,
     source: Source,
     graph: ScopeGraph,
-    scope_pointers: ScopePointers,
+    current_scope: ScopeNode,
 ) -> ScopeNode:
-    scope_pointers = replace(
-        scope_pointers, current=visit(node.value, source, graph, scope_pointers)
-    )
+    current_scope = visit(node.value, source, graph, current_scope)
 
     position = node_position(node, source)
     names = names_from(node.value)
     for name in names:
         position = source.find_after(name, position)
 
-    scope_pointers = graph.add_incoming_link(scope_pointers, action=Push((".",)))
+    current_scope, _ = graph.add_incoming_link(current_scope, action=Push((".",)))
 
     position = source.find_after(node.attr, position)
-    scope_pointers = graph.add_incoming_link(
-        scope_pointers, name=node.attr, position=position, action=Push((node.attr,))
+    current_scope, _ = graph.add_incoming_link(
+        current_scope,
+        name=node.attr,
+        position=position,
+        action=Push((node.attr,)),
     )
 
-    return scope_pointers.current
+    return current_scope
 
 
 @visit.register
 def visit_call(
-    node: ast.Call, source: Source, graph: ScopeGraph, scope_pointers: ScopePointers
+    node: ast.Call,
+    source: Source,
+    graph: ScopeGraph,
+    current_scope: ScopeNode,
 ) -> ScopeNode:
-    scope_pointers = replace(
-        scope_pointers, current=visit(node.func, source, graph, scope_pointers)
-    )
-    original_scope = scope_pointers.current
+    current_scope = visit(node.func, source, graph, current_scope)
+    original_scope = current_scope
 
-    scope_pointers = graph.add_top_scope(action=Push(("()",)))
-    graph.link(scope_pointers.current, original_scope)
-    return scope_pointers.current
+    current_scope = graph.add_top_scope(action=Push(("()",)))
+    graph.link(current_scope, original_scope)
+    return current_scope
 
 
 @visit.register
@@ -384,13 +391,13 @@ def visit_function_definition(
     node: ast.FunctionDef,
     source: Source,
     graph: ScopeGraph,
-    scope_pointers: ScopePointers,
+    current_scope: ScopeNode,
 ) -> ScopeNode:
     name = node.name
     position = node_position(node, source, column_offset=len("def "))
 
     current, _ = graph.add_outgoing_link(
-        scope_pointers.current,
+        current_scope,
         name=name,
         position=position,
         precondition=Top((name,)),
@@ -400,23 +407,26 @@ def visit_function_definition(
 
     current_scope = current
 
-    scope_pointers = graph.add_top_scope()
+    current_scope = graph.add_top_scope()
     for statement in node.body:
-        scope_pointers = graph.add_incoming_link(scope_pointers)
-        visit(statement, source, graph, scope_pointers)
+        current_scope, _ = graph.add_incoming_link(current_scope)
+        visit(statement, source, graph, current_scope)
 
     return current_scope
 
 
 @visit.register
 def visit_class_definition(
-    node: ast.ClassDef, source: Source, graph: ScopeGraph, scope_pointers: ScopePointers
+    node: ast.ClassDef,
+    source: Source,
+    graph: ScopeGraph,
+    current_scope: ScopeNode,
 ) -> ScopeNode:
     name = node.name
     position = node_position(node, source, column_offset=len("class "))
 
     current, parent = graph.add_outgoing_link(
-        scope_pointers.current,
+        current_scope,
         name=name,
         position=position,
         precondition=Top((name,)),
@@ -424,18 +434,18 @@ def visit_class_definition(
         is_definition=True,
     )
 
-    class_scope_pointers = graph.add_top_scope()
+    current_class_scope = graph.add_top_scope()
     for statement in node.body:
-        class_scope_pointers = graph.add_incoming_link(class_scope_pointers)
-        visit(statement, source, graph, class_scope_pointers)
+        current_class_scope, _ = graph.add_incoming_link(current_class_scope)
+        visit(statement, source, graph, current_class_scope)
 
-    class_scope_pointers = graph.add_incoming_link(
-        class_scope_pointers, precondition=Top((".",)), action=Pop(1)
+    current_class_scope, _ = graph.add_incoming_link(
+        current_class_scope, precondition=Top((".",)), action=Pop(1)
     )
-    class_scope_pointers = graph.add_incoming_link(
-        class_scope_pointers, precondition=Top(("()",)), action=Pop(1)
+    current_scope, _ = graph.add_incoming_link(
+        current_class_scope, precondition=Top(("()",)), action=Pop(1)
     )
-    graph.link(parent, class_scope_pointers.current)
+    graph.link(parent, current_scope)
 
     return current
 
@@ -445,10 +455,9 @@ def visit_import_from(
     node: ast.ImportFrom,
     source: Source,
     graph: ScopeGraph,
-    scope_pointers: ScopePointers,
+    current_scope: ScopeNode,
 ) -> ScopeNode:
     start = node_position(node, source, column_offset=len("from "))
-    current_scope = scope_pointers.current
     if node.module is None:
         module_path: tuple[str, ...] = (".",)
     else:
@@ -458,16 +467,14 @@ def visit_import_from(
     for alias in node.names:
         name = alias.name
         if name == "*":
-            _, parent = graph.add_outgoing_link(
-                scope_pointers.current, action=Push(module_path)
-            )
+            _, parent = graph.add_outgoing_link(current_scope, action=Push(module_path))
             graph.link(parent, graph.root)
         else:
             local_name = alias.asname or name
             position = source.find_after(name, start)
 
             _, parent = graph.add_outgoing_link(
-                scope_pointers.current,
+                current_scope,
                 name=local_name,
                 position=position,
                 precondition=Top((local_name,)),
@@ -537,12 +544,9 @@ def call_names(node: ast.Call) -> Path:
 
 def build_graph(sources: Iterable[Source]) -> ScopeGraph:
     graph = ScopeGraph()
-    scope_pointers = ScopePointers()
 
     for source in sources:
-        visit(
-            source.get_ast(), source=source, graph=graph, scope_pointers=scope_pointers
-        )
+        visit(source.get_ast(), source=source, graph=graph, current_scope=NULL_SCOPE)
 
     return graph
 
