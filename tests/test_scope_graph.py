@@ -115,7 +115,8 @@ class ScopeGraph:
         precondition: Precondition | None = None,
         action: Action | None = None,
         is_definition: bool = False,
-    ) -> tuple[ScopeNode, ScopeNode]:
+        parent: ScopeNode | None = None,
+    ) -> ScopeNode:
         new_scope = self._add_scope(
             name=name,
             position=position,
@@ -124,7 +125,7 @@ class ScopeGraph:
             is_definition=is_definition,
         )
         self.link(current_scope, new_scope)
-        return current_scope, new_scope
+        return new_scope
 
     def add_incoming_link(
         self,
@@ -134,7 +135,7 @@ class ScopeGraph:
         precondition: Precondition | None = None,
         action: Action | None = None,
         is_definition: bool = False,
-    ) -> tuple[ScopeNode, ScopeNode]:
+    ) -> ScopeNode:
         new_scope = self._add_scope(
             name=name,
             position=position,
@@ -143,7 +144,7 @@ class ScopeGraph:
             action=action,
             is_definition=is_definition,
         )
-        return new_scope, current_scope
+        return new_scope
 
     def _add_node(self, node: ScopeNode) -> None:
         self.nodes[node.node_id] = node
@@ -266,7 +267,7 @@ def visit_module(
     current = graph.add_top_scope()
 
     for statement_or_expression in node.body:
-        current, _ = graph.add_incoming_link(current)
+        current = graph.add_incoming_link(current)
         visit(
             statement_or_expression,
             source,
@@ -274,10 +275,8 @@ def visit_module(
             current,
         )
 
-    current, _ = graph.add_incoming_link(
-        current, precondition=Top((".",)), action=Pop(1)
-    )
-    current, _ = graph.add_incoming_link(
+    current = graph.add_incoming_link(current, precondition=Top((".",)), action=Pop(1))
+    current = graph.add_incoming_link(
         current,
         precondition=Top((source.module_name,)),
         action=Pop(1),
@@ -301,7 +300,7 @@ def visit_name(
     position = node_position(node, source)
 
     if isinstance(node.ctx, ast.Store):
-        _, parent = graph.add_outgoing_link(
+        parent = graph.add_outgoing_link(
             current_scope,
             name=name,
             position=position,
@@ -311,7 +310,7 @@ def visit_name(
         )
         return parent
 
-    current, _ = graph.add_incoming_link(
+    current = graph.add_incoming_link(
         current_scope,
         name=name,
         position=position,
@@ -358,10 +357,10 @@ def visit_attribute(
     for name in names:
         position = source.find_after(name, position)
 
-    current_scope, _ = graph.add_incoming_link(current_scope, action=Push((".",)))
+    current_scope = graph.add_incoming_link(current_scope, action=Push((".",)))
 
     position = source.find_after(node.attr, position)
-    current_scope, _ = graph.add_incoming_link(
+    current_scope = graph.add_incoming_link(
         current_scope,
         name=node.attr,
         position=position,
@@ -396,7 +395,7 @@ def visit_function_definition(
     name = node.name
     position = node_position(node, source, column_offset=len("def "))
 
-    current, _ = graph.add_outgoing_link(
+    graph.add_outgoing_link(
         current_scope,
         name=name,
         position=position,
@@ -405,11 +404,9 @@ def visit_function_definition(
         is_definition=True,
     )
 
-    current_scope = current
-
     current_scope = graph.add_top_scope()
     for statement in node.body:
-        current_scope, _ = graph.add_incoming_link(current_scope)
+        current_scope = graph.add_incoming_link(current_scope)
         visit(statement, source, graph, current_scope)
 
     return current_scope
@@ -424,8 +421,9 @@ def visit_class_definition(
 ) -> ScopeNode:
     name = node.name
     position = node_position(node, source, column_offset=len("class "))
+    original_scope = current_scope
 
-    current, parent = graph.add_outgoing_link(
+    parent = graph.add_outgoing_link(
         current_scope,
         name=name,
         position=position,
@@ -436,18 +434,18 @@ def visit_class_definition(
 
     current_class_scope = graph.add_top_scope()
     for statement in node.body:
-        current_class_scope, _ = graph.add_incoming_link(current_class_scope)
+        current_class_scope = graph.add_incoming_link(current_class_scope)
         visit(statement, source, graph, current_class_scope)
 
-    current_class_scope, _ = graph.add_incoming_link(
+    current_class_scope = graph.add_incoming_link(
         current_class_scope, precondition=Top((".",)), action=Pop(1)
     )
-    current_scope, _ = graph.add_incoming_link(
+    current_scope = graph.add_incoming_link(
         current_class_scope, precondition=Top(("()",)), action=Pop(1)
     )
     graph.link(parent, current_scope)
 
-    return current
+    return original_scope
 
 
 @visit.register
@@ -467,13 +465,13 @@ def visit_import_from(
     for alias in node.names:
         name = alias.name
         if name == "*":
-            _, parent = graph.add_outgoing_link(current_scope, action=Push(module_path))
+            parent = graph.add_outgoing_link(current_scope, action=Push(module_path))
             graph.link(parent, graph.root)
         else:
             local_name = alias.asname or name
             position = source.find_after(name, start)
 
-            _, parent = graph.add_outgoing_link(
+            parent = graph.add_outgoing_link(
                 current_scope,
                 name=local_name,
                 position=position,
