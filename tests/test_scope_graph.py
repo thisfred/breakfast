@@ -62,7 +62,7 @@ class ScopeGraph:
     nodes: dict[int, ScopeNode]
     edges: dict[int, set[int]]
     root: ScopeNode
-    names: dict[str, list[ScopeNode]]
+    references: dict[str, list[ScopeNode]]
     positions: dict[Position, list[ScopeNode]]
 
     def __init__(self) -> None:
@@ -70,7 +70,7 @@ class ScopeGraph:
         self.root = ScopeNode(node_id=self.new_id())
         self.nodes = {self.root.node_id: self.root}
         self.edges = defaultdict(set)
-        self.names = defaultdict(list)
+        self.references = defaultdict(list)
         self.positions = defaultdict(list)
 
     def new_id(self) -> int:
@@ -161,8 +161,8 @@ class ScopeGraph:
 
     def _add_node(self, node: ScopeNode) -> None:
         self.nodes[node.node_id] = node
-        if node.name:
-            self.names[node.name].append(node)
+        if node.name and node.node_type is NodeType.REFERENCE:
+            self.references[node.name].append(node)
         if node.position:
             self.positions[node.position].append(node)
 
@@ -201,7 +201,7 @@ def traverse(graph: ScopeGraph, scope: ScopeNode, stack: Path) -> ScopeNode:
 
 def find_all_occurrences(
     position: Position, sources: Iterable[Source]
-) -> list[Position]:
+) -> set[Position]:
     graph = build_graph(sources)
     scopes_for_position = graph.positions.get(position)
     if not scopes_for_position:
@@ -211,7 +211,7 @@ def find_all_occurrences(
         if scope.name is not None:
             found = scope
             name = scope.name
-            possible_occurrences = graph.names[name]
+            possible_occurrences = graph.references[name]
             break
     else:
         raise NotFoundError
@@ -224,7 +224,10 @@ def find_all_occurrences(
         if occurrence == found:
             found_definition = definition
 
-    return [d.position for d in definitions[found_definition] if d.position]
+    assert found_definition.position
+    return {found_definition.position} | {
+        d.position for d in definitions[found_definition] if d.position
+    }
 
 
 def node_position(
@@ -281,7 +284,10 @@ def visit_module(
         scope_pointers, precondition=Top((".",)), action=Pop(1)
     )
     scope_pointers = graph.add_incoming_link(
-        scope_pointers, precondition=Top((source.module_name,)), action=Pop(1)
+        scope_pointers,
+        precondition=Top((source.module_name,)),
+        action=Pop(1),
+        is_definition=True,
     )
     graph.link(
         graph.root,
@@ -392,6 +398,7 @@ def visit_function_definition(
         position=position,
         precondition=Top((name,)),
         action=Pop(1),
+        is_definition=True,
     )
 
     current_scope = scope_pointers.current
@@ -417,6 +424,7 @@ def visit_class_definition(
         position=position,
         precondition=Top((name,)),
         action=Pop(1),
+        is_definition=True,
     )
 
     class_scope_pointers = graph.add_top_scope()
@@ -642,7 +650,45 @@ def test_assignment() -> None:
     """,
         module_name="stove",
     )
-
     graph = build_graph([source1, source2, source3])
     definition = traverse(graph, graph.root, stack=("chef", ".", "stove", ".", "broil"))
     assert definition.position == Position(source3, 5, 8)
+
+
+def test_assignment_occurrences() -> None:
+    source1 = make_source(
+        """
+    from kitchen import Stove
+
+    stove = Stove()
+    stove.broil()
+    """,
+        module_name="chef",
+    )
+    source2 = make_source(
+        """
+    from stove import *
+    """,
+        module_name="kitchen",
+    )
+    source3 = make_source(
+        """
+    class Stove:
+        def bake():
+            pass
+
+        def broil():
+            pass
+
+        def saute():
+            pass
+    """,
+        module_name="stove",
+    )
+    all_occurrence_positions = find_all_occurrences(
+        Position(source1, 4, 6), sources=[source1, source2, source3]
+    )
+    assert all_occurrence_positions == {
+        Position(source3, 5, 8),
+        Position(source1, 4, 6),
+    }
