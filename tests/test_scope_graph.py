@@ -117,13 +117,13 @@ class ScopeGraph:
 
     def add_outgoing_link(
         self,
-        scope_pointers: ScopePointers,
+        current_scope: ScopeNode,
         name: str | None = None,
         position: Position | None = None,
         precondition: Precondition | None = None,
         action: Action | None = None,
         is_definition: bool = False,
-    ) -> ScopePointers:
+    ) -> tuple[ScopeNode, ScopeNode]:
         new_scope = self._add_scope(
             name=name,
             position=position,
@@ -131,11 +131,8 @@ class ScopeGraph:
             action=action,
             is_definition=is_definition,
         )
-        self.link(scope_pointers.current, new_scope)
-        scope_pointers = replace(
-            scope_pointers, parent=new_scope, current=scope_pointers.current
-        )
-        return scope_pointers
+        self.link(current_scope, new_scope)
+        return current_scope, new_scope
 
     def add_incoming_link(
         self,
@@ -304,15 +301,15 @@ def visit_name(
     position = node_position(node, source)
 
     if isinstance(node.ctx, ast.Store):
-        scope_pointers = graph.add_outgoing_link(
-            scope_pointers,
+        _, parent = graph.add_outgoing_link(
+            scope_pointers.current,
             name=name,
             position=position,
             precondition=Top((name,)),
             action=Pop(1),
             is_definition=True,
         )
-        return scope_pointers.parent
+        return parent
 
     scope_pointers = graph.add_incoming_link(
         scope_pointers, name=name, position=position, action=Push((name,))
@@ -392,8 +389,8 @@ def visit_function_definition(
     name = node.name
     position = node_position(node, source, column_offset=len("def "))
 
-    scope_pointers = graph.add_outgoing_link(
-        scope_pointers,
+    current, _ = graph.add_outgoing_link(
+        scope_pointers.current,
         name=name,
         position=position,
         precondition=Top((name,)),
@@ -401,7 +398,7 @@ def visit_function_definition(
         is_definition=True,
     )
 
-    current_scope = scope_pointers.current
+    current_scope = current
 
     scope_pointers = graph.add_top_scope()
     for statement in node.body:
@@ -418,8 +415,8 @@ def visit_class_definition(
     name = node.name
     position = node_position(node, source, column_offset=len("class "))
 
-    scope_pointers = graph.add_outgoing_link(
-        scope_pointers,
+    current, parent = graph.add_outgoing_link(
+        scope_pointers.current,
         name=name,
         position=position,
         precondition=Top((name,)),
@@ -438,9 +435,9 @@ def visit_class_definition(
     class_scope_pointers = graph.add_incoming_link(
         class_scope_pointers, precondition=Top(("()",)), action=Pop(1)
     )
-    graph.link(scope_pointers.parent, class_scope_pointers.current)
+    graph.link(parent, class_scope_pointers.current)
 
-    return scope_pointers.current
+    return current
 
 
 @visit.register
@@ -461,16 +458,16 @@ def visit_import_from(
     for alias in node.names:
         name = alias.name
         if name == "*":
-            scope_pointers = graph.add_outgoing_link(
-                scope_pointers, action=Push(module_path)
+            _, parent = graph.add_outgoing_link(
+                scope_pointers.current, action=Push(module_path)
             )
-            graph.link(scope_pointers.parent, graph.root)
+            graph.link(parent, graph.root)
         else:
             local_name = alias.asname or name
             position = source.find_after(name, start)
 
-            scope_pointers = graph.add_outgoing_link(
-                scope_pointers,
+            _, parent = graph.add_outgoing_link(
+                scope_pointers.current,
                 name=local_name,
                 position=position,
                 precondition=Top((local_name,)),
@@ -478,7 +475,7 @@ def visit_import_from(
                 is_definition=True,
             )
 
-            graph.link(scope_pointers.parent, graph.root)
+            graph.link(parent, graph.root)
     return current_scope
 
 
