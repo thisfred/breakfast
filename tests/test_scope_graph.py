@@ -38,11 +38,6 @@ class NodeType(Enum):
     REFERENCE = auto()
 
 
-class Direction(Enum):
-    INCOMING = auto()
-    OUTGOING = auto()
-
-
 @dataclass(frozen=True)
 class ScopeNode:
     node_id: int
@@ -82,7 +77,6 @@ class ScopeGraph:
         *,
         name: str | None = None,
         position: Position | None = None,
-        parent_scope: ScopeNode | None = None,
         precondition: Precondition | None = None,
         action: Action | None = None,
         is_definition: bool = False,
@@ -113,14 +107,14 @@ class ScopeGraph:
 
     def add_scope(
         self,
-        current_scope: ScopeNode,
         *,
         name: str | None = None,
         position: Position | None = None,
         precondition: Precondition | None = None,
         action: Action | None = None,
         is_definition: bool = False,
-        direction: Direction = Direction.INCOMING,
+        link_from: ScopeNode | None = None,
+        link_to: ScopeNode | None = None,
         priority: int = 0,
     ) -> ScopeNode:
         new_scope = self._add_scope(
@@ -131,10 +125,11 @@ class ScopeGraph:
             is_definition=is_definition,
         )
 
-        if direction is Direction.OUTGOING:
-            self.link(current_scope, new_scope, priority)
-        else:
-            self.link(new_scope, current_scope, priority)
+        if link_to:
+            self.link(new_scope, link_to, priority)
+
+        if link_from:
+            self.link(link_from, new_scope, priority)
 
         return new_scope
 
@@ -278,7 +273,7 @@ def visit_module(
     current = graph.add_top_scope()
 
     for statement_or_expression in node.body:
-        current = graph.add_scope(current)
+        current = graph.add_scope(link_to=current)
         visit(
             statement_or_expression,
             source,
@@ -286,9 +281,9 @@ def visit_module(
             current,
         )
 
-    current = graph.add_scope(current, precondition=Top((".",)), action=Pop(1))
+    current = graph.add_scope(link_to=current, precondition=Top((".",)), action=Pop(1))
     current = graph.add_scope(
-        current,
+        link_to=current,
         precondition=Top((source.module_name,)),
         action=Pop(1),
         is_definition=True,
@@ -312,18 +307,17 @@ def visit_name(
 
     if isinstance(node.ctx, ast.Store):
         parent = graph.add_scope(
-            current_scope,
+            link_from=current_scope,
             name=name,
             position=position,
             precondition=Top((name,)),
             action=Pop(1),
             is_definition=True,
-            direction=Direction.OUTGOING,
         )
         return parent
 
     current = graph.add_scope(
-        current_scope,
+        link_to=current_scope,
         name=name,
         position=position,
         action=Push((name,)),
@@ -369,11 +363,11 @@ def visit_attribute(
     for name in names:
         position = source.find_after(name, position)
 
-    current_scope = graph.add_scope(current_scope, action=Push((".",)))
+    current_scope = graph.add_scope(link_to=current_scope, action=Push((".",)))
 
     position = source.find_after(node.attr, position)
     current_scope = graph.add_scope(
-        current_scope,
+        link_to=current_scope,
         name=node.attr,
         position=position,
         action=Push((node.attr,)),
@@ -408,18 +402,17 @@ def visit_function_definition(
     position = node_position(node, source, column_offset=len("def "))
 
     graph.add_scope(
-        current_scope,
+        link_from=current_scope,
         name=name,
         position=position,
         precondition=Top((name,)),
         action=Pop(1),
         is_definition=True,
-        direction=Direction.OUTGOING,
     )
 
     current_scope = graph.add_top_scope()
     for statement in node.body:
-        current_scope = graph.add_scope(current_scope)
+        current_scope = graph.add_scope(link_to=current_scope)
         visit(statement, source, graph, current_scope)
 
     return current_scope
@@ -437,25 +430,24 @@ def visit_class_definition(
     original_scope = current_scope
 
     parent = graph.add_scope(
-        current_scope,
+        link_from=current_scope,
         name=name,
         position=position,
         precondition=Top((name,)),
         action=Pop(1),
         is_definition=True,
-        direction=Direction.OUTGOING,
     )
 
     current_class_scope = graph.add_top_scope()
     for statement in node.body:
-        current_class_scope = graph.add_scope(current_class_scope)
+        current_class_scope = graph.add_scope(link_to=current_class_scope)
         visit(statement, source, graph, current_class_scope)
 
     current_class_scope = graph.add_scope(
-        current_class_scope, precondition=Top((".",)), action=Pop(1)
+        link_to=current_class_scope, precondition=Top((".",)), action=Pop(1)
     )
     current_scope = graph.add_scope(
-        current_class_scope, precondition=Top(("()",)), action=Pop(1)
+        link_to=current_class_scope, precondition=Top(("()",)), action=Pop(1)
     )
     graph.link(parent, current_scope)
 
@@ -479,22 +471,19 @@ def visit_import_from(
     for alias in node.names:
         name = alias.name
         if name == "*":
-            parent = graph.add_scope(
-                current_scope, action=Push(module_path), direction=Direction.OUTGOING
-            )
+            parent = graph.add_scope(link_from=current_scope, action=Push(module_path))
             graph.link(parent, graph.root)
         else:
             local_name = alias.asname or name
             position = source.find_after(name, start)
 
             parent = graph.add_scope(
-                current_scope,
+                link_from=current_scope,
                 name=local_name,
                 position=position,
                 precondition=Top((local_name,)),
                 action=Sequence(Pop(1), Push(module_path + (name,))),
                 is_definition=True,
-                direction=Direction.OUTGOING,
             )
 
             graph.link(parent, graph.root)
@@ -513,20 +502,15 @@ def visit_global(
         position = source.find_after(name, start)
 
         parent = graph.add_scope(
-            current_scope,
+            link_from=current_scope,
             name=name,
             position=position,
             precondition=Top((name,)),
             action=Sequence(Pop(1), Push((name,))),
-            direction=Direction.OUTGOING,
         )
 
-        parent = graph.add_scope(
-            parent, action=Push((".",)), direction=Direction.OUTGOING
-        )
-        parent = graph.add_scope(
-            parent, action=Push((source.module_name,)), direction=Direction.OUTGOING
-        )
+        parent = graph.add_scope(link_from=parent, action=Push((".",)))
+        parent = graph.add_scope(link_from=parent, action=Push((source.module_name,)))
         graph.link(parent, graph.root)
 
     return current_scope
@@ -761,3 +745,13 @@ def test_finds_global_variable() -> None:
         Position(source, 4, 11),
         Position(source, 5, 10),
     }
+
+
+# def test_reassignment() -> None:
+
+#     source = make_source(
+#         """
+#     var = 12
+#     var = 13
+#     """
+#     )
