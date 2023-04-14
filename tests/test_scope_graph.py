@@ -36,6 +36,17 @@ class NotInScopeError(Exception):
     pass
 
 
+@dataclass(frozen=True)
+class Edge:
+    same_rank: bool = False
+    to_enclosing_scope: bool = False
+
+
+class Rule(Protocol):
+    def __call__(self, edge: Edge) -> bool:
+        ...
+
+
 class NodeType(Enum):
     SCOPE = auto()
     MODULE_SCOPE = auto()
@@ -51,15 +62,21 @@ class ScopeNode:
     precondition: Precondition | None = field(hash=False, default=None)
     action: Action | None = field(hash=False, default=None)
     node_type: NodeType = NodeType.SCOPE
+    rules: tuple[Rule, ...] = ()
 
 
 NULL_SCOPE = ScopeNode(-1)
 
 
+def no_lookup_in_enclosing_scope(edge: Edge) -> bool:
+    """!e"""
+    return not edge.to_enclosing_scope
+
+
 @dataclass
 class ScopeGraph:
     nodes: dict[int, ScopeNode]
-    edges: dict[int, set[int]]
+    edges: dict[int, set[tuple[Edge, int]]]
     root: ScopeNode
     references: dict[str, list[ScopeNode]]
     positions: dict[Position, list[ScopeNode]]
@@ -79,6 +96,14 @@ class ScopeGraph:
         self.max_id += 1
         return new_id
 
+    def get_parent(self, scope: ScopeNode) -> ScopeNode | None:
+        for _, parent_id in self.edges[scope.node_id]:
+            node = self.nodes[parent_id]
+            if not (node.name or node.action or node.precondition):
+                return node
+
+        return None
+
     def _add_scope(
         self,
         *,
@@ -87,6 +112,7 @@ class ScopeGraph:
         precondition: Precondition | None = None,
         action: Action | None = None,
         is_definition: bool = False,
+        rules: tuple[Rule, ...] = (),
     ) -> ScopeNode:
         if is_definition:
             node_type = NodeType.DEFINITION
@@ -100,6 +126,7 @@ class ScopeGraph:
             precondition=precondition,
             action=action,
             node_type=node_type,
+            rules=rules,
         )
         self._add_node(new_scope)
         return new_scope
@@ -123,6 +150,9 @@ class ScopeGraph:
         is_definition: bool = False,
         link_from: ScopeNode | None = None,
         link_to: ScopeNode | None = None,
+        same_rank: bool = False,
+        to_enclosing_scope: bool = False,
+        rules: tuple[Rule, ...] = (),
     ) -> ScopeNode:
         new_scope = self._add_scope(
             name=name,
@@ -130,79 +160,159 @@ class ScopeGraph:
             precondition=precondition,
             action=action,
             is_definition=is_definition,
+            rules=rules,
         )
 
         if link_to:
-            self.link(new_scope, link_to)
+            self.link(
+                new_scope,
+                link_to,
+                same_rank=same_rank,
+                to_enclosing_scope=to_enclosing_scope,
+            )
 
         if link_from:
-            self.link(link_from, new_scope)
+            self.link(
+                link_from,
+                new_scope,
+                same_rank=same_rank,
+                to_enclosing_scope=to_enclosing_scope,
+            )
 
         return new_scope
 
     def _add_node(self, node: ScopeNode) -> None:
         self.nodes[node.node_id] = node
-        if node.name and node.node_type is NodeType.REFERENCE:
+        if node.name:
             self.references[node.name].append(node)
         if node.position:
             self.positions[node.position].append(node)
 
-    def link(self, scope_from: ScopeNode, scope_to: ScopeNode) -> None:
-        self.edges[scope_from.node_id].add(scope_to.node_id)
+    def link(
+        self,
+        scope_from: ScopeNode,
+        scope_to: ScopeNode,
+        same_rank: bool = False,
+        to_enclosing_scope: bool = False,
+    ) -> None:
+        self.edges[scope_from.node_id].add(
+            (
+                Edge(same_rank=same_rank, to_enclosing_scope=to_enclosing_scope),
+                scope_to.node_id,
+            )
+        )
+
+
+def group_by_rank(graph: ScopeGraph) -> Iterable[set[int]]:
+    edges_to: dict[int, set[tuple[Edge, int]]] = defaultdict(set)
+    for node_id, to_nodes in graph.edges.items():
+        for edge, other_id in to_nodes:
+            edges_to[other_id].add((edge, node_id))
+
+    seen_ids = set()
+    groups = []
+    for node_id in graph.nodes:
+        if node_id in seen_ids:
+            continue
+
+        seen_ids.add(node_id)
+
+        group = {node_id}
+
+        to_check = [node_id]
+
+        while to_check:
+            other_ids = get_same_rank_links(to_check.pop(), graph, edges_to, seen_ids)
+            group |= other_ids
+            seen_ids |= other_ids
+            to_check.extend(list(other_ids))
+
+        groups.append(group)
+
+    return groups
+
+
+def get_same_rank_links(
+    node_id: int,
+    graph: ScopeGraph,
+    edges_to: dict[int, set[tuple[Edge, int]]],
+    seen_ids: set[int],
+) -> set[int]:
+    return (
+        {n for e, n in graph.edges[node_id] if e.same_rank}
+        | {n for e, n in edges_to[node_id] if e.same_rank}
+    ) - seen_ids
 
 
 def view_graph(graph: ScopeGraph) -> None:
     if graphviz is None:
         return
 
-    dot = graphviz.Digraph()
-    dot.attr(rankdir="BT")
-    for node in graph.nodes.values():
-        if isinstance(node.action, Pop):
-            dot.node(
-                str(node.node_id),
-                f"↑{node.precondition.path}",  # type: ignore[union-attr]
-                shape="box",
-                peripheries="2" if node.node_type is NodeType.DEFINITION else "",
-                style="dashed" if node.node_type is not NodeType.DEFINITION else "",
-                color="#B10000",
-                fontcolor="#B50000",
-            )
-        elif isinstance(node.action, Push):
-            dot.node(
-                str(node.node_id),
-                f"↓{node.action.path}",
-                shape="box",
-                style="dashed",
-                color="#00B5B5",
-                fontcolor="#00B1B1",
-            )
+    digraph = graphviz.Digraph()
+    digraph.attr(rankdir="BT")
+    for same_rank_nodes in group_by_rank(graph):
+        subgraph = graphviz.Digraph()
+        subgraph.attr(rankdir="BT")
+        subgraph.attr(rank="same")
 
-        elif node.precondition or node.action:
-            dot.node(str(node.node_id), node.name or "", shape="box")
-        else:
-            dot.node(
-                str(node.node_id),
-                node.name or "",
-                shape="circle",
-                style="filled" if node is graph.root else "",
-                fillcolor="black" if node is graph.root else "",
-                fixedsize="true",
-                width="0.3",
-                height="0.3",
-            )
+        for node_id in same_rank_nodes:
+            node = graph.nodes[node_id]
+            if isinstance(node.action, Pop):
+                subgraph.node(
+                    name=str(node.node_id),
+                    label=f"↑{node.precondition.path}"  # type: ignore[union-attr]
+                    + (
+                        f"{{{','.join(r.__doc__ for r in node.rules if r.__doc__)}}}"
+                        if node.rules
+                        else ""
+                    ),
+                    shape="box",
+                    peripheries="2" if node.node_type is NodeType.DEFINITION else "",
+                    style="dashed" if node.node_type is not NodeType.DEFINITION else "",
+                    color="#B10000",
+                    fontcolor="#B10000",
+                )
+            elif isinstance(node.action, Push):
+                subgraph.node(
+                    name=str(node.node_id),
+                    label=f"↓{node.action.path}"
+                    + (
+                        f"{{{','.join(r.__doc__ for r in node.rules if r.__doc__)}}}"
+                        if node.rules
+                        else ""
+                    ),
+                    shape="box",
+                    style="dashed",
+                    color="#00B1B1",
+                    fontcolor="#00B1B1",
+                )
+
+            elif node.precondition or node.action:
+                subgraph.node(str(node.node_id), node.name or "", shape="box")
+            else:
+                subgraph.node(
+                    name=str(node.node_id),
+                    label=node.name or "",
+                    shape="circle",
+                    style="filled" if node is graph.root else "",
+                    fillcolor="black" if node is graph.root else "",
+                    fixedsize="true",
+                    width="0.3",
+                    height="0.3",
+                )
+
+        digraph.subgraph(subgraph)
 
     for from_id, to_nodes in graph.edges.items():
-        # from_node = graph.nodes[from_id]
-        for to_node_id in to_nodes:
-            to_node = graph.nodes[to_node_id]
-            dot.edge(
+        for edge, to_node_id in to_nodes:
+            digraph.edge(
                 str(from_id),
                 str(to_node_id),
-                len="0.1" if (to_node.action or to_node.precondition) else "",
+                label="e" if edge.to_enclosing_scope else "",
             )
 
-    dot.render(view=True)
+    print(digraph.source)
+    digraph.render(view=True)
 
 
 def _traverse(graph: ScopeGraph, start: ScopeNode | None = None) -> Iterator[ScopeNode]:
@@ -217,7 +327,7 @@ def _traverse(graph: ScopeGraph, start: ScopeNode | None = None) -> Iterator[Sco
 
         yield node
 
-        for next_id in graph.edges[node.node_id]:
+        for _, next_id in graph.edges[node.node_id]:
             next_node = graph.nodes[next_id]
             if next_node in seen:
                 continue
@@ -227,12 +337,13 @@ def _traverse(graph: ScopeGraph, start: ScopeNode | None = None) -> Iterator[Sco
 
 def traverse(graph: ScopeGraph, scope: ScopeNode, stack: Path) -> ScopeNode:
     node_id = scope.node_id
+    rules = scope.rules
 
     if scope.action:
         stack = scope.action(stack)
 
     queue: deque[tuple[ScopeNode, Path]] = deque()
-    extend_queue(graph, node_id, stack, queue)
+    extend_queue(graph, node_id, stack, queue, rules)
 
     while queue:
         (node, stack) = queue.popleft()
@@ -243,7 +354,7 @@ def traverse(graph: ScopeGraph, scope: ScopeNode, stack: Path) -> ScopeNode:
         if node.node_type is NodeType.DEFINITION and not stack:
             return node
 
-        extend_queue(graph, node.node_id, stack, queue)
+        extend_queue(graph, node.node_id, stack, queue, rules)
 
     raise NotFoundError
 
@@ -253,8 +364,11 @@ def extend_queue(
     node_id: int,
     stack: Path,
     queue: deque[tuple[ScopeNode, Path]],
+    rules: Iterable[Rule],
 ) -> None:
-    for next_id in graph.edges[node_id]:
+    for edge, next_id in graph.edges[node_id]:
+        if not all(allowed(edge) for allowed in rules):
+            continue
         next_node = graph.nodes[next_id]
         if next_node.precondition is None or next_node.precondition(stack):
             queue.append((next_node, stack))
@@ -264,35 +378,60 @@ def all_occurrence_positions(
     position: Position, *, sources: Iterable[Source] | None = None
 ) -> set[Position]:
     graph = build_graph(sources or [position.source])
+
     scopes_for_position = graph.positions.get(position)
     if not scopes_for_position:
         raise NotFoundError
 
+    possible_occurrences = []
     for scope in scopes_for_position:
         if scope.name is not None:
-            found = scope
             name = scope.name
-            possible_occurrences = graph.references[name]
+            possible_occurrences.extend(graph.references[name])
             break
     else:
         raise NotFoundError
 
-    definitions: dict[ScopeNode, list[ScopeNode]] = defaultdict(list)
+    definitions: dict[ScopeNode, set[ScopeNode]] = defaultdict(set)
     found_definition = None
     for occurrence in possible_occurrences:
-        definition = traverse(graph, occurrence, stack=())
+        try:
+            definition = traverse(graph, occurrence, stack=())
+        except NotFoundError:
+            continue
 
-        definitions[definition].append(occurrence)
-        if found in (definition, occurrence):
+        definitions[definition].add(occurrence)
+        if position in (definition.position, occurrence.position):
             found_definition = definition
 
     if not found_definition:
         raise NotFoundError
 
     assert found_definition.position
-    return {found_definition.position} | {
-        d.position for d in definitions[found_definition] if d.position
-    }
+    return consolidate_definitions(definitions, found_definition)
+
+
+def consolidate_definitions(
+    definitions: dict[ScopeNode, set[ScopeNode]], found_definition: ScopeNode
+) -> set[Position]:
+    groups: list[set[Position]] = []
+    found_group: set[Position] = set()
+    for definition, occurrences in definitions.items():
+        positions = {o.position for o in occurrences if o.position}
+        if definition.position:
+            positions.add(definition.position)
+        for group in groups:
+            if positions & group:
+                group |= positions
+                if found_definition.position in group:
+                    found_group = group
+                break
+        else:
+            groups.append(positions)
+            if found_definition.position in positions:
+                found_group = positions
+
+    return found_group
 
 
 def node_position(
@@ -364,10 +503,7 @@ def visit_module(
         action=Pop(),
         is_definition=True,
     )
-    graph.link(
-        graph.root,
-        current,
-    )
+    graph.link(graph.root, current, same_rank=True)
     return graph.root
 
 
@@ -389,6 +525,7 @@ def visit_name(
             precondition=Top(name),
             action=Pop(),
             is_definition=True,
+            same_rank=True,
         )
         return current
 
@@ -397,6 +534,7 @@ def visit_name(
         name=name,
         position=position,
         action=Push(name),
+        # same_rank=True,
     )
     return current
 
@@ -409,19 +547,25 @@ def visit_assign(
     current_scope: ScopeNode,
 ) -> ScopeNode:
     parent_scope = current_scope
+    grandparent = graph.get_parent(current_scope) or parent_scope
 
     for node_target in node.targets:
         assert isinstance(node_target, ast.Name)
-        current_scope = visit(node_target, source, graph, current_scope)
+
+        # if this is a redefinition the definition is itself also a reference.
         graph.add_scope(
-            link_to=parent_scope,
+            link_to=grandparent,
             name=node_target.id,
             position=node_position(node_target, source),
             action=Push(node_target.id),
+            rules=(no_lookup_in_enclosing_scope,),
         )
 
-    reference_scope = visit(node.value, source, graph, parent_scope)
-    graph.link(current_scope, reference_scope)
+        current_scope = visit(node_target, source, graph, current_scope)
+
+    reference_scope = visit(node.value, source, graph, grandparent)
+    if reference_scope.name or reference_scope.action or reference_scope.precondition:
+        graph.link(current_scope, reference_scope, same_rank=True)
     return parent_scope
 
 
@@ -439,7 +583,9 @@ def visit_attribute(
     for name in names:
         position = source.find_after(name, position)
 
-    current_scope = graph.add_scope(link_to=current_scope, action=Push("."))
+    current_scope = graph.add_scope(
+        link_to=current_scope, action=Push("."), same_rank=True
+    )
 
     position = source.find_after(node.attr, position)
     current_scope = graph.add_scope(
@@ -447,6 +593,7 @@ def visit_attribute(
         name=node.attr,
         position=position,
         action=Push(node.attr),
+        same_rank=True,
     )
 
     return current_scope
@@ -463,7 +610,7 @@ def visit_call(
     original_scope = current_scope
 
     current_scope = graph.add_top_scope(action=Push("()"))
-    graph.link(current_scope, original_scope)
+    graph.link(current_scope, original_scope, same_rank=True)
     return current_scope
 
 
@@ -484,9 +631,12 @@ def visit_function_definition(
         precondition=Top(name),
         action=Pop(),
         is_definition=True,
+        same_rank=True,
     )
 
-    current_scope = graph.add_scope(link_to=graph.module_roots[source.module_name])
+    current_scope = graph.add_scope(
+        link_to=graph.module_roots[source.module_name], to_enclosing_scope=True
+    )
     for statement in node.body:
         current_scope = graph.add_scope(link_to=current_scope)
         visit(statement, source, graph, current_scope)
@@ -512,6 +662,7 @@ def visit_class_definition(
         precondition=Top(name),
         action=Pop(),
         is_definition=True,
+        same_rank=True,
     )
 
     current_class_scope = graph.add_top_scope()
@@ -520,10 +671,13 @@ def visit_class_definition(
         visit(statement, source, graph, current_class_scope)
 
     current_class_scope = graph.add_scope(
-        link_to=current_class_scope, precondition=Top("."), action=Pop()
+        link_to=current_class_scope, precondition=Top("."), action=Pop(), same_rank=True
     )
     current_scope = graph.add_scope(
-        link_to=current_class_scope, precondition=Top("()"), action=Pop()
+        link_to=current_class_scope,
+        precondition=Top("()"),
+        action=Pop(),
+        same_rank=True,
     )
     graph.link(parent, current_scope)
 
@@ -549,7 +703,9 @@ def visit_import_from(
         if name == "*":
             parent = current_scope
             for part in module_path[::-1]:
-                parent = graph.add_scope(link_from=parent, action=Push(part))
+                parent = graph.add_scope(
+                    link_from=parent, action=Push(part), same_rank=True
+                )
             graph.link(parent, graph.root)
         else:
             local_name = alias.asname or name
@@ -561,6 +717,7 @@ def visit_import_from(
                 position=position,
                 precondition=Top(local_name),
                 action=Pop(),
+                same_rank=True,
             )
             for part in (module_path + (name,))[::-1]:
                 parent = graph.add_scope(
@@ -568,6 +725,7 @@ def visit_import_from(
                     name=local_name,
                     position=position,
                     action=Push(part),
+                    same_rank=True,
                 )
 
             graph.link(parent, graph.root)
@@ -591,12 +749,14 @@ def visit_global(
             position=position,
             precondition=Top(name),
             action=Pop(),
+            same_rank=True,
         )
         parent = graph.add_scope(
             link_from=parent,
             name=name,
             position=position,
             action=Push(name),
+            same_rank=True,
         )
         graph.link(parent, graph.module_roots[source.module_name])
 
@@ -816,4 +976,64 @@ def test_finds_global_variable() -> None:
         Position(source, 1, 0),
         Position(source, 4, 11),
         Position(source, 5, 10),
+    }
+
+
+def test_reassignment() -> None:
+    source = make_source(
+        """
+    var = 12
+    var = 13
+    """
+    )
+
+    position = Position(source, 2, 0)
+    assert all_occurrence_positions(position) == {
+        Position(source, 1, 0),
+        Position(source, 2, 0),
+    }
+
+
+def test_distinguishes_local_variables_from_global() -> None:
+    source = make_source(
+        """
+        def fun():
+            var = 12
+            var2 = 13
+            result = var + var2
+            del var
+            return result
+
+        var = 20
+        """
+    )
+
+    position = source.position(row=2, column=4)
+
+    assert all_occurrence_positions(position) == {
+        source.position(row=2, column=4),
+        source.position(row=4, column=13),
+        source.position(row=5, column=8),
+    }
+
+
+def test_finds_non_local_variable() -> None:
+    source = make_source(
+        """
+    var = 12
+
+    def fun():
+        result = var + 1
+        return result
+
+    var = 20
+    """
+    )
+
+    position = source.position(1, 0)
+
+    assert all_occurrence_positions(position) == {
+        Position(source, 1, 0),
+        Position(source, 4, 13),
+        Position(source, 7, 0),
     }
