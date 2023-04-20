@@ -39,16 +39,7 @@ setup(
     ],
     package_data={"breakfast": ["py.typed"]},
     extras_require={
-        "tests": [
-            "black",
-            "coverage",
-            "flake8",
-            "flake8-bugbear",
-            "isort",
-            "mypy",
-            "pytest",
-            "libcst",
-        ],
+        "tests": ["black", "coverage", "mypy", "pytest", "ruff"],
         "docs": [],
     },
 )
