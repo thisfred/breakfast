@@ -1,0 +1,7 @@
+-c requirements.in
+-c test-requirements.in
+black
+coverage
+mypy>=0.750
+pre-commit>=1.20.0
+ruff

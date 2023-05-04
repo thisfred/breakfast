@@ -5,13 +5,13 @@ test: .requirements
 pip-tools: .venv
 	.venv/bin/pip install pip-tools
 
-dependencies: pip-tools requirements.txt test-requirements.txt optional-requirements.txt
+dependencies: pip-tools requirements.txt test-requirements.txt optional-requirements.txt dev-requirements.txt
 
 .venv:
 	python -m virtualenv .venv
 
 .venv/installed: dependencies .venv
-	.venv/bin/pip install -r requirements.txt -r test-requirements.txt -r optional-requirements.txt
+	.venv/bin/pip install -r requirements.txt -r test-requirements.txt -r dev-requirements.txt -r optional-requirements.txt
 	touch $@
 
 install: .venv/installed

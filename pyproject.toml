@@ -1,0 +1,15 @@
+[tool.ruff]
+line-length = 120
+select = ["E", "F", "I", "C", "W", "UP", "N", "YTT", "S", "B", "A", "DTZ", "RUF"]
+ignore = [
+    "E501",  # covered by black
+    "A003",  # not actually a problem
+    ]
+unfixable = ["F401"]  # autofixing unused imports is dangerous
+target-version = "py310"
+
+[tool.ruff.per-file-ignores]
+"*test*" = ["S101"]
+
+[tool.ruff.mccabe]
+max-complexity = 10
