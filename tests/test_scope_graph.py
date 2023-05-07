@@ -836,12 +836,11 @@ def visit_class_definition(
 ) -> Iterator[Fragment]:
     name = node.name
 
+    current_scope = graph.add_scope()
+    original_scope = current_scope
+
     # Offset by len("class ")
     position = node_position(node, source, column_offset=6)
-
-    current_scope = graph.add_scope()
-
-    original_scope = current_scope
 
     instance_scope = graph.add_scope(action=Pop("."), same_rank=True)
     i_scope = graph.add_scope(
@@ -858,6 +857,16 @@ def visit_class_definition(
         is_definition=True,
         same_rank=True,
     )
+    for base in node.bases:
+        link_to = None
+        for fragment in visit(base, source, graph, state):
+            if link_to:
+                graph.link(fragment.exit, link_to)
+            link_to = fragment.entry
+        if link_to:
+            graph.link(parent, link_to)
+        if state.enclosing_scope:
+            graph.link(fragment.exit, state.enclosing_scope)
 
     class_top_scope = graph.add_scope()
     current_class_scope: ScopeNode = class_top_scope
@@ -1586,4 +1595,29 @@ def test_finds_tuple_unpack() -> None:
     assert all_occurrence_positions(position) == {
         source.position(1, 5),
         source.position(2, 6),
+    }
+
+
+def test_finds_superclasses() -> None:
+    source = make_source(
+        """
+        class A:
+
+            def method(self):
+                pass
+
+        class B(A):
+            pass
+
+        b = B()
+        c = b
+        c.method()
+        """
+    )
+
+    position = source.position(row=3, column=8)
+
+    assert all_occurrence_positions(position) == {
+        source.position(row=3, column=8),
+        source.position(row=11, column=2),
     }
