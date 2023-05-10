@@ -1688,3 +1688,135 @@ def test_recognizes_multiple_assignment_1() -> None:
         source.position(row=2, column=11),
         source.position(row=2, column=14),
     }
+
+
+def test_recognizes_multiple_assignments() -> None:
+    source = make_source(
+        """
+    class A:
+        def method(self):
+            pass
+
+    class B:
+        def method(self):
+            pass
+
+    foo, bar = A(), B()
+    foo.method()
+    bar.method()
+    """
+    )
+
+    position = source.position(row=2, column=8)
+
+    assert all_occurrence_positions(position) == {
+        source.position(2, 8),
+        source.position(10, 4),
+    }
+
+
+def test_finds_enclosing_scope_variable_from_comprehension() -> None:
+    source = make_source(
+        """
+    var = 3
+    res = [foo for foo in range(100) if foo % var]
+    """
+    )
+
+    position = source.position(row=1, column=0)
+
+    assert all_occurrence_positions(position) == {
+        source.position(1, 0),
+        source.position(2, 42),
+    }
+
+
+def test_finds_static_method() -> None:
+    source = make_source(
+        """
+        class A:
+
+            @staticmethod
+            def method(arg):
+                pass
+
+        a = A()
+        b = a.method('foo')
+        """
+    )
+
+    position = source.position(row=4, column=8)
+
+    assert all_occurrence_positions(position) == {
+        source.position(4, 8),
+        source.position(8, 6),
+    }
+
+
+def test_finds_method_after_call() -> None:
+    source = make_source(
+        """
+        class A:
+
+            def method(arg):
+                pass
+
+        b = A().method('foo')
+        """
+    )
+
+    position = source.position(row=3, column=8)
+
+    assert all_occurrence_positions(position) == {
+        source.position(3, 8),
+        source.position(6, 8),
+    }
+
+
+def test_finds_argument() -> None:
+    source = make_source(
+        """
+        class A:
+
+            def foo(self, arg):
+                print(arg)
+
+            def bar(self):
+                arg = "1"
+                self.foo(arg=arg)
+        """
+    )
+
+    position = source.position(row=3, column=18)
+
+    assert all_occurrence_positions(position) == {
+        source.position(3, 18),
+        source.position(4, 14),
+        source.position(8, 17),
+    }
+
+
+def test_finds_method_but_not_function() -> None:
+    source = make_source(
+        """
+        class A:
+
+            def old(self):
+                pass
+
+            def foo(self):
+                self.old()
+
+            def bar(self):
+                old()
+
+        def old():
+            pass
+        """
+    )
+    position = source.position(3, 8)
+
+    assert all_occurrence_positions(position) == {
+        source.position(3, 8),
+        source.position(7, 13),
+    }
