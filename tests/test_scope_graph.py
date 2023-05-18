@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from functools import singledispatch
-from typing import Literal, Protocol
+from typing import Protocol
 
 from breakfast.position import Position
 from breakfast.source import Source
@@ -67,12 +67,17 @@ class ScopeNode:
 
 @dataclass(frozen=True)
 class Fragment:
-    entry: ScopeNode
-    exit: ScopeNode
-    kind: Literal["expression"] | Literal["statement"] = "statement"
+    _entry: "ScopeNode | Fragment"
+    _exit: "ScopeNode | Fragment"
+    is_statement: bool = True
 
+    @property
+    def entry(self) -> ScopeNode:
+        return self._entry if isinstance(self._entry, ScopeNode) else self._entry.entry
 
-NULL_SCOPE = ScopeNode(-1)
+    @property
+    def exit(self) -> ScopeNode:
+        return self._exit if isinstance(self._exit, ScopeNode) else self._exit.exit
 
 
 def no_lookup_in_enclosing_scope(edge: Edge) -> bool:
@@ -205,16 +210,24 @@ class ScopeGraph:
     ) -> Fragment:
         match fragment_or_scope_1:
             case Fragment(in_scope, out_scope):
-                entry_scope = in_scope
-                from_node = out_scope
+                entry_scope = (
+                    in_scope if isinstance(in_scope, ScopeNode) else in_scope.entry
+                )
+                from_node = (
+                    out_scope if isinstance(out_scope, ScopeNode) else out_scope.exit
+                )
             case scope_node if isinstance(scope_node, ScopeNode):
                 entry_scope = scope_node
                 from_node = scope_node
 
         match fragment_or_scope_2:
             case Fragment(in_scope, out_scope):
-                to_node = in_scope
-                exit_scope = out_scope
+                to_node = (
+                    in_scope if isinstance(in_scope, ScopeNode) else in_scope.entry
+                )
+                exit_scope = (
+                    out_scope if isinstance(out_scope, ScopeNode) else out_scope.exit
+                )
             case scope_node if isinstance(scope_node, ScopeNode):
                 to_node = scope_node
                 exit_scope = scope_node
@@ -225,9 +238,10 @@ class ScopeGraph:
 
 @dataclass
 class State:
-    enclosing_scope: ScopeNode | None = None
-    instance_scope: ScopeNode | None = None
+    scope_hierarchy: list[ScopeNode]
+    inheritance_hierarchy: list[Fragment]
     class_name: str | None = None
+    instance_scope: ScopeNode | None = None
     self: str | None = None
 
     @contextmanager
@@ -247,6 +261,13 @@ class State:
             self.class_name = old_class_name
 
     @contextmanager
+    def base_classes(self, fragments: list[Fragment]) -> Iterator["State"]:
+        old_hierarchy = self.inheritance_hierarchy
+        self.inheritance_hierarchy = fragments
+        yield self
+        self.inheritance_hierarchy = old_hierarchy
+
+    @contextmanager
     def method(self, *, self_name: str | None) -> Iterator["State"]:
         self.old_self = self.self
         self.self = self_name
@@ -255,10 +276,9 @@ class State:
 
     @contextmanager
     def scope(self, scope: ScopeNode) -> Iterator["State"]:
-        old_scope = self.enclosing_scope
-        self.enclosing_scope = scope
+        self.scope_hierarchy.append(scope)
         yield self
-        self.enclosing_scope = old_scope
+        self.scope_hierarchy.pop()
 
 
 def group_by_rank(graph: ScopeGraph) -> Iterable[set[int]]:
@@ -315,63 +335,7 @@ def view_graph(graph: ScopeGraph) -> None:
 
         for node_id in same_rank_nodes:
             node = graph.nodes[node_id]
-            if isinstance(node.action, Pop):
-                subgraph.node(
-                    name=str(node.node_id),
-                    label=f"↑{node.node_id} {node.action.path}"
-                    + (
-                        f"<{node.position.row}, {node.position.column}>"
-                        if node.position
-                        else "<>"
-                    )
-                    + (
-                        f"{{{','.join(r.__doc__ for r in node.rules if r.__doc__)}}}"
-                        if node.rules
-                        else ""
-                    ),
-                    shape="box",
-                    peripheries="2" if node.node_type is NodeType.DEFINITION else "",
-                    style="dashed" if node.node_type is not NodeType.DEFINITION else "",
-                    color="#B10000",
-                    fontcolor="#B10000",
-                )
-            elif isinstance(node.action, Push):
-                subgraph.node(
-                    name=str(node.node_id),
-                    label=f"↓{node.node_id} {node.action.path} "
-                    + (
-                        f"<{node.position.row}, {node.position.column}>"
-                        if node.position
-                        else "<>"
-                    )
-                    + (
-                        f"{{{','.join(r.__doc__ for r in node.rules if r.__doc__)}}}"
-                        if node.rules
-                        else ""
-                    ),
-                    shape="box",
-                    style="dashed",
-                    color="#00B1B1",
-                    fontcolor="#00B1B1",
-                )
-
-            elif node.action:
-                subgraph.node(
-                    str(node.node_id), node.name or str(node.node_id) or "", shape="box"
-                )
-            else:
-                subgraph.node(
-                    name=str(node.node_id),
-                    label=node.name or str(node.node_id) or "",
-                    shape="circle",
-                    style="filled" if node is graph.root else "",
-                    fillcolor="black" if node is graph.root else "",
-                    fixedsize="true",
-                    width="0.4" if node.name else "0.3",
-                    height="0.4" if node.name else "0.3",
-                    color="#B100B1" if node.name else "",
-                    fontcolor="#B100B1" if node.name else "",
-                )
+            render_node(node, subgraph, graph)
 
         digraph.subgraph(subgraph)
 
@@ -384,6 +348,68 @@ def view_graph(graph: ScopeGraph) -> None:
             )
 
     digraph.render(view=True)
+
+
+def render_node(
+    node: ScopeNode, subgraph: graphviz.Digraph, scope_graph: ScopeGraph
+) -> None:
+    if isinstance(node.action, Pop):
+        subgraph.node(
+            name=str(node.node_id),
+            label=f"↑{node.node_id} {node.action.path}"
+            + (
+                f"<{node.position.row}, {node.position.column}>"
+                if node.position
+                else "<>"
+            )
+            + (
+                f"{{{','.join(r.__doc__ for r in node.rules if r.__doc__)}}}"
+                if node.rules
+                else ""
+            ),
+            shape="box",
+            peripheries="2" if node.node_type is NodeType.DEFINITION else "",
+            style="dashed" if node.node_type is not NodeType.DEFINITION else "",
+            color="#B10000",
+            fontcolor="#B10000",
+        )
+    elif isinstance(node.action, Push):
+        subgraph.node(
+            name=str(node.node_id),
+            label=f"↓{node.node_id} {node.action.path} "
+            + (
+                f"<{node.position.row}, {node.position.column}>"
+                if node.position
+                else "<>"
+            )
+            + (
+                f"{{{','.join(r.__doc__ for r in node.rules if r.__doc__)}}}"
+                if node.rules
+                else ""
+            ),
+            shape="box",
+            style="dashed",
+            color="#00B1B1",
+            fontcolor="#00B1B1",
+        )
+
+    elif node.action:
+        subgraph.node(
+            str(node.node_id), node.name or str(node.node_id) or "", shape="box"
+        )
+    else:
+        subgraph.node(
+            name=str(node.node_id),
+            label=node.name or str(node.node_id) or "",
+            shape="circle",
+            style="filled" if node is scope_graph.root else "",
+            fillcolor="black" if node is scope_graph.root else "",
+            fixedsize="true",
+            width="0.4" if node.name else "0.3",
+            height="0.4" if node.name else "0.3",
+            color="#B100B1" if node.name else "",
+            fontcolor="#B100B1" if node.name else "",
+        )
 
 
 def _traverse(graph: ScopeGraph, start: ScopeNode | None = None) -> Iterator[ScopeNode]:
@@ -563,7 +589,7 @@ def visit_module(
         is_definition=True,
     )
     graph.add_edge(graph.root, current, same_rank=True)
-    yield Fragment(entry=graph.root, exit=graph.root)
+    yield Fragment(graph.root, graph.root)
 
 
 @visit.register
@@ -598,7 +624,7 @@ def visit_name(
         ]
 
     for scope in scopes:
-        yield Fragment(entry=scope, exit=scope, kind="expression")
+        yield Fragment(scope, scope, is_statement=False)
 
 
 @visit.register
@@ -646,6 +672,13 @@ def visit_assign(
 def visit_attribute(
     node: ast.Attribute, source: Source, graph: ScopeGraph, state: State
 ) -> Iterator[Fragment]:
+    expressions = []
+    for fragment in visit(node.value, source, graph, state):
+        if not fragment.is_statement:
+            expressions.append(fragment)
+        else:
+            yield fragment
+
     position = node_position(node, source)
     names = names_from(node.value)
     positions = []
@@ -664,14 +697,13 @@ def visit_attribute(
         action=Push("."),
         same_rank=True,
     )
-
-    for fragment in visit(node.value, source, graph, state):
+    for fragment in expressions:
         graph.add_edge(dot_scope, fragment.entry, same_rank=True)
 
     yield Fragment(
         in_scope,
         fragment.exit if fragment else dot_scope,
-        kind="expression",
+        is_statement=False,
     )
     if not isinstance(node.ctx, ast.Store):
         return
@@ -740,12 +772,30 @@ def add_instance_property(
 def visit_call(
     node: ast.Call, source: Source, graph: ScopeGraph, state: State
 ) -> Iterator[Fragment]:
+    names = names_from(node.func)
+    if names == ("super",) and state.class_name:
+        # top = graph.add_scope()
+        # bottom = graph.add_scope()
+        for super_class_fragment in state.inheritance_hierarchy:
+            ...
+
+            print(super_class_fragment)
+        # graph.add_edge(bottom, top)
+        # yield Fragment(bottom, top)
+
     for arg in node.args:
         yield from visit(arg, source, graph, state)
 
     in_scope = graph.add_scope(action=Push("()"))
 
+    expressions = []
     for fragment in visit(node.func, source, graph, state):
+        if not fragment.is_statement:
+            expressions.append(fragment)
+        else:
+            yield fragment
+
+    for fragment in expressions:
         graph.add_edge(in_scope, fragment.entry, same_rank=True)
 
         keyword_position = node_position(node, source)
@@ -762,7 +812,7 @@ def visit_call(
                 same_rank=True,
             )
 
-        yield Fragment(in_scope, fragment.exit, kind="expression")
+        yield Fragment(in_scope, fragment.exit, is_statement=False)
 
 
 @visit.register
@@ -789,7 +839,8 @@ def visit_function_definition(
     )
 
     current_scope = graph.add_scope(
-        link_to=graph.module_roots[source.module_name], to_enclosing_scope=True
+        link_to=state.scope_hierarchy[-1] or graph.module_roots[source.module_name],
+        to_enclosing_scope=True,
     )
     parent_scope = current_scope
 
@@ -816,18 +867,23 @@ def visit_function_definition(
             call = graph.add_scope(
                 link_from=arg_definition, action=Push("()"), same_rank=True
             )
-            class_name = graph.add_scope(
+            class_name = state.class_name
+            class_name_scope = graph.add_scope(
                 link_from=call,
-                name=state.class_name,
-                action=Push(state.class_name),
+                name=class_name,
+                action=Push(class_name),
                 same_rank=True,
             )
-            graph.add_edge(class_name, parent_scope)
+            graph.add_edge(class_name_scope, parent_scope)
 
     graph.add_edge(function_definition, current_scope)
 
+    function_bottom = graph.add_scope()
+
     with state.method(self_name=self_name):
-        current_scope = process_body(node.body, source, graph, state, current_scope)
+        with state.scope(function_bottom):
+            current_scope = process_body(node.body, source, graph, state, current_scope)
+    graph.add_edge(function_bottom, current_scope)
     yield Fragment(in_scope, out_scope)
 
 
@@ -841,12 +897,16 @@ def process_body(
     for statement in body:
         for fragment in visit(statement, source, graph, state):
             match fragment:
-                case Fragment(entry_point, exit_point, kind="statement"):
-                    graph.add_edge(exit_point, current_scope)
-                    current_scope = entry_point
-                case Fragment(_, exit_point, kind="expression"):
+                case Fragment(entry_point, exit_point, is_statement=True):
+                    graph.connect(fragment, current_scope)
+                    current_scope = (
+                        entry_point
+                        if isinstance(entry_point, ScopeNode)
+                        else entry_point.entry
+                    )
+                case Fragment(_, exit_point, is_statement=False):
                     current_scope = graph.add_scope(link_to=current_scope)
-                    graph.add_edge(exit_point, current_scope, same_rank=True)
+                    graph.connect(exit_point, current_scope, same_rank=True)
                 case _:
                     continue
     return current_scope
@@ -891,23 +951,27 @@ def visit_class_definition(
         is_definition=True,
         same_rank=True,
     )
+    base_fragments = []
     for base in node.bases:
-        link_to = None
+        base_fragment = None
         for fragment in visit(base, source, graph, state):
-            if link_to:
-                graph.add_edge(fragment.exit, link_to)
-            link_to = fragment.entry
-        if link_to:
-            graph.add_edge(parent, link_to)
-        if state.enclosing_scope:
-            graph.add_edge(fragment.exit, state.enclosing_scope)
+            if base_fragment:
+                base_fragment = graph.connect(fragment, base_fragment)
+            else:
+                base_fragment = fragment
+        if base_fragment:
+            graph.connect(parent, base_fragment)
+            if state.scope_hierarchy:
+                graph.add_edge(base_fragment.exit, state.scope_hierarchy[-1])
+            base_fragments.append(base_fragment)
 
     class_top_scope = graph.add_scope()
     current_class_scope: ScopeNode = class_top_scope
     with state.instance(instance_scope=i_scope, class_name=name):
-        current_class_scope = process_body(
-            node.body, source, graph, state, current_class_scope
-        )
+        with state.base_classes(base_fragments):
+            current_class_scope = process_body(
+                node.body, source, graph, state, current_class_scope
+            )
 
     graph.add_edge(instance_scope, current_class_scope)
 
@@ -997,6 +1061,37 @@ def visit_global(
             same_rank=True,
         )
         graph.add_edge(parent, graph.module_roots[source.module_name])
+
+    yield Fragment(current_scope, current_scope)
+
+
+@visit.register
+def visit_nonlocal(
+    node: ast.Nonlocal, source: Source, graph: ScopeGraph, state: State
+) -> Iterator[Fragment]:
+    current_scope = graph.add_scope()
+
+    start = node_position(node, source)
+    for name in node.names:
+        position = source.find_after(name, start)
+
+        parent = graph.add_scope(
+            link_from=current_scope,
+            name=name,
+            position=position,
+            action=Pop(name),
+            same_rank=True,
+        )
+        parent = graph.add_scope(
+            link_from=parent,
+            name=name,
+            position=position,
+            action=Push(name),
+            same_rank=True,
+        )
+        graph.add_edge(
+            parent, state.scope_hierarchy[-2] or graph.module_roots[source.module_name]
+        )
 
     yield Fragment(current_scope, current_scope)
 
@@ -1107,7 +1202,7 @@ def call_names(node: ast.Call) -> Path:
 
 def build_graph(sources: Iterable[Source]) -> ScopeGraph:
     graph = ScopeGraph()
-    state = State()
+    state = State(scope_hierarchy=[], inheritance_hierarchy=[])
 
     for source in sources:
         for _ in visit(source.get_ast(), source=source, graph=graph, state=state):
@@ -1819,4 +1914,89 @@ def test_finds_method_but_not_function() -> None:
     assert all_occurrence_positions(position) == {
         source.position(3, 8),
         source.position(7, 13),
+    }
+
+
+def test_finds_global_variable_in_method_scope() -> None:
+    source = make_source(
+        """
+    b = 12
+
+    class Foo:
+
+        def bar(self):
+            return b
+    """
+    )
+
+    position = Position(source, 1, 0)
+
+    assert all_occurrence_positions(position) == {
+        Position(source, 1, 0),
+        Position(source, 6, 15),
+    }
+
+
+def test_treats_staticmethod_args_correctly() -> None:
+    source = make_source(
+        """
+    class ClassName:
+
+        def old(self):
+            pass
+
+        @staticmethod
+        def foo(whatever):
+            whatever.old()
+    """
+    )
+    position = Position(source, 3, 8)
+
+    assert all_occurrence_positions(position) == {Position(source, 3, 8)}
+
+
+def test_finds_nonlocal_variable() -> None:
+    source = make_source(
+        """
+    b = 12
+
+    def foo():
+        b = 20
+        def bar():
+            nonlocal b
+            b = 20
+        b = 1
+        return b
+
+    print(b)
+    """
+    )
+
+    position = Position(source, 4, 4)
+
+    assert all_occurrence_positions(position) == {
+        Position(source, 4, 4),
+        Position(source, 6, 17),
+        Position(source, 7, 8),
+        Position(source, 8, 4),
+        Position(source, 9, 11),
+    }
+
+
+def test_finds_multiple_definitions() -> None:
+    source = make_source(
+        """
+    a = 12
+    if a > 10:
+        b = a + 100
+    else:
+        b = 3 - a
+    print(b)
+    """
+    )
+    position = Position(source, 3, 4)
+    assert all_occurrence_positions(position) == {
+        Position(source, 3, 4),
+        Position(source, 5, 4),
+        Position(source, 6, 6),
     }
