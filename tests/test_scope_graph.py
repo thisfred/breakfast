@@ -1055,13 +1055,42 @@ def visit_import_from(
             for part in (*module_path, name)[::-1]:
                 parent = graph.add_scope(
                     link_from=parent,
-                    name=local_name,
+                    name=part,
                     position=position,
                     action=Push(part),
                     same_rank=True,
                 )
 
             graph.add_edge(parent, graph.root)
+    yield Fragment(current_scope, current_scope)
+
+
+@visit.register
+def visit_import(
+    node: ast.Import, source: Source, graph: ScopeGraph, state: State
+) -> Iterator[Fragment]:
+    current_scope = graph.add_scope()
+
+    for alias in node.names:
+        name = alias.name
+        local_name = alias.asname or name
+        position = node_position(alias, source)
+
+        local = graph.add_scope(
+            link_from=current_scope,
+            name=local_name,
+            position=position,
+            action=Pop(local_name),
+            same_rank=True,
+        )
+        remote = graph.add_scope(
+            link_from=local,
+            name=name,
+            position=position,
+            action=Push(name),
+            same_rank=True,
+        )
+        graph.add_edge(remote, graph.root)
     yield Fragment(current_scope, current_scope)
 
 
@@ -2052,4 +2081,47 @@ def test_finds_method_in_super_call() -> None:
     assert all_occurrence_positions(position) == {
         Position(source, 3, 8),
         Position(source, 10, 16),
+    }
+
+
+def test_does_not_rename_imported_names() -> None:
+    source = make_source(
+        """
+        from a import b
+
+
+        def foo():
+            b = 1
+            print(b)
+
+        b()
+        """
+    )
+    position = Position(source, 5, 4)
+
+    assert all_occurrence_positions(position) == {
+        Position(source, 5, 4),
+        Position(source, 6, 10),
+    }
+
+
+def test_finds_namespace_imports() -> None:
+    source1 = make_source(
+        """
+        def old():
+            pass
+        """,
+        module_name="foo",
+    )
+    source2 = make_source(
+        """
+        import foo
+        foo.old()
+        """,
+        module_name="bar",
+    )
+    position = Position(source1, 1, 4)
+    assert all_occurrence_positions(position, sources=[source1, source2]) == {
+        Position(source1, 1, 4),
+        Position(source2, 2, 4),
     }
