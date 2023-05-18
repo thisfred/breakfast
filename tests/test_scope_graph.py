@@ -514,6 +514,17 @@ def all_occurrence_positions(
     else:
         raise NotFoundError
 
+    found_definition, definitions = find_definition(
+        graph, position, possible_occurrences
+    )
+
+    assert found_definition.position
+    return consolidate_definitions(definitions, found_definition)
+
+
+def find_definition(
+    graph: ScopeGraph, position: Position, possible_occurrences: Iterable[ScopeNode]
+) -> tuple[ScopeNode, dict[ScopeNode, set[ScopeNode]]]:
     definitions: dict[ScopeNode, set[ScopeNode]] = defaultdict(set)
     found_definition = None
     for occurrence in possible_occurrences:
@@ -535,8 +546,7 @@ def all_occurrence_positions(
     if not found_definition:
         raise NotFoundError
 
-    assert found_definition.position
-    return consolidate_definitions(definitions, found_definition)
+    return found_definition, definitions
 
 
 def consolidate_definitions(
