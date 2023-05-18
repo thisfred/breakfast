@@ -799,6 +799,8 @@ def add_instance_property(
 def visit_call(
     node: ast.Call, source: Source, graph: ScopeGraph, state: State
 ) -> Iterator[Fragment]:
+    # XXX: a hack to handle super().something. this will break when `super` is
+    # redefined.
     names = names_from(node.func)
     if names == ("super",) and state.class_name:
         top = graph.add_scope()
@@ -831,7 +833,7 @@ def visit_call(
             if not keyword.arg:
                 continue
 
-            keyword_position = source.find_after(keyword.arg, keyword_position)
+            keyword_position = node_position(keyword, source)
             graph.add_scope(
                 link_to=in_scope,
                 name=keyword.arg,
@@ -1022,7 +1024,6 @@ def visit_import_from(
     node: ast.ImportFrom, source: Source, graph: ScopeGraph, state: State
 ) -> Iterator[Fragment]:
     current_scope = graph.add_scope()
-    start = node_position(node, source, column_offset=len("from "))
 
     if node.module is None:
         module_path: tuple[str, ...] = (".",)
@@ -1042,7 +1043,7 @@ def visit_import_from(
             graph.add_edge(parent, graph.root)
         else:
             local_name = alias.asname or name
-            position = source.find_after(name, start)
+            position = node_position(alias, source)
 
             parent = graph.add_scope(
                 link_from=current_scope,
