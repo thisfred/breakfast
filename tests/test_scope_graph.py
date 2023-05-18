@@ -64,6 +64,14 @@ class ScopeNode:
     node_type: NodeType = NodeType.SCOPE
     rules: tuple[Rule, ...] = ()
 
+    @property
+    def entry(self) -> "ScopeNode":
+        return self
+
+    @property
+    def exit(self) -> "ScopeNode":
+        return self
+
 
 @dataclass(frozen=True)
 class Fragment:
@@ -73,11 +81,11 @@ class Fragment:
 
     @property
     def entry(self) -> ScopeNode:
-        return self._entry if isinstance(self._entry, ScopeNode) else self._entry.entry
+        return self._entry.entry
 
     @property
     def exit(self) -> ScopeNode:
-        return self._exit if isinstance(self._exit, ScopeNode) else self._exit.exit
+        return self._exit.exit
 
 
 def no_lookup_in_enclosing_scope(edge: Edge) -> bool:
@@ -208,32 +216,51 @@ class ScopeGraph:
         *,
         same_rank: bool = False,
     ) -> Fragment:
-        match fragment_or_scope_1:
-            case Fragment(in_scope, out_scope):
-                entry_scope = (
-                    in_scope if isinstance(in_scope, ScopeNode) else in_scope.entry
-                )
-                from_node = (
-                    out_scope if isinstance(out_scope, ScopeNode) else out_scope.exit
-                )
-            case scope_node if isinstance(scope_node, ScopeNode):
-                entry_scope = scope_node
-                from_node = scope_node
+        self.add_edge(
+            fragment_or_scope_1.exit, fragment_or_scope_2.entry, same_rank=same_rank
+        )
+        return Fragment(fragment_or_scope_1, fragment_or_scope_2)
 
-        match fragment_or_scope_2:
-            case Fragment(in_scope, out_scope):
-                to_node = (
-                    in_scope if isinstance(in_scope, ScopeNode) else in_scope.entry
-                )
-                exit_scope = (
-                    out_scope if isinstance(out_scope, ScopeNode) else out_scope.exit
-                )
-            case scope_node if isinstance(scope_node, ScopeNode):
-                to_node = scope_node
-                exit_scope = scope_node
+    def unpack(self, fragment_or_scope_node: Fragment | ScopeNode) -> list[ScopeNode]:
+        match fragment_or_scope_node:
+            case Fragment(entry_point, exit_point):
+                return self.unpack(entry_point) + self.unpack(exit_point)
+            case ScopeNode(_):
+                return [fragment_or_scope_node]
+            case _:
+                return []
 
-        self.add_edge(from_node, to_node, same_rank=same_rank)
-        return Fragment(entry_scope, exit_scope)
+    def copy(self, fragment: Fragment) -> Fragment:
+        nodes = {n.node_id: n for n in self.unpack(fragment)}
+        copies = {}
+        entry_point = exit_point = None
+        edges_to_copy = []
+        for node_id, node in nodes.items():
+            edges_to_copy.extend(
+                [
+                    (node_id, other_id, edge)
+                    for edge, other_id in self.edges.get(node_id, set())
+                    if other_id in nodes
+                ]
+            )
+            copied = self.add_scope(
+                name=node.name, action=node.action, rules=node.rules
+            )
+            if not entry_point:
+                entry_point = copied
+            exit_point = copied
+            copies[node_id] = copied
+
+        for node_id, other_id, edge in edges_to_copy:
+            self.add_edge(
+                copies[node_id],
+                copies[other_id],
+                same_rank=edge.same_rank,
+                to_enclosing_scope=edge.to_enclosing_scope,
+            )
+
+        assert entry_point and exit_point
+        return Fragment(entry_point, exit_point)
 
 
 @dataclass
@@ -774,14 +801,15 @@ def visit_call(
 ) -> Iterator[Fragment]:
     names = names_from(node.func)
     if names == ("super",) and state.class_name:
-        # top = graph.add_scope()
-        # bottom = graph.add_scope()
+        top = graph.add_scope()
+        bottom = graph.add_scope()
+        pop = graph.add_scope(link_from=bottom, action=Pop("super"), same_rank=True)
         for super_class_fragment in state.inheritance_hierarchy:
-            ...
-
-            print(super_class_fragment)
-        # graph.add_edge(bottom, top)
-        # yield Fragment(bottom, top)
+            copied = graph.copy(super_class_fragment)
+            graph.connect(pop, copied, same_rank=True)
+            graph.connect(copied, top)
+        graph.add_edge(bottom, top)
+        yield Fragment(bottom, top)
 
     for arg in node.args:
         yield from visit(arg, source, graph, state)
@@ -1999,4 +2027,28 @@ def test_finds_multiple_definitions() -> None:
         Position(source, 3, 4),
         Position(source, 5, 4),
         Position(source, 6, 6),
+    }
+
+
+def test_finds_method_in_super_call() -> None:
+    source = make_source(
+        """
+    class Foo:
+
+        def bar(self):
+            pass
+
+
+    class Bar(Foo):
+
+        def bar(self):
+            super().bar()
+    """
+    )
+
+    position = Position(source, 3, 8)
+
+    assert all_occurrence_positions(position) == {
+        Position(source, 3, 8),
+        Position(source, 10, 16),
     }
