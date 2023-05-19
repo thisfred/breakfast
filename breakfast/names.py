@@ -1,15 +1,13 @@
 import ast
-
 from collections import defaultdict
+from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
 from functools import singledispatch
-from typing import Dict, Iterator, List, Optional, Set, Tuple, Union
 
 from breakfast.position import Position
 from breakfast.source import Source
 
-
-QualifiedName = Tuple[str, ...]
+QualifiedName = tuple[str, ...]
 
 
 class TreeTraversalError(RuntimeError):
@@ -21,10 +19,10 @@ class AliasError(RuntimeError):
 
 
 class Node:
-    def __init__(self, parent: Optional["Node"], path: QualifiedName = ()):
+    def __init__(self, parent: "Node | None", path: QualifiedName = ()):
         self.parent = parent
-        self.children: Dict[str, "Node"] = defaultdict(lambda: Node(parent=self))
-        self.occurrences: Set[Position] = set()
+        self.children: dict[str, "Node"] = defaultdict(lambda: Node(parent=self))
+        self.occurrences: set[Position] = set()
         self.is_class = False
         self.path = path
 
@@ -35,7 +33,7 @@ class Node:
         node = self.children[name]
 
         if not node.path:
-            node.path = self.path + (name,)
+            node.path = (*self.path, name)
 
         return node
 
@@ -65,16 +63,16 @@ class Node:
 
     def flatten(
         self,
-        prefix: QualifiedName = tuple(),
-        seen: Optional[Set[Position]] = None,
-    ) -> Dict[QualifiedName, List[Tuple[int, int]]]:
+        prefix: QualifiedName = (),
+        seen: set[Position] | None = None,
+    ) -> dict[QualifiedName, list[tuple[int, int]]]:
         if not seen:
             seen = set()
 
         result = {}
         next_values = []
         for key, value in self.children.items():
-            new_prefix = prefix + (key,)
+            new_prefix = (*prefix, key)
             if value.occurrences:
                 occurrence = next(iter(value.occurrences))
                 if occurrence in seen:
@@ -96,9 +94,9 @@ class State:
         self.position = position
         self.root = Node(parent=None)
         self.current_node = self.root
-        self.current_path: QualifiedName = tuple()
+        self.current_path: QualifiedName = ()
         self.lookup_scopes = [self.root]
-        self.found: Optional[Node] = None
+        self.found: Node | None = None
 
     @contextmanager
     def scope(
@@ -245,9 +243,9 @@ def qualified_name_for(node: ast.AST) -> QualifiedName:
         case ast.Name(id=name):
             return (name,)
         case ast.Attribute(value=value, attr=attr):
-            return qualified_name_for(value) + (attr,)
+            return (*qualified_name_for(value), attr)
         case ast.Call(func=function):
-            return qualified_name_for(function) + ("()",)
+            return (*qualified_name_for(function), "()")
         case _:
             return ()
 
@@ -256,7 +254,7 @@ def qualified_name_for(node: ast.AST) -> QualifiedName:
 def visit_import(node: ast.Import, source: Source, state: State) -> None:
     start = node_position(node, source)
 
-    current_path = ("/",) + state.current_path
+    current_path = ("/", *state.current_path)
     with state.jump_to_scope(()):
         _handle_imports(node, source, state, start, current_path)
 
@@ -264,10 +262,11 @@ def visit_import(node: ast.Import, source: Source, state: State) -> None:
 @visit.register
 def visit_import_from(node: ast.ImportFrom, source: Source, state: State) -> None:
     start = node_position(node, source, column_offset=len("from "))
-    assert isinstance(node.module, str)
+    if not isinstance(node.module, str):
+        raise RuntimeError(f"{node.module=} should have been a string")
 
-    current_path = ("/",) + state.current_path
-    node_module_path: QualifiedName = tuple()
+    current_path = ("/", *state.current_path)
+    node_module_path: QualifiedName = ()
     for name in node.module.split("."):
         node_module_path += (name, ".")
     node_module_path = node_module_path[:-1]
@@ -279,7 +278,7 @@ def visit_import_from(node: ast.ImportFrom, source: Source, state: State) -> Non
 
 
 def _handle_imports(
-    node: Union[ast.Import, ast.ImportFrom],
+    node: ast.Import | ast.ImportFrom,
     source: Source,
     state: State,
     start: Position,
@@ -290,21 +289,19 @@ def _handle_imports(
         position = source.find_after(name, start)
         with state.scope(name):
             state.add_occurrence(position)
-            path = current_path + (name,)
+            path = (*current_path, name)
             state.alias(path)
 
 
 @visit.register
 def visit_assign(node: ast.Assign, source: Source, state: State) -> None:
-
     for node_target in node.targets:
         visit(node_target, source, state)
     visit(node.value, source, state)
 
     target_names = get_names(node.targets[0])
     value_names = get_names(node.value)
-    for target, value in zip(target_names, value_names):
-
+    for target, value in zip(target_names, value_names, strict=True):
         if target and value:
             path: QualifiedName = ()
             with ExitStack() as stack:
@@ -417,12 +414,12 @@ def name_names(node: ast.Name) -> QualifiedName:
 
 @names_from.register
 def attribute_names(node: ast.Attribute) -> QualifiedName:
-    return names_from(node.value) + (".", node.attr)
+    return (*names_from(node.value), ".", node.attr)
 
 
 @names_from.register
 def call_names(node: ast.Call) -> QualifiedName:
-    names = names_from(node.func) + ("()",)
+    names = (*names_from(node.func), "()")
     return names
 
 
@@ -444,7 +441,7 @@ def visit_attribute(node: ast.Attribute, source: Source, state: State) -> None:
 
 
 def visit_comprehension(
-    node: Union[ast.DictComp, ast.ListComp, ast.SetComp, ast.GeneratorExp],
+    node: ast.DictComp | ast.ListComp | ast.SetComp | ast.GeneratorExp,
     source: Source,
     state: State,
     *sub_nodes: ast.AST,
@@ -453,7 +450,6 @@ def visit_comprehension(
     name = f"{type(node)}-{position.row},{position.column}"
 
     with state.scope(name):
-
         for generator in node.generators:
             visit(generator.target, source, state)
             visit(generator.iter, source, state)
@@ -507,8 +503,8 @@ def visit_nonlocal(node: ast.Nonlocal, source: Source, state: State) -> None:
 
 
 def all_occurrence_positions(
-    position: Position, other_sources: Optional[List[Source]] = None
-) -> List[Position]:
+    position: Position, other_sources: list[Source] | None = None
+) -> list[Position]:
     source = position.source
     state = State(position)
     visit(source.get_ast(), source=source, state=state)

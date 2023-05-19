@@ -1,11 +1,10 @@
 import os
-
-from typing import TYPE_CHECKING, Iterator, List, Set
+from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
 from breakfast.modules import Module
 from breakfast.names import all_occurrence_positions
 from breakfast.position import Position
-
 
 if TYPE_CHECKING:
     from breakfast.source import Source
@@ -33,11 +32,11 @@ class Application:
             occurrence.source.replace(position=occurrence, old=old_name, new=new_name)
 
     @staticmethod
-    def get_additional_sources() -> List[Module]:
+    def get_additional_sources() -> list[Module]:
         return []
 
     def find_modules(self) -> Iterator[Module]:
-        for (dirpath, _, filenames) in os.walk(self._root):
+        for dirpath, _, filenames in os.walk(self._root):
             if any(f.startswith(".") for f in dirpath.split(os.sep)):
                 continue
             if dirpath == self._root or "__init__.py" not in filenames:
@@ -51,7 +50,7 @@ class Application:
                     path=os.path.join(dirpath, filename), module_path=module_path + name
                 )
 
-    def find_importers(self, path: str) -> Set[Module]:
+    def find_importers(self, path: str) -> set[Module]:
         importers = set()
         for module in self.find_modules():
             if path in module.get_imported_modules():

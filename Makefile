@@ -1,20 +1,22 @@
-.PHONY: test dependencies
-test: .requirements
-	tox
+.PHONY: test dependencies install lint
+test: .venv/installed
+	.venv/bin/pytest
 
-pip-tools: .venv
-	.venv/bin/pip install pip-tools
-
-dependencies: pip-tools requirements.txt test-requirements.txt optional-requirements.txt dev-requirements.txt
-
-.venv:
-	python -m virtualenv .venv
-
-.venv/installed: dependencies .venv
-	.venv/bin/pip install -r requirements.txt -r test-requirements.txt -r dev-requirements.txt -r optional-requirements.txt
-	touch $@
+dependencies: requirements.txt test-requirements.txt optional-requirements.txt dev-requirements.txt
 
 install: .venv/installed
 
-%.txt: %.in pip-tools .venv
+lint: .venv/installed
+	.venv/bin/pre-commit run --all-files
+
+.venv:
+	python -m venv .venv
+	.venv/bin/pip install pip-tools
+	touch $@
+
+.venv/installed: .venv requirements.txt test-requirements.txt optional-requirements.txt dev-requirements.txt
+	.venv/bin/pip install -r requirements.txt -r test-requirements.txt -r dev-requirements.txt -r optional-requirements.txt
+	touch $@
+
+%.txt: %.in .venv
 	.venv/bin/pip-compile -v --generate-hashes --output-file $@ $<
