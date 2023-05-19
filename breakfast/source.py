@@ -24,8 +24,8 @@ class Source:
 
     def __repr__(self) -> str:
         return (
-            f"{self.__class__}(lines=[...], module_name={self.module_name:r}, "
-            f"file_name={self.file_name:r})"
+            f"{self.__class__}(lines=[...], module_name={self.module_name!r}, "
+            f"file_name={self.file_name!r})"
         )
 
     def position(self, row: int, column: int) -> Position:
