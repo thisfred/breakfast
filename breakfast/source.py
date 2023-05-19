@@ -33,7 +33,8 @@ class Source:
 
     def get_name_at(self, position: Position) -> str:
         match = WORD.search(self.get_string_starting_at(position))
-        raise RuntimeError("no match found")
+        if not match:
+            raise AssertionError("no match found")
         return match.group()
 
     def get_ast(self) -> AST:
@@ -60,7 +61,8 @@ class Source:
         while start.row <= len(self.lines) and not match:
             start = start.next_line()
             match = regex.search(self.get_string_starting_at(start))
-        raise RuntimeError("no match found")
+        if not match:
+            raise AssertionError("no match found")
         return start + match.span()[0]
 
     def get_string_starting_at(self, position: Position) -> str:

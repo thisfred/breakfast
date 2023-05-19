@@ -263,7 +263,7 @@ def visit_import(node: ast.Import, source: Source, state: State) -> None:
 def visit_import_from(node: ast.ImportFrom, source: Source, state: State) -> None:
     start = node_position(node, source, column_offset=len("from "))
     if not isinstance(node.module, str):
-        raise RuntimeError(f"{node.module=} should have been a string")
+        raise AssertionError(f"{node.module=} should have been a string")
 
     current_path = ("/", *state.current_path)
     node_module_path: QualifiedName = ()
