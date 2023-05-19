@@ -21,9 +21,12 @@ class Application:
 
         occurrences = all_occurrence_positions(
             position,
-            [
+            sources=[
                 source
-                for module in self.get_additional_sources()
+                for module in [
+                    Module(path="", module_path="", source=self._initial_source),
+                    *self.get_additional_sources(),
+                ]
                 if (source := module.source)
             ],
         )

@@ -3,7 +3,6 @@ from pathlib import Path
 from breakfast.main import Application
 from breakfast.source import Source
 
-
 ROOT = str(Path(__file__).parent.parent.resolve())
 
 
@@ -37,7 +36,7 @@ def test_returns_paths() -> None:
 
 def test_returns_module_paths() -> None:
     application = Application(source=Source(("",)), root=ROOT)
-    found = list(f.module_path for f in application.find_modules())
+    found = [f.module_path for f in application.find_modules()]
     assert "tests.data" in found
     assert "tests.data.module1" in found
     assert "tests.data.module2" in found

@@ -1,22 +1,20 @@
 import ast
-
 from collections import defaultdict
-from typing import TYPE_CHECKING, DefaultDict, List, Optional, Set
+from typing import TYPE_CHECKING
 
 from breakfast.source import Source
-
 
 if TYPE_CHECKING:
     from breakfast.position import Position
 
 
 class Module:
-    def __init__(self, path: str, module_path: str, source: Optional["Source"] = None):
+    def __init__(self, path: str, module_path: str, source: "Source | None" = None):
         self.path = path
-        self.source: Optional[Source] = source
+        self.source: Source | None = source
         self.module_path = module_path
 
-    def get_imported_modules(self) -> List[str]:
+    def get_imported_modules(self) -> list[str]:
         if self.source is None:
             with open(self.path, encoding="utf-8") as source_file:
                 self.source = Source(
@@ -32,7 +30,7 @@ class Module:
     def imports(self, module_path: str) -> bool:
         return module_path in self.get_imported_modules()
 
-    def get_name_at(self, position: "Position") -> Optional["Name"]:
+    def get_name_at(self, position: "Position") -> "Name | None":
         if not self.source:
             return None
 
@@ -52,14 +50,12 @@ class Name:
 
 class ImportFinder(ast.NodeVisitor):
     def __init__(self) -> None:
-        self.imports: DefaultDict[str, Set[str]] = defaultdict(set)
+        self.imports: dict[str, set[str]] = defaultdict(set)
 
-    def visit_ImportFrom(  # pylint: disable=invalid-name
-        self, node: ast.ImportFrom
-    ) -> None:
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:  # noqa
         if node.module:
             self.imports[node.module] |= {a.asname or a.name for a in node.names}
 
-    def visit_Import(self, node: ast.Import) -> None:  # pylint: disable=invalid-name
+    def visit_Import(self, node: ast.Import) -> None:  # noqa
         for name in node.names:
             self.imports[name.asname or name.name] = set()
