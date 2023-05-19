@@ -1,4 +1,5 @@
 .PHONY: test dependencies install lint
+
 test: .venv/installed
 	.venv/bin/pytest
 
