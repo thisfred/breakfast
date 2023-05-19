@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from functools import singledispatch
-from typing import Protocol
+from typing import Any, Protocol
 
 from breakfast.position import Position
 from breakfast.source import Source
@@ -377,9 +377,7 @@ def view_graph(graph: ScopeGraph) -> None:
     digraph.render(view=True)
 
 
-def render_node(
-    node: ScopeNode, subgraph: graphviz.Digraph, scope_graph: ScopeGraph
-) -> None:
+def render_node(node: ScopeNode, subgraph: Any, scope_graph: ScopeGraph) -> None:
     if isinstance(node.action, Pop):
         subgraph.node(
             name=str(node.node_id),
@@ -499,9 +497,12 @@ def extend_queue(
 
 
 def all_occurrence_positions(
-    position: Position, *, sources: Iterable[Source] | None = None
+    position: Position, *, sources: Iterable[Source] | None = None, debug: bool = False
 ) -> set[Position]:
     graph = build_graph(sources or [position.source])
+    if debug:
+        view_graph(graph)
+        breakpoint()
 
     scopes_for_position = graph.positions.get(position)
     if not scopes_for_position:

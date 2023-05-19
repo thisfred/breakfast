@@ -13,7 +13,6 @@ repos:
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
-      - id: debug-statements
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.3.0
