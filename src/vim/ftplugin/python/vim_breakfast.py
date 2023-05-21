@@ -1,4 +1,5 @@
-from typing import Any, Iterator, List, Tuple
+from collections.abc import Iterator
+from typing import Any
 
 from breakfast.main import Application
 from breakfast.source import Source
@@ -6,12 +7,12 @@ from breakfast.source import Source
 
 def do_rename(  # pylint: disable=too-many-arguments
     root: str,
-    buffer_contents: List[str],
+    buffer_contents: list[str],
     file_name: str,
     row: int,
     column: int,
     new_name: str,
-) -> Iterator[Tuple[int, str]]:
+) -> Iterator[tuple[int, str]]:
     source = Source(tuple(buffer_contents), module_name="module", file_name=file_name)
     application = Application(source=source, root=root)
     application.rename(row=row, column=column, new_name=new_name)
@@ -37,5 +38,6 @@ def user_input(vim: Any, message: str) -> str:  # pragma: nocover
     vim.command("let user_input = input('" + message + ": ')")
     vim.command("call inputrestore()")
     user_input = vim.eval("user_input")
-    assert isinstance(user_input, str)
+    if not isinstance(user_input, str):
+        raise AssertionError(f"user_input must be a string, got `{user_input}`")
     return user_input

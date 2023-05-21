@@ -1,4 +1,5 @@
 import os
+import pkgutil
 from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
@@ -39,19 +40,27 @@ class Application:
         return []
 
     def find_modules(self) -> Iterator[Module]:
-        for dirpath, _, filenames in os.walk(self._root):
-            if any(f.startswith(".") for f in dirpath.split(os.sep)):
+        _, directories, _ = next(os.walk(self._root))
+        for dirpath in directories:
+            # XXX: this is hacky and probably doesn't cover half of the special kinds of
+            # directories that aren't actually packages.
+            if (
+                dirpath.startswith(".")
+                or dirpath.startswith("__")
+                or dirpath.endswith("egg-info")
+            ):
                 continue
-            if dirpath == self._root or "__init__.py" not in filenames:
-                continue
-            module_path = dirpath[len(self._root) + 1 :].replace("/", ".")
-            for filename in filenames:
-                if not filename.endswith(".py"):
-                    continue
-                name = "" if filename == "__init__.py" else "." + filename[:-3]
-                yield Module(
-                    path=os.path.join(dirpath, filename), module_path=module_path + name
-                )
+            root = dirpath.split(os.path.sep)[-1]
+            for m in pkgutil.walk_packages(path=[root], prefix=f"{root}."):
+                name = m.name
+                loader = pkgutil.get_loader(name)
+                if loader:
+                    try:
+                        filename = loader.get_filename()  # type: ignore[attr-defined]
+                    except AttributeError:
+                        continue
+                    if filename.endswith(".py"):
+                        yield Module(path=filename, module_path=m.name)
 
     def find_importers(self, path: str) -> set[Module]:
         importers = set()

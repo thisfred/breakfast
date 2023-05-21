@@ -1,13 +1,12 @@
 from ast import AST
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Optional
-
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from breakfast.source import Source
 
 
-class IllegalPosition(Exception):
+class IllegalPositionError(Exception):
     pass
 
 
@@ -16,20 +15,20 @@ class Position:
     source: "Source"
     row: int
     column: int
-    node: Optional[AST] = None
+    node: AST | None = None
 
     def __post_init__(self) -> None:
         if self.column < 0:
-            raise IllegalPosition(f"Illegal value for column: {self.column}.")
+            raise IllegalPositionError(f"Illegal value for column: {self.column}.")
         if self.row < 0:
-            raise IllegalPosition(f"Illegal value for row: {self.row}.")
+            raise IllegalPositionError(f"Illegal value for row: {self.row}.")
 
     def __add__(self, column_offset: int) -> "Position":
         return self._add_offset(column_offset)
 
     def __sub__(self, to_subtract: int) -> "Position":
         if to_subtract > self.column:
-            raise IllegalPosition()
+            raise IllegalPositionError()
 
         return self._add_offset(-to_subtract)
 

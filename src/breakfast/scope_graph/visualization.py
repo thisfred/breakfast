@@ -17,8 +17,8 @@ def view_graph(graph: ScopeGraph) -> None:
     if graphviz is None:
         return
 
-    digraph = graphviz.Digraph()
-    digraph.attr(rankdir="BT")
+    visualization = graphviz.Digraph()
+    visualization.attr(rankdir="BT")
     for same_rank_nodes in graph.group_by_rank():
         subgraph = graphviz.Digraph()
         subgraph.attr(rankdir="BT")
@@ -28,17 +28,17 @@ def view_graph(graph: ScopeGraph) -> None:
             node = graph.nodes[node_id]
             render_node(node, subgraph, graph)
 
-        digraph.subgraph(subgraph)
+        visualization.subgraph(subgraph)
 
     for from_id, to_nodes in graph.edges.items():
         for edge, to_node_id in to_nodes:
-            digraph.edge(
+            visualization.edge(
                 str(from_id),
                 str(to_node_id),
                 label="e" if edge.to_enclosing_scope else "",
             )
 
-    digraph.render(view=True)
+    visualization.render(view=True)
     breakpoint()
 
 
