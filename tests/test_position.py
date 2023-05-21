@@ -1,16 +1,15 @@
 import pytest
-
-from breakfast.position import IllegalPosition, Position
+from breakfast.position import IllegalPositionError, Position
 from breakfast.source import Source
 
 
 @pytest.fixture  # type: ignore
 def source() -> Source:
-    return Source(tuple())
+    return Source(())
 
 
 def test_cannot_create_negative_positions(source: Source) -> None:
-    with pytest.raises(IllegalPosition):
+    with pytest.raises(IllegalPositionError):
         Position(source=source, row=-1, column=10)
 
 
