@@ -20,6 +20,10 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+breakfast = ["py.typed"]
+extras_require = { tests= ["coverage", "pytest"], dev= ["black", "mypy", "ruff"], docs= [] }
+
 [tool.mypy]
 disallow_any_generics = true
 disallow_incomplete_defs = true
@@ -32,23 +36,22 @@ warn_return_any = true
 warn_unused_configs = true
 warn_unused_ignores = true
 
-# [tool.mypy-tests.*]
-# strict = true
+[[tool.mypy.overrides]]
+module = "tests.*"
+strict = true
 
 [project]
 name = "breakfast"
-version="0.2"
-authors=[{name="Eric Casteleijn",email="thisfred@gamil.com"}]
-description="A Python refactoring tool"
-readme="README.md"
+version = "0.2"
+authors = [{name="Eric Casteleijn",email="thisfred@gamil.com"}]
+description = "A Python refactoring tool"
+readme = "README.md"
 requires-python=">=3.10"
-classifiers=[
+classifiers = [
     "License :: OSI Approved :: BSD License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.7",
 ]
-# package_data={breakfast=["py.typed"]}
-# extras_require={ tests= ["coverage", "pytest"], dev= ["black", "mypy", "ruff"], docs= [] }
 
-[bdist_wheel]
-universal=1
+[tool.distutils.bdist_wheel]
+universal = true
