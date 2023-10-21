@@ -1,7 +1,13 @@
-.PHONY: test dependencies install lint
+.PHONY: test coverage coverage-combine dependencies install lint
 
 test: .venv/installed
-	.venv/bin/pytest
+	.venv/bin/coverage run .venv/bin/pytest
+
+coverage: .venv/installed
+	.venv/bin/coverage report
+
+coverage-combine: .venv/installed
+	.venv/bin/coverage combine
 
 dependencies: requirements.txt test-requirements.txt optional-requirements.txt dev-requirements.txt
 

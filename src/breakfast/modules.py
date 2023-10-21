@@ -1,5 +1,7 @@
 import ast
 from collections import defaultdict
+from collections.abc import Iterable
+from importlib.util import find_spec
 from typing import TYPE_CHECKING
 
 from breakfast.source import Source
@@ -25,7 +27,14 @@ class Module:
 
         finder = ImportFinder()
         finder.visit(self.source.get_ast())
+
         return list(finder.imports.keys())
+
+    def get_imported_files(self) -> Iterable[str]:
+        for module in self.get_imported_modules():
+            filename = find_spec(module)
+            if isinstance(filename, str):
+                yield filename
 
     def imports(self, module_path: str) -> bool:
         return module_path in self.get_imported_modules()
