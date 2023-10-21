@@ -52,6 +52,7 @@ where = ["src"]
 breakfast = ["py.typed"]
 
 [tool.mypy]
+check_untyped_defs = true
 disallow_any_generics = true
 disallow_incomplete_defs = true
 disallow_subclassing_any = true

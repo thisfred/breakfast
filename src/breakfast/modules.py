@@ -11,10 +11,17 @@ if TYPE_CHECKING:
 
 
 class Module:
-    def __init__(self, path: str, module_path: str, source: "Source | None" = None):
+    def __init__(
+        self,
+        path: str,
+        module_path: str,
+        project_root: str,
+        source: "Source | None" = None,
+    ):
         self.path = path
         self.source: Source | None = source
         self.module_path = module_path
+        self.project_root = project_root
 
     def get_imported_modules(self) -> list[str]:
         if self.source is None:
@@ -32,8 +39,11 @@ class Module:
 
     def get_imported_files(self) -> Iterable[str]:
         for module in self.get_imported_modules():
-            filename = find_spec(module)
-            if isinstance(filename, str):
+            spec = find_spec(module)
+            if spec is None:
+                continue
+            filename = spec.origin
+            if isinstance(filename, str) and filename.startswith(self.project_root):
                 yield filename
 
     def imports(self, module_path: str) -> bool:
