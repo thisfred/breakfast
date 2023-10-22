@@ -25,7 +25,7 @@ jobs:
       - name: Upload coverage data
         uses: "actions/upload-artifact@v3"
         with:
-        name: coverage-data
+          name: coverage-data
           path: ".coverage*"
 
   coverage:

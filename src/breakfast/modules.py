@@ -37,14 +37,14 @@ class Module:
 
         return list(finder.imports.keys())
 
-    def get_imported_files(self) -> Iterable[str]:
+    def get_imported_files(self) -> Iterable[tuple[str, str]]:
         for module in self.get_imported_modules():
             spec = find_spec(module)
             if spec is None:
                 continue
             filename = spec.origin
             if isinstance(filename, str) and filename.startswith(self.project_root):
-                yield filename
+                yield filename, spec.name
 
     def imports(self, module_path: str) -> bool:
         return module_path in self.get_imported_modules()
