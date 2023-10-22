@@ -1,5 +1,3 @@
-from typing import Optional
-
 from breakfast.source import Source
 
 
@@ -10,7 +8,7 @@ def dedent(code: str) -> str:
 
 
 def make_source(
-    code: str, module_name: str = "", file_name: Optional[str] = None
+    code: str, module_name: str = "", file_name: str | None = None
 ) -> Source:
     return Source(
         tuple(dedent(code).split("\n")), module_name=module_name, file_name=file_name
