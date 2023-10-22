@@ -31,7 +31,7 @@ class Application:
                         project_root="",
                         source=self._initial_source,
                     ),
-                    *self.get_additional_sources(),
+                    *self.get_project_modules(),
                 ]
                 if (source := module.source)
             ],
@@ -41,7 +41,7 @@ class Application:
             occurrence.source.replace(position=occurrence, old=old_name, new=new_name)
 
     @staticmethod
-    def get_additional_sources() -> list[Module]:
+    def get_project_modules() -> list[Module]:
         return []
 
     def find_modules(self) -> Iterator[Module]:

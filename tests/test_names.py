@@ -755,3 +755,34 @@ def test_finds_namespace_imports() -> None:
         Position(source1, 1, 4),
         Position(source2, 2, 4),
     ]
+
+
+def test_finds_default_values():
+    source = make_source(
+        """
+        v = 0
+
+        def f(a=v):
+            ...
+        """
+    )
+    position = Position(source, 1, 0)
+    assert all_occurrence_positions(position, sources=[source]) == [
+        Position(source, 1, 0),
+        Position(source, 3, 8),
+    ]
+
+
+def test_finds_keyword_argument_values():
+    source = make_source(
+        """
+        v = 0
+
+        f(a=v)
+        """
+    )
+    position = Position(source, 1, 0)
+    assert all_occurrence_positions(position, sources=[source]) == [
+        Position(source, 1, 0),
+        Position(source, 3, 4),
+    ]

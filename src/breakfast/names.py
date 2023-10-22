@@ -113,8 +113,7 @@ def generic_visit(
     """
     for _, value in ast.iter_fields(node):
         if isinstance(value, list):
-            for item in value:
-                yield from visit(item, source, graph, state)
+            yield from visit_all(value, source, graph, state)
 
         elif isinstance(value, ast.AST):
             yield from visit(value, source, graph, state)
@@ -125,6 +124,13 @@ def visit(
     node: ast.AST, source: Source, graph: ScopeGraph, state: State
 ) -> Iterator[Fragment]:
     yield from generic_visit(node, source, graph, state)
+
+
+def visit_all(
+    nodes: Iterable[ast.AST], source: Source, graph: ScopeGraph, state: State
+) -> Iterator[Fragment]:
+    for node in nodes:
+        yield from visit(node, source, graph, state)
 
 
 @visit.register
@@ -345,8 +351,7 @@ def visit_call(
         graph.add_edge(bottom, top)
         yield Fragment(bottom, top)
 
-    for arg in node.args:
-        yield from visit(arg, source, graph, state)
+    yield from visit_all(node.args, source, graph, state)
 
     in_scope = graph.add_scope(action=Push("()"))
 
@@ -365,6 +370,7 @@ def visit_call(
             if not keyword.arg:
                 continue
 
+            yield from visit(keyword.value, source, graph, state)
             keyword_position = node_position(keyword, source)
             graph.add_scope(
                 link_to=in_scope,
@@ -411,6 +417,8 @@ def visit_function_definition(
         and not is_static_method(node)
         and not is_class_method(node)
     )
+    yield from visit_all(node.args.defaults, source, graph, state)
+
     self_name = None
     for i, arg in enumerate(node.args.args):
         current_scope = graph.add_scope(link_to=current_scope)
