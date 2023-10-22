@@ -1,5 +1,6 @@
 from breakfast.names import all_occurrence_positions
 from breakfast.position import Position
+
 from tests import make_source
 
 
