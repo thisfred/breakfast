@@ -65,7 +65,9 @@ class Application:
                     except AttributeError:
                         continue
                     if filename.endswith(".py"):
-                        yield Module(path=filename, module_path=m.name, project_root="")
+                        yield Module(
+                            path=filename, module_path=m.name, project_root=self._root
+                        )
 
     def find_importers(self, path: str) -> set[Module]:
         importers = set()

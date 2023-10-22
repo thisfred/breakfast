@@ -1,14 +1,8 @@
 import os
 
 from breakfast.modules import Module
-from pytest import fixture
 
 ROOT = os.path.sep.join(os.path.dirname(__file__).split(os.path.sep)[:-1])
-
-
-@fixture
-def project_root():
-    return os.path.sep.join(__file__.split(os.path.sep)[:-2])
 
 
 def test_reports_empty_importees(project_root):
