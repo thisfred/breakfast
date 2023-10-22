@@ -25,7 +25,12 @@ class Application:
             sources=[
                 source
                 for module in [
-                    Module(path="", module_path="", source=self._initial_source),
+                    Module(
+                        path="",
+                        module_path="",
+                        project_root="",
+                        source=self._initial_source,
+                    ),
                     *self.get_additional_sources(),
                 ]
                 if (source := module.source)
@@ -60,7 +65,7 @@ class Application:
                     except AttributeError:
                         continue
                     if filename.endswith(".py"):
-                        yield Module(path=filename, module_path=m.name)
+                        yield Module(path=filename, module_path=m.name, project_root="")
 
     def find_importers(self, path: str) -> set[Module]:
         importers = set()
