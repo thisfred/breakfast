@@ -60,6 +60,7 @@ def find_identifier_range_at(
 
     end = find_identifier_end(line, position)
 
+    logger.info(f"found range: {start=}, {end=}")
     return Range(
         start=Position(position.line, start),
         end=Position(position.line, end),
@@ -76,32 +77,40 @@ def get_line(
         return None
 
 
+def is_valid_identifier_character(character: str) -> bool:
+    return character.isalnum() or character == "_"
+
+
+def is_valid_identifier_start(character: str) -> bool:
+    return character.isalpha() or character == "_"
+
+
 def find_identifier_start(line: str, position: Position) -> int | None:
-    index = position.character
-    if index < 0 or index >= len(line):
+    start = position.character
+    if start < 0 or start >= len(line):
+        logger.info("Invalid position.")
         return None
 
-    char = line[index]
-
-    if not char.isalnum() and char != "_":
+    if not is_valid_identifier_character(line[start]):
+        logger.info("Cursor not at a name.")
         return None
 
-    while index >= 0 and line[index].isalnum() or line[index] == "_":
-        index -= 1
+    while start >= 0 and is_valid_identifier_character(line[start]):
+        start -= 1
 
-    if not line[index].isalnum() and line[index] != "_":
-        index += 1
+    if not is_valid_identifier_start(line[start]):
+        start += 1
 
-    if not line[index].isalpha():
+    if not is_valid_identifier_start(line[start]):
         return None
 
-    return index
+    return start
 
 
 def find_identifier_end(line: str, position: Position) -> int:
     end = position.character
 
-    while end < len(line) and line[end].isalnum() or line[end] == "_":
+    while end < len(line) and is_valid_identifier_character(line[end]):
         end += 1
 
     return end
