@@ -396,7 +396,7 @@ def test_finds_generator_comprehension_variables() -> None:
     ]
 
 
-def test_finds_loop_variables() -> None:
+def test_finds_loop_variables_outside_loop() -> None:
     source = make_source(
         """
         var = None
@@ -413,6 +413,22 @@ def test_finds_loop_variables() -> None:
         source.position(row=2, column=4),
         source.position(row=3, column=10),
         source.position(row=4, column=6),
+    ]
+
+
+def test_finds_loop_variables() -> None:
+    source = make_source(
+        """
+        for a in []:
+            print(a)
+        """
+    )
+
+    position = source.position(row=1, column=4)
+
+    assert all_occurrence_positions(position) == [
+        source.position(row=1, column=4),
+        source.position(row=2, column=10),
     ]
 
 
@@ -785,4 +801,19 @@ def test_finds_keyword_argument_values():
     assert all_occurrence_positions(position, sources=[source]) == [
         Position(source, 1, 0),
         Position(source, 3, 4),
+    ]
+
+
+def test_finds_unpacked_names():
+    source = make_source(
+        """
+        for a, b in thing:
+            print(a)
+        """
+    )
+
+    position = Position(source, 1, 4)
+    assert all_occurrence_positions(position, sources=[source]) == [
+        Position(source, 1, 4),
+        Position(source, 2, 10),
     ]

@@ -19,9 +19,17 @@ from breakfast.source import Source
 
 
 def all_occurrence_positions(
-    position: Position, *, sources: Iterable[Source] | None = None
+    position: Position,
+    *,
+    sources: Iterable[Source] | None = None,
+    in_reverse_order: bool = False,
+    debug: bool = False,
 ) -> list[Position]:
     graph = build_graph(sources or [position.source])
+    if debug:
+        from breakfast.scope_graph.visualization import view_graph
+
+        view_graph(graph)
 
     scopes_for_position = graph.positions.get(position)
     if not scopes_for_position:
@@ -41,7 +49,9 @@ def all_occurrence_positions(
     if not found_definition.position:
         raise AssertionError("Should have found at least the original position.")
 
-    return sorted(consolidate_definitions(definitions, found_definition))
+    return sorted(
+        consolidate_definitions(definitions, found_definition), reverse=in_reverse_order
+    )
 
 
 def find_definition(
@@ -381,6 +391,26 @@ def visit_call(
             )
 
         yield Fragment(in_scope, fragment.exit, is_statement=False)
+
+
+@visit.register
+def visit_for_loop(
+    node: ast.For, source: Source, graph: ScopeGraph, state: State
+) -> Iterator[Fragment]:
+    exit_scope = graph.add_scope()
+    current_parent = exit_scope
+    current_scope = graph.add_scope(link_to=current_parent)
+
+    for fragment in visit(node.target, source, graph, state):
+        if isinstance(fragment.entry.action, Pop):
+            graph.add_edge(current_scope, fragment.entry, same_rank=True)
+        elif isinstance(fragment.exit.action, Push):
+            graph.add_edge(fragment.exit, current_parent, same_rank=True)
+
+    yield Fragment(current_scope, exit_scope)
+    yield from visit(node.iter, source, graph, state)
+    yield from visit_all(node.body, source, graph, state)
+    yield from visit_all(node.orelse, source, graph, state)
 
 
 @visit.register

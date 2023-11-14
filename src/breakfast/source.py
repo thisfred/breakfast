@@ -12,10 +12,10 @@ WORD = re.compile(r"\w+|\W+")
 class Source:
     lines: tuple[str, ...]
     module_name: str = "module"
-    file_name: str | None = None
+    filename: str | None = None
 
     def __hash__(self) -> int:
-        return hash((self.module_name, self.file_name))
+        return hash(self.filename)
 
     def __post_init__(self) -> None:
         self.changes: dict[  # pylint: disable=attribute-defined-outside-init
@@ -23,10 +23,7 @@ class Source:
         ] = {}
 
     def __repr__(self) -> str:
-        return (
-            f"{self.__class__}(lines=[...], module_name={self.module_name!r}, "
-            f"file_name={self.file_name!r})"
-        )
+        return f"{self.__class__}(lines=[...], module_name={self.module_name!r}, "
 
     def position(self, row: int, column: int) -> Position:
         return Position(source=self, row=row, column=column)

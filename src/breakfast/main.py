@@ -18,9 +18,13 @@ class Application:
 
     def rename(self, row: int, column: int, new_name: str) -> None:
         position = Position(self._initial_source, row=row, column=column)
+        occurrences = self.get_occurrences(position)
         old_name = self._initial_source.get_name_at(position)
+        for occurrence in occurrences:
+            occurrence.source.replace(position=occurrence, old=old_name, new=new_name)
 
-        occurrences = all_occurrence_positions(
+    def get_occurrences(self, position: Position) -> list[Position]:
+        return all_occurrence_positions(
             position,
             sources=[
                 source
@@ -35,10 +39,8 @@ class Application:
                 ]
                 if (source := module.source)
             ],
+            in_reverse_order=True,
         )
-
-        for occurrence in reversed(occurrences):
-            occurrence.source.replace(position=occurrence, old=old_name, new=new_name)
 
     @staticmethod
     def get_project_modules() -> list[Module]:

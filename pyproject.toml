@@ -25,6 +25,13 @@ dev = [
     "black",
     "mypy",
     "ruff"]
+lsp = [
+    "lsprotocol",
+    "pygls"
+]
+
+[project.scripts]
+breakfast-lsp = "breakfast_lsp.__main__:main"
 
 [tool.ruff]
 line-length = 120
