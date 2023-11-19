@@ -37,9 +37,6 @@ class Source:
     def get_ast(self) -> AST:
         return parse("\n".join(self.lines))
 
-    def render(self) -> str:
-        return "\n".join(self.changes.get(i, line) for i, line in enumerate(self.lines))
-
     def get_changes(self) -> Iterator[tuple[int, str]]:
         yield from sorted(self.changes.items())
 
