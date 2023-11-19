@@ -29,7 +29,7 @@ class Module:
                 self.source = Source(
                     lines=tuple(line[:-1] for line in source_file.readlines()),
                     module_name=self.module_path,
-                    filename=self.path,
+                    path=self.path,
                 )
 
         finder = ImportFinder()

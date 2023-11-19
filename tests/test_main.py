@@ -74,7 +74,7 @@ def test_all_imports(project_root):
         source = Source(
             lines=tuple(line[:-1] for line in source_file.readlines()),
             module_name="tests.data.module2",
-            filename="tests/data/module2.py",
+            path="tests/data/module2.py",
         )
     application = Application(source=source, root=project_root)
     importers = application.find_importers(source.module_name)

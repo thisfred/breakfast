@@ -12,10 +12,10 @@ WORD = re.compile(r"\w+|\W+")
 class Source:
     lines: tuple[str, ...]
     module_name: str = "module"
-    filename: str | None = None
+    path: str | None = None
 
     def __hash__(self) -> int:
-        return hash(self.filename)
+        return hash(self.path)
 
     def __post_init__(self) -> None:
         self.changes: dict[  # pylint: disable=attribute-defined-outside-init
