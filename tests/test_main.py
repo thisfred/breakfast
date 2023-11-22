@@ -6,13 +6,16 @@ from breakfast.source import Source
 
 def test_renames_function_from_lines():
     source = Source(
-        (
+        module_name="wat",
+        path="wat.py",
+        lines=(
             "def fun_old():",
             "    return 'result'",
             "result = fun_old()",
-        )
+        ),
+        project_root="wat",
     )
-    application = Application(source, root=".")
+    application = Application(root=".", source=source)
 
     application.rename(row=0, column=4, new_name="fun_new")
 
@@ -23,19 +26,19 @@ def test_renames_function_from_lines():
 
 
 def test_returns_paths(project_root):
-    application = Application(source=Source(("",)), root=project_root)
+    application = Application(root=project_root)
     found = [
-        str(Path(f.path).relative_to(Path(project_root)))
-        for f in application.find_modules()
+        str(Path(s.path).relative_to(Path(project_root)))
+        for s in application.find_sources()
     ]
     assert "tests/data/__init__.py" in found
     assert "tests/data/module1.py" in found
     assert "tests/data/module2.py" in found
 
 
-def test_returns_module_paths(project_root):
-    application = Application(source=Source(("",)), root=project_root)
-    found = [f.module_path for f in application.find_modules()]
+def test_returns_module_names(project_root):
+    application = Application(root=project_root)
+    found = [s.module_name for s in application.find_sources()]
     assert "tests.data" in found
     assert "tests.data.module1" in found
     assert "tests.data.module2" in found
@@ -43,26 +46,26 @@ def test_returns_module_paths(project_root):
 
 
 def test_reports_empty_importers(project_root):
-    application = Application(source=Source(("",)), root=project_root)
-    all_modules = application.find_modules()
+    application = Application(root=project_root)
+    all_sources = application.find_sources()
 
     found = [
-        module.module_path
-        for module in all_modules
-        if module.imports("tests.data.module1")
+        source.module_name
+        for source in all_sources
+        if source.imports("tests.data.module1")
     ]
 
     assert found == []
 
 
 def test_reports_importers(project_root):
-    application = Application(source=Source(("",)), root=project_root)
-    all_modules = application.find_modules()
+    application = Application(root=project_root)
+    all_sources = application.find_sources()
 
     found = [
-        module.module_path
-        for module in all_modules
-        if module.imports("tests.data.module2")
+        source.module_name
+        for source in all_sources
+        if source.imports("tests.data.module2")
     ]
 
     assert found == ["tests.data.module1"]
@@ -72,10 +75,11 @@ def test_all_imports(project_root):
     path = Path("tests") / "data" / "module1.py"
     with path.open("r", encoding="utf-8") as source_file:
         source = Source(
-            lines=tuple(line[:-1] for line in source_file.readlines()),
-            module_name="tests.data.module2",
             path="tests/data/module2.py",
+            lines=tuple(line[:-1] for line in source_file.readlines()),
+            project_root=".",
+            module_name="tests.data.module2",
         )
-    application = Application(source=source, root=project_root)
+    application = Application(root=project_root, source=source)
     importers = application.find_importers(source.module_name)
-    assert {i.module_path for i in importers} == {"tests.data.module1"}
+    assert {i.module_name for i in importers} == {"tests.data.module1"}

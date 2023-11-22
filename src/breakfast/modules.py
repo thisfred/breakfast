@@ -30,6 +30,7 @@ class Module:
                     lines=tuple(line[:-1] for line in source_file.readlines()),
                     module_name=self.module_path,
                     path=self.path,
+                    project_root=self.project_root,
                 )
 
         finder = ImportFinder()
