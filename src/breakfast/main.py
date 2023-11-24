@@ -50,9 +50,7 @@ class Application:
                     except AttributeError:
                         continue
                     if filename.endswith(".py"):
-                        yield Source(
-                            path=filename, module_name=m.name, project_root=self._root
-                        )
+                        yield Source(path=filename, project_root=self._root)
 
     def find_importers(self, path: str) -> set[Source]:
         importers = set()

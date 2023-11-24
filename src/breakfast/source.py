@@ -1,5 +1,7 @@
 import ast
+import os
 import re
+import sys
 from ast import AST, parse
 from collections import defaultdict
 from collections.abc import Iterable, Iterator
@@ -15,7 +17,6 @@ WORD = re.compile(r"\w+|\W+")
 class Source:
     path: str
     project_root: str
-    module_name: str
     lines: tuple[str, ...] | None = None
 
     def __hash__(self) -> int:
@@ -90,6 +91,32 @@ class Source:
 
     def imports(self, module_name: str) -> bool:
         return module_name in self.get_imported_modules()
+
+    @property
+    def module_name(self) -> str:
+        path = self.path
+
+        prefixes = [p for p in sys.path if self.path.startswith(p)]
+        if prefixes:
+            prefix = max(prefixes)
+            if prefix:
+                path = path[len(prefix) :]
+
+        if path.startswith(os.path.sep):
+            path = path[1:]
+
+        # Remove .py
+        dot_py = ".py"
+        if path.endswith(dot_py):
+            path = path[: -len(dot_py)]
+
+        __init__ = "/__init__"
+        if path.endswith(__init__):
+            path = path[: -len(__init__)]
+
+        path = path.replace(os.path.sep, ".")
+
+        return path
 
 
 class ImportFinder(ast.NodeVisitor):

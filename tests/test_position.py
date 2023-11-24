@@ -5,7 +5,7 @@ from breakfast.source import Source
 
 @pytest.fixture  # type: ignore
 def source() -> Source:
-    return Source(path=".", project_root=".", module_name=".")
+    return Source(path=".", project_root=".")
 
 
 def test_cannot_create_negative_positions(source: Source) -> None:

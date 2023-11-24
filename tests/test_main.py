@@ -6,7 +6,6 @@ from breakfast.source import Source
 
 def test_renames_function_from_lines():
     source = Source(
-        module_name="wat",
         path="wat.py",
         lines=(
             "def fun_old():",
@@ -72,14 +71,7 @@ def test_reports_importers(project_root):
 
 
 def test_all_imports(project_root):
-    path = Path("tests") / "data" / "module1.py"
-    with path.open("r", encoding="utf-8") as source_file:
-        source = Source(
-            path="tests/data/module2.py",
-            lines=tuple(line[:-1] for line in source_file.readlines()),
-            project_root=".",
-            module_name="tests.data.module2",
-        )
+    source = Source(path="tests/data/module2.py", project_root=".")
     application = Application(root=project_root, source=source)
     importers = application.find_importers(source.module_name)
     assert {i.module_name for i in importers} == {"tests.data.module1"}

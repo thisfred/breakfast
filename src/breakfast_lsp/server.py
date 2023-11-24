@@ -141,10 +141,12 @@ async def rename(server: LanguageServer, params: RenameParams) -> WorkspaceEdit 
     if start is None:
         return None
 
-    source = breakfast.Source(
-        source_lines, filename=params.text_document.uri[len("file://") :]
-    )
     project_root = server.workspace.root_uri
+    source = breakfast.Source(
+        lines=source_lines,
+        path=params.text_document.uri[len("file://") :],
+        project_root=project_root,
+    )
     application = breakfast.Application(source=source, root=project_root)
     position = source.position(row=params.position.line, column=start)
     occurrences = application.get_occurrences(position)
@@ -156,7 +158,7 @@ async def rename(server: LanguageServer, params: RenameParams) -> WorkspaceEdit 
     document_changes: list[TextDocumentEdit | CreateFile | RenameFile | DeleteFile] = []
     client_documents = server.workspace.text_documents
     for source, source_occurences in groupby(occurrences, lambda o: o.source):
-        document_uri = f"file://{source.filename}"
+        document_uri = f"file://{source.path}"
         logger.info(f"{document_uri=}")
         version = (
             versioned.version

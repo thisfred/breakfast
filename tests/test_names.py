@@ -13,13 +13,12 @@ def test_assignment_occurrences() -> None:
     stove.broil()
     """,
         filename="chef.py",
-        module_name="chef",
     )
     source2 = make_source(
         """
     from stove import *
     """,
-        module_name="kitchen",
+        filename="kitchen.py",
     )
     source3 = make_source(
         """
@@ -34,7 +33,6 @@ def test_assignment_occurrences() -> None:
             pass
     """,
         filename="stove.py",
-        module_name="stove",
     )
     positions = all_occurrence_positions(
         Position(source1, 4, 6), sources=[source1, source2, source3]
@@ -760,7 +758,6 @@ def test_finds_namespace_imports() -> None:
             pass
         """,
         filename="foo.py",
-        module_name="foo",
     )
     source2 = make_source(
         """
@@ -768,7 +765,6 @@ def test_finds_namespace_imports() -> None:
         foo.old()
         """,
         filename="bar.py",
-        module_name="bar",
     )
     position = Position(source1, 1, 4)
     assert all_occurrence_positions(position, sources=[source1, source2]) == [

@@ -7,12 +7,9 @@ def dedent(code: str) -> str:
     return "\n".join(line[indentation:] for line in lines)
 
 
-def make_source(
-    code: str, module_name: str = "", filename: str | None = None
-) -> Source:
+def make_source(code: str, filename: str | None = None) -> Source:
     return Source(
         lines=tuple(dedent(code).split("\n")),
-        module_name=module_name,
         path=filename or "",
         project_root=".",
     )

@@ -16,7 +16,7 @@ def test_functions() -> None:
     def saute():
         pass
     """,
-        module_name="stove",
+        filename="stove.py",
     )
 
     graph = build_graph([source])
@@ -36,7 +36,7 @@ def test_import() -> None:
     def saute():
         pass
     """,
-        module_name="stove",
+        filename="stove.py",
     )
     source2 = make_source(
         """
@@ -44,7 +44,7 @@ def test_import() -> None:
 
     broil()
     """,
-        module_name="kitchen",
+        filename="kitchen.py",
     )
 
     graph = build_graph([source1, source2])
@@ -65,7 +65,7 @@ def test_classes() -> None:
         def saute():
             pass
     """,
-        module_name="stove",
+        filename="stove.py",
     )
     graph = build_graph([source])
     definition = graph.traverse(
@@ -82,13 +82,13 @@ def test_assignment() -> None:
     stove = Stove()
     stove.broil()
     """,
-        module_name="chef",
+        filename="chef.py",
     )
     source2 = make_source(
         """
     from stove import *
     """,
-        module_name="kitchen",
+        filename="kitchen.py",
     )
     source3 = make_source(
         """
@@ -102,7 +102,7 @@ def test_assignment() -> None:
         def saute():
             pass
     """,
-        module_name="stove",
+        filename="stove.py",
     )
     graph = build_graph([source1, source2, source3])
     definition = graph.traverse(graph.root, stack=("chef", ".", "stove", ".", "broil"))
