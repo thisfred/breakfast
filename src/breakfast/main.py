@@ -1,6 +1,6 @@
-import os
-import pkgutil
 from collections.abc import Iterator
+from glob import iglob
+from pathlib import Path
 
 from breakfast.names import all_occurrence_positions
 from breakfast.position import Position
@@ -22,7 +22,9 @@ class Application:
                     position=occurrence, old=old_name, new=new_name
                 )
 
-    def get_occurrences(self, position: Position) -> list[Position]:
+    def get_occurrences(
+        self, position: Position, known_sources: list[Source] | None = None
+    ) -> list[Position]:
         return all_occurrence_positions(
             position,
             sources=[self._initial_source] if self._initial_source else [],
@@ -30,27 +32,8 @@ class Application:
         )
 
     def find_sources(self) -> Iterator[Source]:
-        _, directories, _ = next(os.walk(self._root))
-        for dirpath in directories:
-            # XXX: this is hacky and probably doesn't cover half of the special kinds of
-            # directories that aren't actually packages.
-            if (
-                dirpath.startswith(".")
-                or dirpath.startswith("__")
-                or dirpath.endswith("egg-info")
-            ):
-                continue
-            root = dirpath.split(os.path.sep)[-1]
-            for m in pkgutil.walk_packages(path=[root], prefix=f"{root}."):
-                name = m.name
-                loader = pkgutil.get_loader(name)
-                if loader:
-                    try:
-                        filename = loader.get_filename()  # type: ignore[attr-defined]
-                    except AttributeError:
-                        continue
-                    if filename.endswith(".py"):
-                        yield Source(path=filename, project_root=self._root)
+        for path in get_module_paths(Path(self._root)):
+            yield Source(path=str(path), project_root=self._root)
 
     def find_importers(self, path: str) -> set[Source]:
         importers = set()
@@ -59,3 +42,30 @@ class Application:
                 importers.add(source)
 
         return importers
+
+
+def exclude_directory(path: str) -> bool:
+    return path.startswith(".") or path.startswith("__") or path.endswith("egg-info")
+
+
+EXCLUDE_PATTERNS = (
+    "**/__*/**/*.py",
+    "__*/*.py",
+    "**/*egg-info/**/*.py",
+    "*egg-info/*.py",
+)
+
+
+def is_allowed(path: Path) -> bool:
+    for pattern in EXCLUDE_PATTERNS:
+        if path.match(pattern):
+            return False
+
+    return True
+
+
+def get_module_paths(path: Path) -> Iterator[Path]:
+    for filename in iglob(f"{path}/**/*.py", recursive=True):
+        module_path = Path(filename)
+        if is_allowed(module_path):
+            yield module_path
