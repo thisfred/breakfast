@@ -1,4 +1,5 @@
 import ast
+import logging
 from collections import defaultdict
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
@@ -16,6 +17,8 @@ from breakfast.scope_graph import (
     no_lookup_in_enclosing_scope,
 )
 from breakfast.source import Source
+
+logger = logging.getLogger(__name__)
 
 
 def all_occurrence_positions(
@@ -107,6 +110,9 @@ def consolidate_definitions(
 def node_position(
     node: ast.AST, source: Source, row_offset: int = 0, column_offset: int = 0
 ) -> Position:
+    logger.info(
+        f"{node=}, {node.lineno=}, {row_offset=}, {node.col_offset=}, {column_offset=}"
+    )
     return source.position(
         row=(node.lineno - 1) + row_offset, column=node.col_offset + column_offset
     )
@@ -133,6 +139,13 @@ def generic_visit(
 def visit(
     node: ast.AST, source: Source, graph: ScopeGraph, state: State
 ) -> Iterator[Fragment]:
+    logger.info(
+        "visiting %s, %s:%s:%s",
+        repr(node),
+        source.path,
+        getattr(node, "lineno", "??"),
+        getattr(node, "col_offset", "??"),
+    )
     yield from generic_visit(node, source, graph, state)
 
 
@@ -140,7 +153,8 @@ def visit_all(
     nodes: Iterable[ast.AST], source: Source, graph: ScopeGraph, state: State
 ) -> Iterator[Fragment]:
     for node in nodes:
-        yield from visit(node, source, graph, state)
+        if isinstance(node, ast.AST):
+            yield from visit(node, source, graph, state)
 
 
 @visit.register
@@ -255,9 +269,12 @@ def visit_attribute(
             yield fragment
 
     position = node_position(node, source)
+    logger.info(f"{position=}")
     names = names_from(node.value)
+    logger.info(f"{names=}")
     positions = []
     for name in (*names, node.attr):
+        logger.info(f"{name=}, {position=}")
         new_position = source.find_after(name, position)
         positions.append(new_position)
         position = new_position
@@ -272,12 +289,14 @@ def visit_attribute(
         action=Push("."),
         same_rank=True,
     )
+    final_fragment = None
     for fragment in expressions:
         graph.add_edge(dot_scope, fragment.entry, same_rank=True)
+        final_fragment = fragment
 
     yield Fragment(
         in_scope,
-        fragment.exit if fragment else dot_scope,
+        final_fragment.exit if final_fragment else dot_scope,
         is_statement=False,
     )
     if not isinstance(node.ctx, ast.Store):

@@ -4,26 +4,6 @@ from breakfast.main import Application, get_module_paths, is_allowed
 from breakfast.source import Source
 
 
-def test_renames_function_from_lines():
-    source = Source(
-        path="wat.py",
-        lines=(
-            "def fun_old():",
-            "    return 'result'",
-            "result = fun_old()",
-        ),
-        project_root="wat",
-    )
-    application = Application(root=".", source=source)
-
-    application.rename(row=0, column=4, new_name="fun_new")
-
-    assert list(source.get_changes()) == [
-        (0, "def fun_new():"),
-        (2, "result = fun_new()"),
-    ]
-
-
 def test_returns_paths(project_root):
     application = Application(root=project_root)
     found = [

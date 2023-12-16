@@ -6,6 +6,8 @@
 * handle renames for/across type annotations
 * store scope graphs (or partial paths?)
 * relative imports
+* match statements
+* FormattedValue
 * implement LSP (see ruff)
 * handle renames across files
 * calculate import graph

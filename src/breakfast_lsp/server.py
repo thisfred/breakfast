@@ -141,9 +141,9 @@ async def rename(server: LanguageServer, params: RenameParams) -> WorkspaceEdit 
     if start is None:
         return None
 
-    project_root = server.workspace.root_uri
+    project_root = server.workspace.root_uri[len("file://") :]
     source = breakfast.Source(
-        lines=source_lines,
+        lines=tuple(line.encode("utf-8") for line in source_lines),
         path=params.text_document.uri[len("file://") :],
         project_root=project_root,
     )

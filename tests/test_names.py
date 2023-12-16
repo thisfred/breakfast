@@ -817,3 +817,17 @@ def test_finds_unpacked_names():
         Position(source, 1, 4),
         Position(source, 2, 10),
     ]
+
+
+def test_unicode_strings():
+    source = make_source(
+        """
+        node = Thing()
+        var = "↑" + node.attr
+        """
+    )
+    position = source.position(1, 0)
+    assert all_occurrence_positions(position, sources=[source]) == [
+        Position(source, 1, 0),
+        Position(source, 2, 14),
+    ]
