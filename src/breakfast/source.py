@@ -20,23 +20,21 @@ WORD = re.compile(r"\w+|\W+")
 class Source:
     path: str
     project_root: str
-    lines: tuple[bytes, ...] | None = None
+    lines: tuple[str, ...] | None = None
 
     def __hash__(self) -> int:
         return hash(self.path)
 
     def __post_init__(self) -> None:
         self.changes: dict[  # pylint: disable=attribute-defined-outside-init
-            int, bytes
+            int, str
         ] = {}
 
     @property
-    def guaranteed_lines(self) -> tuple[bytes, ...]:
+    def guaranteed_lines(self) -> tuple[str, ...]:
         if self.lines is None:
             with open(self.path, encoding="utf-8") as source_file:
-                self.lines = tuple(
-                    line[:-1].encode("utf-8") for line in source_file.readlines()
-                )
+                self.lines = tuple(line[:-1] for line in source_file.readlines())
         return self.lines
 
     def position(self, row: int, column: int) -> Position:
@@ -49,9 +47,9 @@ class Source:
         return match.group()
 
     def get_ast(self) -> AST:
-        return parse(b"\n".join(self.guaranteed_lines))
+        return parse("\n".join(self.guaranteed_lines))
 
-    def get_changes(self) -> Iterator[tuple[int, bytes]]:
+    def get_changes(self) -> Iterator[tuple[int, str]]:
         yield from sorted(self.changes.items())
 
     def replace(self, position: Position, old: str, new: str) -> None:
@@ -60,7 +58,7 @@ class Source:
     def modify_line(self, start: Position, end: Position, new: str) -> None:
         line_number = start.row
         line = self.changes.get(line_number, self.guaranteed_lines[line_number])
-        modified_line = line[: start.column] + new.encode("utf-8") + line[end.column :]
+        modified_line = line[: start.column] + new + line[end.column :]
         self.changes[line_number] = modified_line
 
     def find_after(self, name: str, start: Position) -> Position:
@@ -74,16 +72,11 @@ class Source:
         return start + match.span()[0]
 
     def get_string_starting_at(self, position: Position) -> str:
-        logger.info(
-            f"{position.row=}:{position.column=}, {len(self.guaranteed_lines)=}"
-        )
-        return self.guaranteed_lines[position.row][position.column :].decode("utf-8")
+        return self.guaranteed_lines[position.row][position.column :]
 
     def get_imported_modules(self) -> list[str]:
         with open(self.path, encoding="utf-8") as source_file:
-            self.lines = tuple(
-                line[:-1].encode("utf-8") for line in source_file.readlines()
-            )
+            self.lines = tuple(line[:-1] for line in source_file.readlines())
 
         finder = ImportFinder()
         finder.visit(self.get_ast())

@@ -9,7 +9,7 @@ def dedent(code: str) -> str:
 
 def make_source(code: str, filename: str | None = None) -> Source:
     return Source(
-        lines=tuple(line.encode("utf-8") for line in dedent(code).split("\n")),
+        lines=tuple(line for line in dedent(code).split("\n")),
         path=filename or "",
         project_root=".",
     )

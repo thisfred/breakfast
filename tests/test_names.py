@@ -829,5 +829,5 @@ def test_unicode_strings():
     position = source.position(1, 0)
     assert all_occurrence_positions(position, sources=[source]) == [
         Position(source, 1, 0),
-        Position(source, 2, 14),
+        Position(source, 2, 12),
     ]

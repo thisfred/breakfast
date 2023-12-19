@@ -107,15 +107,21 @@ def consolidate_definitions(
     return found_group
 
 
-def node_position(
-    node: ast.AST, source: Source, row_offset: int = 0, column_offset: int = 0
-) -> Position:
-    logger.info(
-        f"{node=}, {node.lineno=}, {row_offset=}, {node.col_offset=}, {column_offset=}"
-    )
-    return source.position(
-        row=(node.lineno - 1) + row_offset, column=node.col_offset + column_offset
-    )
+def node_position(node: ast.AST, source: Source) -> Position:
+    """
+    Return the start position of the node in unicode characters.
+
+    (Note that ast.AST's col_offset is in *bytes*)
+    """
+    logger.debug(f"{node=}, {node.lineno=},  {node.col_offset=}")
+    line = source.guaranteed_lines[node.lineno - 1]
+    if line.isascii():
+        column_offset = node.col_offset
+    else:
+        byte_prefix = line.encode("utf-8")[: node.col_offset]
+        column_offset = len(byte_prefix.decode("utf-8"))
+
+    return source.position(row=(node.lineno - 1), column=column_offset)
 
 
 def generic_visit(
@@ -139,7 +145,7 @@ def generic_visit(
 def visit(
     node: ast.AST, source: Source, graph: ScopeGraph, state: State
 ) -> Iterator[Fragment]:
-    logger.info(
+    logger.debug(
         "visiting %s, %s:%s:%s",
         repr(node),
         source.path,
@@ -269,12 +275,12 @@ def visit_attribute(
             yield fragment
 
     position = node_position(node, source)
-    logger.info(f"{position=}")
+    logger.debug(f"{position=}")
     names = names_from(node.value)
-    logger.info(f"{names=}")
+    logger.debug(f"{names=}")
     positions = []
     for name in (*names, node.attr):
-        logger.info(f"{name=}, {position=}")
+        logger.debug(f"{name=}, {position=}")
         new_position = source.find_after(name, position)
         positions.append(new_position)
         position = new_position
@@ -438,7 +444,7 @@ def visit_function_definition(
 ) -> Iterator[Fragment]:
     name = node.name
     # Offset by len("def ")
-    position = node_position(node, source, column_offset=4)
+    position = node_position(node, source) + 4
     in_scope = out_scope = graph.add_scope()
 
     call_scope = graph.add_scope(
@@ -553,7 +559,7 @@ def visit_class_definition(
     original_scope = current_scope
 
     # Offset by len("class ")
-    position = node_position(node, source, column_offset=6)
+    position = node_position(node, source) + 6
 
     instance_scope = graph.add_scope(action=Pop("."), same_rank=True)
     i_scope = graph.add_scope(

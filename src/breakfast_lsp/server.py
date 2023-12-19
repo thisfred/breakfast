@@ -143,7 +143,7 @@ async def rename(server: LanguageServer, params: RenameParams) -> WorkspaceEdit 
 
     project_root = server.workspace.root_uri[len("file://") :]
     source = breakfast.Source(
-        lines=tuple(line.encode("utf-8") for line in source_lines),
+        lines=tuple(line for line in source_lines),
         path=params.text_document.uri[len("file://") :],
         project_root=project_root,
     )
