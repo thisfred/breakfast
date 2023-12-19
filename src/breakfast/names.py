@@ -20,6 +20,9 @@ from breakfast.source import Source
 
 logger = logging.getLogger(__name__)
 
+CLASS_OFFSET = 6  # len('class ')
+DEF_OFFSET = 4  # len('def ')
+
 
 def all_occurrence_positions(
     position: Position,
@@ -443,8 +446,7 @@ def visit_function_definition(
     node: ast.FunctionDef, source: Source, graph: ScopeGraph, state: State
 ) -> Iterator[Fragment]:
     name = node.name
-    # Offset by len("def ")
-    position = node_position(node, source) + 4
+    position = node_position(node, source) + DEF_OFFSET
     in_scope = out_scope = graph.add_scope()
 
     call_scope = graph.add_scope(
@@ -558,8 +560,7 @@ def visit_class_definition(
     current_scope = graph.add_scope()
     original_scope = current_scope
 
-    # Offset by len("class ")
-    position = node_position(node, source) + 6
+    position = node_position(node, source) + CLASS_OFFSET
 
     instance_scope = graph.add_scope(action=Pop("."), same_rank=True)
     i_scope = graph.add_scope(
