@@ -1,5 +1,6 @@
 ## To do list
 
+
 * add other refactorings
 * add go to definition
 * handle renames rest of the language
@@ -7,8 +8,8 @@
 * store scope graphs (or partial paths?)
 * relative imports
 * match statements
-* FormattedValue
 * implement LSP (see ruff)
+* prevent renaming to a name that clashes with an existing one
 * handle renames across files
 * calculate import graph
 

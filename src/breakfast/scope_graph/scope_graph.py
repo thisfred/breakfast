@@ -1,3 +1,4 @@
+import logging
 from collections import defaultdict, deque
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
@@ -6,6 +7,9 @@ from enum import Enum, auto
 from typing import Protocol
 
 from breakfast.position import Position
+
+logger = logging.getLogger(__name__)
+
 
 Path = tuple[str, ...]
 

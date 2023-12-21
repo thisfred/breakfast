@@ -180,12 +180,15 @@ def visit_module(
 
     graph.add_edge(module_root, current)
 
-    current = graph.add_scope(link_to=module_root, action=Pop("."))
-    current = graph.add_scope(
-        link_to=current,
-        action=Pop(source.module_name),
-        is_definition=True,
-    )
+    current = module_root
+    for part in reversed(source.module_name.split(".")):
+        current = graph.add_scope(link_to=current, action=Pop("."))
+        current = graph.add_scope(
+            link_to=current,
+            action=Pop(part),
+            is_definition=True,
+        )
+
     graph.add_edge(graph.root, current, same_rank=True)
     yield Fragment(graph.root, graph.root)
 
