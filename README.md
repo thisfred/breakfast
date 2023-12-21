@@ -118,7 +118,7 @@ a = 2
 ```
 
 One choice would be to view these as separate definitions, which would
-require separate rename refactorings. (And rewriting of expressions like
+require separate rename refactorings. (And rewriting of statements like
 `a += n`.) My solution is to add occurrence (push) nodes for definitions
 that will look back for earlier definitions (only) in the same scope,
 but don't require any to be found.
