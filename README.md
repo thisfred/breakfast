@@ -57,7 +57,7 @@ to deal with things not covered by the papers and presentations I found
 online. [1](#1)
 
 
-Doglas Creager's excellent Strangeloop talk in particular, is what
+Douglas Creager's excellent Strangeloop talk in particular, is what
 inspired me to use Stack Graphs in this project. I had already been
 working on the project for a few years when I first discovered the talk,
 but it had stalled due to the poor way I was handling the inherent
