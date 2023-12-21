@@ -1,11 +1,11 @@
 from pathlib import Path
 
-from breakfast.main import Application, get_module_paths, is_allowed
+from breakfast.main import Project, get_module_paths, is_allowed
 from breakfast.source import Source
 
 
 def test_returns_paths(project_root):
-    application = Application(root=project_root)
+    application = Project(root=project_root)
     found = [
         str(Path(s.path).relative_to(Path(project_root)))
         for s in application.find_sources()
@@ -16,7 +16,7 @@ def test_returns_paths(project_root):
 
 
 def test_returns_module_names(project_root):
-    application = Application(root=project_root)
+    application = Project(root=project_root)
     found = [s.module_name for s in application.find_sources()]
     assert "tests.data" in found
     assert "tests.data.module1" in found
@@ -25,7 +25,7 @@ def test_returns_module_names(project_root):
 
 
 def test_reports_empty_importers(project_root):
-    application = Application(root=project_root)
+    application = Project(root=project_root)
     all_sources = application.find_sources()
 
     found = [
@@ -38,7 +38,7 @@ def test_reports_empty_importers(project_root):
 
 
 def test_reports_importers(project_root):
-    application = Application(root=project_root)
+    application = Project(root=project_root)
     all_sources = application.find_sources()
 
     found = [
@@ -52,7 +52,7 @@ def test_reports_importers(project_root):
 
 def test_all_imports(project_root):
     source = Source(path="tests/data/module2.py", project_root=".")
-    application = Application(root=project_root, source=source)
+    application = Project(root=project_root, source=source)
     importers = application.find_importers(source.module_name)
     assert {i.module_name for i in importers} == {"tests.data.module1"}
 

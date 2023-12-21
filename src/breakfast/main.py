@@ -10,7 +10,7 @@ from breakfast.source import Source
 logger = logging.getLogger(__name__)
 
 
-class Application:
+class Project:
     def __init__(self, root: str, source: Source | None = None) -> None:
         self._root = root
         self._initial_source = source

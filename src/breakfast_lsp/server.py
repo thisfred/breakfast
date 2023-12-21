@@ -147,7 +147,7 @@ async def rename(server: LanguageServer, params: RenameParams) -> WorkspaceEdit 
         path=params.text_document.uri[len("file://") :],
         project_root=project_root,
     )
-    application = breakfast.Application(source=source, root=project_root)
+    application = breakfast.Project(source=source, root=project_root)
     position = source.position(row=params.position.line, column=start)
     occurrences = application.get_occurrences(position)
     if not occurrences:
