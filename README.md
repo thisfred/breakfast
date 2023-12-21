@@ -54,7 +54,7 @@ of these very smart people are involved in this project or are even
 aware of its existence. It's likely that my implementation is naive or
 incorrect in places, and I've had to add in some (likely unsound) hacks
 to deal with things not covered by the papers and presentations I found
-online. [1](###1)
+online. [1](#1)
 
 
 Doglas Creager's excellent Strangeloop talk in particular, is what
@@ -72,6 +72,22 @@ Links:
 I've included some graphviz code to assist in debugging which renders
 scope graphs in a similar  way to the one used in the presentation.The
 result is much uglier, but worked for its intended purpose.
+
+For example, this code:
+
+```python
+def fun(arg=1):
+    print(arg)
+
+arg = 8
+fun(arg=arg)
+```
+
+Results in this image:
+
+![node graph representation of python code fragment](parameter.png)
+
+
 
 ## Why 'breakfast'?
 
