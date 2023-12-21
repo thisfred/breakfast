@@ -38,9 +38,9 @@ with other editors and IDEs that support that protocol.
 
 I use Linux as my operating system of choice, and while I have tried
 hard to not make too many assumptions about the OS, it's likely that
-you'll encounter some issues on if you try to use this project on
-Windows. I'll happily accept bug reports and patches, and suggestions on
-how to improve testing that will make stronger guarantees there.
+you'll encounter some issues if you try to use this project on Windows.
+I'll happily accept bug reports and patches, and suggestions on how to
+improve testing that will make stronger guarantees there.
 
 ## Installation
 
@@ -96,7 +96,9 @@ Results in this image:
    it has AST in it.
 2. breakfast and move things > move fast and break things
 
-to run tests:
+## Testing
+
+To run tests:
 
 ```
 make test
