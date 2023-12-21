@@ -74,7 +74,7 @@ def test_should_find_occurrences_along_longer_import_paths() -> None:
         filename="cooking/stove.py",
     )
     positions = all_occurrence_positions(
-        Position(source1, 4, 6), sources=[source1, source2, source3], debug=True
+        Position(source1, 4, 6), sources=[source1, source2, source3]
     )
     assert positions == [
         Position(source1, 4, 6),
