@@ -15,6 +15,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
 ]
 
 [project.optional-dependencies]
@@ -24,7 +25,8 @@ tests = [
 dev = [
     "black",
     "mypy",
-    "ruff"]
+    "ruff",
+    "pre-commit"]
 lsp = [
     "lsprotocol",
     "pygls"
@@ -34,7 +36,6 @@ lsp = [
 breakfast-lsp = "breakfast_lsp.__main__:main"
 
 [tool.ruff]
-line-length = 120
 select = ["E", "F", "I", "C", "W", "UP", "N", "YTT", "S", "B", "A", "DTZ", "RUF"]
 ignore = [
     "E501",  # covered by black
