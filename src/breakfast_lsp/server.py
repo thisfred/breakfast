@@ -60,7 +60,7 @@ def find_identifier_range_at(
 
     end = find_identifier_end(line, position)
 
-    logger.info(f"found range: {start=}, {end=}")
+    logger.debug(f"found range: {start=}, {end=}")
     return Range(
         start=Position(position.line, start),
         end=Position(position.line, end),
@@ -88,11 +88,11 @@ def is_valid_identifier_start(character: str) -> bool:
 def find_identifier_start(line: str, position: Position) -> int | None:
     start = position.character
     if start < 0 or start >= len(line):
-        logger.info("Invalid position.")
+        logger.debug("Invalid position.")
         return None
 
     if not is_valid_identifier_character(line[start]):
-        logger.info("Cursor not at a name.")
+        logger.debug("Cursor not at a name.")
         return None
 
     while start >= 0 and is_valid_identifier_character(line[start]):
@@ -118,8 +118,8 @@ def find_identifier_end(line: str, position: Position) -> int:
 
 @LSP_SERVER.feature(INITIALIZE)
 def initialize(server: LanguageServer, params: InitializeParams) -> None:
-    logger.info(f"{server.workspace.root_uri=}")
-    logger.info(f"{server.workspace.text_documents=}")
+    logger.debug(f"{server.workspace.root_uri=}")
+    logger.debug(f"{server.workspace.text_documents=}")
 
 
 @LSP_SERVER.feature(TEXT_DOCUMENT_PREPARE_RENAME)
@@ -153,13 +153,13 @@ async def rename(server: LanguageServer, params: RenameParams) -> WorkspaceEdit 
     if not occurrences:
         return None
 
-    logger.info(f"found {len(occurrences)} occurrences to rename.")
+    logger.debug(f"found {len(occurrences)} occurrences to rename.")
     old_identifier = source.get_name_at(position)
     document_changes: list[TextDocumentEdit | CreateFile | RenameFile | DeleteFile] = []
     client_documents = server.workspace.text_documents
     for source, source_occurences in groupby(occurrences, lambda o: o.source):
         document_uri = f"file://{source.path}"
-        logger.info(f"{document_uri=}")
+        logger.debug(f"{document_uri=}")
         version = (
             versioned.version
             if (versioned := client_documents.get(document_uri))

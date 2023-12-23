@@ -42,12 +42,12 @@ class Project:
 
 
 def get_module_paths(path: Path) -> Iterator[Path]:
-    logger.info(f"{path=}")
+    logger.debug(f"{path=}")
     for filename in iglob(f"{path}/**/*.py", recursive=True):
-        logger.info(f"{filename=}")
+        logger.debug(f"{filename=}")
         module_path = Path(filename)
         if is_allowed(module_path):
-            logger.info(f"{module_path=}")
+            logger.debug(f"{module_path=}")
             yield module_path
 
 
