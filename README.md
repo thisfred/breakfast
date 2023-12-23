@@ -3,18 +3,6 @@
 AST based refactoring tool for and written in Python. (Pretty early days,
 somewhat usable.)
 
-In an act of unbelievable hubris, I started this project in 2015 out of
-frustration with existing Python refactoring tools, and in particular the
-venerable Rope, which is generally pretty good, and is still miles
-ahead of this project in almost every way. In particular I tried to
-rename a variable in some code I was working on, and rope also changed
-an occurrence of the same sequence of characters inside a string literal
-somewhere. This may have been a superficial bug, but it made me trust
-the tool less, making me less eager to use it. The one guarantee I'm
-striving for with this library is that renaming will respect Python's
-scoping rules, and not touch any other strings in the code that happen
-to be identical.
-
 ## Status
 
 breakfast tries to refuse to guess in the face of ambiguity, so it
@@ -103,6 +91,20 @@ To run tests:
 ```
 make test
 ```
+
+## History
+
+In an act of unbelievable hubris, I started this project in 2015 out of
+frustration with existing Python refactoring tools, and in particular the
+venerable Rope, which is generally pretty good, and is still miles
+ahead of this project in almost every way. In particular I tried to
+rename a variable in some code I was working on, and rope also changed
+an occurrence of the same sequence of characters inside a string literal
+somewhere. This may have been a superficial bug, but it made me trust
+the tool less, making me less eager to use it. The one guarantee I'm
+striving for with this library is that renaming will respect Python's
+scoping rules, and not touch any other strings in the code that happen
+to be identical.
 
 
 ## Footnotes
