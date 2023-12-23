@@ -7,4 +7,3 @@
 * handle renames rest of the language
 * handle renames for/across type annotations
 * relative imports
-* match statements

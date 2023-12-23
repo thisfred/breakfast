@@ -815,6 +815,29 @@ def visit_comprehension(
     yield Fragment(current_scope, top_scope)
 
 
+@visit.register
+def visit_match_as(
+    node: ast.MatchAs, source: Source, graph: ScopeGraph, state: State
+) -> Iterator[Fragment]:
+    current_scope = graph.add_scope()
+
+    if node.name:
+        start = node_position(node, source)
+        position = source.find_after(node.name, start)
+        graph.add_scope(
+            link_from=current_scope,
+            name=node.name,
+            position=position,
+            action=Pop(node.name),
+            same_rank=True,
+            is_definition=True,
+        )
+    if node.pattern:
+        yield from visit(node.pattern, source, graph, state)
+
+    yield Fragment(current_scope, current_scope)
+
+
 @dataclass(frozen=True)
 class Pop:
     path: str

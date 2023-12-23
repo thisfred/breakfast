@@ -870,3 +870,22 @@ def test_unicode_strings():
         Position(source, 1, 0),
         Position(source, 2, 12),
     ]
+
+
+def test_pattern_matching_should_only_find_occurrences_in_a_single_case():
+    source = make_source(
+        """
+        match thing:
+            case a if a > 2:
+                print(a)
+
+            case a:
+                print(a)
+        """
+    )
+    position = source.position(2, 9)
+    assert all_occurrence_positions(position, sources=[source]) == [
+        Position(source, 2, 9),
+        Position(source, 2, 14),
+        Position(source, 3, 14),
+    ]
