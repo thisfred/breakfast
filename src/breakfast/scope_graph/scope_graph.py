@@ -361,6 +361,7 @@ class State:
     class_name: str | None = None
     instance_scope: ScopeNode | None = None
     self: str | None = None
+    package_path: list[str] | None = None
 
     @contextmanager
     def instance(
@@ -397,3 +398,11 @@ class State:
         self.scope_hierarchy.append(scope)
         yield self
         self.scope_hierarchy.pop()
+
+    @contextmanager
+    def package(self, name: str) -> Iterator["State"]:
+        if self.package_path is None:
+            self.package_path = []
+        self.package_path.append(name)
+        yield self
+        self.package_path.pop()

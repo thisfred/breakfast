@@ -19,7 +19,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-tests = [
+test = [
     "coverage",
     "pytest"]
 dev = [

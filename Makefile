@@ -1,4 +1,4 @@
-.PHONY: test install install-dev lint dist-clean
+.PHONY: test install lint dist-clean
 
 test: .venv/installed
 	.venv/bin/coverage run .venv/bin/pytest
