@@ -181,16 +181,44 @@ def visit_module(
 
     graph.add_edge(module_root, current)
 
-    current = module_root
-    for part in reversed(source.module_name.split(".")):
-        current = graph.add_scope(link_to=current, action=Pop("."))
-        current = graph.add_scope(
-            link_to=current,
-            action=Pop(part),
-            is_definition=True,
-        )
+    # XXX: when we encounter a module name like a.b.c, we want to connect to existing
+    # nodes for a and b if they exist already.
+    current = graph.root
+    for part in source.module_name.split("."):
+        found = None
+        for _, other_id in graph.edges[current.node_id]:
+            other_node = graph.nodes[other_id]
+            if isinstance(other_node.action, Pop) and other_node.action.path == part:
+                found = other_node
+                break
+        if found:
+            current = found
+            found = None
+            for _, other_id in graph.edges[current.node_id]:
+                dot_node = graph.nodes[other_id]
+                if isinstance(dot_node.action, Pop) and dot_node.action.path == ".":
+                    found = dot_node
+                    break
+            if found:
+                current = found
+            else:
+                current = graph.add_scope(
+                    link_from=current,
+                    action=Pop("."),
+                )
 
-    graph.add_edge(graph.root, current, same_rank=True)
+        else:
+            current = graph.add_scope(
+                link_from=current,
+                action=Pop(part),
+                is_definition=True,
+            )
+            current = graph.add_scope(
+                link_from=current,
+                action=Pop("."),
+            )
+
+    graph.add_edge(current, module_root, same_rank=True)
     yield Fragment(graph.root, graph.root)
 
 
