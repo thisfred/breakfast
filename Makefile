@@ -2,6 +2,8 @@
 
 test: .venv/installed
 	.venv/bin/coverage run .venv/bin/pytest
+	.venv/bin/coverage report -m
+
 
 install: .venv/installed
 
