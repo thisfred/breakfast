@@ -1,4 +1,4 @@
-.PHONY: test coverage coverage-combine dependencies install lint
+.PHONY: test coverage coverage-combine install lint dist-clean
 
 test: .venv/installed
 	.venv/bin/coverage run .venv/bin/pytest
@@ -8,8 +8,6 @@ coverage: .venv/installed
 
 coverage-combine: .venv/installed
 	.venv/bin/coverage combine
-
-dependencies: requirements.txt test-requirements.txt optional-requirements.txt dev-requirements.txt
 
 install: .venv/installed
 
@@ -21,13 +19,8 @@ dist-clean:
 
 .venv:
 	python -m venv .venv
-	.venv/bin/pip install pip-tools
 	touch $@
 
-.venv/installed: .venv requirements.txt test-requirements.txt optional-requirements.txt dev-requirements.txt
-	.venv/bin/pip install -r requirements.txt -r test-requirements.txt -r dev-requirements.txt -r optional-requirements.txt
-	.venv/bin/pip install -e .
+.venv/installed: .venv pyproject.toml
+	.venv/bin/pip install -e .[lsp,dev,test]
 	touch $@
-
-%.txt: %.in .venv
-	.venv/bin/pip-compile -v --generate-hashes --output-file $@ $<
