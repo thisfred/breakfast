@@ -112,11 +112,11 @@ For instance, how to handle redefinition of variables in Python,
 in in code like:
 
 ```python
-a = 0
+a = 0  # global (unrelated) assignment
 def fun():
-    a = 1
+    a = 1  # local assignment
     ...
-    a = 2
+    a = 2  # reassignment
 ```
 
 One choice would be to view these as separate definitions, which would
