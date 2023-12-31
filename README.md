@@ -5,6 +5,8 @@ somewhat usable.)
 
 ## Status
 
+This is mostly a hobby project, for now.
+
 breakfast tries to refuse to guess in the face of ambiguity, so it
 *should* leave code that it doesn't fully understand alone, but I would
 definitely recommend using it only on code that is under version
