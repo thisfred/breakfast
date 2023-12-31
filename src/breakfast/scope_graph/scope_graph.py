@@ -374,20 +374,6 @@ class ScopeGraph:
             if next_node.action is None or next_node.action.precondition(stack):
                 queues[edge.priority].append((next_node, stack))
 
-    def extend_queue(
-        self,
-        node_id: int,
-        stack: Path,
-        queue: deque[tuple[ScopeNode, Path]],
-        rules: Iterable[Rule],
-    ) -> None:
-        for edge, next_id in self.edges[node_id]:
-            if not all(allowed(edge) for allowed in rules):
-                continue
-            next_node = self.nodes[next_id]
-            if next_node.action is None or next_node.action.precondition(stack):
-                queue.append((next_node, stack))
-
 
 @dataclass
 class State:

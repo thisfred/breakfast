@@ -522,11 +522,21 @@ def visit_function_definition(
         and not is_class_method(node)
     )
     yield from visit_all(node.args.defaults, source, graph, state)
+    if node.returns:
+        yield from visit(node.returns, source, graph, state)
 
     self_name = None
     for i, arg in enumerate(node.args.args):
         current_scope = graph.add_scope(link_to=current_scope)
         arg_position = node_position(arg, source)
+
+        if arg.annotation:
+            if isinstance(arg.annotation, ast.Constant):
+                logger.warning(
+                    f"Cannot look inside string annotations: `{source.lines[arg_position.row] if source.lines else ''}`"
+                )
+            else:
+                yield from visit(arg.annotation, source, graph, state)
         arg_definition = graph.add_scope(
             link_from=current_scope,
             name=arg.arg,

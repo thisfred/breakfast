@@ -966,3 +966,41 @@ def test_pattern_matching_should_only_find_occurrences_in_a_single_case():
         Position(source, 2, 14),
         Position(source, 3, 14),
     ]
+
+
+def test_should_find_class_used_in_parameter_annotation():
+    source = make_source(
+        """
+        class Thing:
+            ...
+
+        def fun(t: Thing):
+            ...
+        """
+    )
+
+    position = source.position(1, 6)
+
+    assert all_occurrence_position_tuples(position, sources=[source]) == [
+        (1, 6),
+        (4, 11),
+    ]
+
+
+def test_should_find_class_used_in_return_annotation():
+    source = make_source(
+        """
+        class Thing:
+            ...
+
+        def fun() -> Thing:
+            ...
+        """
+    )
+
+    position = source.position(1, 6)
+
+    assert all_occurrence_position_tuples(position, sources=[source]) == [
+        (1, 6),
+        (4, 13),
+    ]

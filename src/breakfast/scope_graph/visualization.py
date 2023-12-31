@@ -32,16 +32,10 @@ def view_graph(graph: ScopeGraph) -> None:
 
     for from_id, to_nodes in graph.edges.items():
         for edge, to_node_id in to_nodes:
-            if edge.to_enclosing_scope:
-                label = "e"
-            elif edge.priority:
-                label = str(edge.priority)
-            else:
-                label = ""
             visualization.edge(
                 str(from_id),
                 str(to_node_id),
-                label=label,
+                label="e" if edge.to_enclosing_scope else "",
             )
 
     visualization.render(view=True)
@@ -52,9 +46,9 @@ def render_node(node: ScopeNode, subgraph: Any, scope_graph: ScopeGraph) -> None
     if isinstance(node.action, Pop):
         subgraph.node(
             name=str(node.node_id),
-            label=f"↑{node.node_id} {node.action.path}"
+            label=f"↑ {node.action.path}"
             + (
-                f"<{node.position.row}, {node.position.column}>"
+                f" {node.position.row}:{node.position.column}"
                 if node.position
                 else "<>"
             )
@@ -72,9 +66,9 @@ def render_node(node: ScopeNode, subgraph: Any, scope_graph: ScopeGraph) -> None
     elif isinstance(node.action, Push):
         subgraph.node(
             name=str(node.node_id),
-            label=f"↓{node.node_id} {node.action.path} "
+            label=f"↓ {node.action.path} "
             + (
-                f"<{node.position.row}, {node.position.column}>"
+                f" {node.position.row}:{node.position.column}"
                 if node.position
                 else "<>"
             )
@@ -96,7 +90,7 @@ def render_node(node: ScopeNode, subgraph: Any, scope_graph: ScopeGraph) -> None
     else:
         subgraph.node(
             name=str(node.node_id),
-            label=node.name or str(node.node_id) or "",
+            label=node.name if node.name and node.name.isalpha() else "",
             shape="circle",
             style="filled" if node is scope_graph.root else "",
             fillcolor="black" if node is scope_graph.root else "",
