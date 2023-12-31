@@ -523,6 +523,10 @@ def visit_function_definition(
     )
     yield from visit_all(node.args.defaults, source, graph, state)
     if node.returns:
+        if isinstance(node.returns, ast.Constant):
+            logger.warning(
+                f"Cannot look inside string annotations: `{source.lines[position.row] if source.lines else ''}`"
+            )
         yield from visit(node.returns, source, graph, state)
 
     self_name = None
