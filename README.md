@@ -118,10 +118,11 @@ def fun():
     ...
     a = 2
 ```
-![node graph representation of reassignment of a variable](reassignment.png)
 
 One choice would be to view these as separate definitions, which would
 require separate rename refactorings. (And rewriting of statements like
 `a += n`.) My solution is to add occurrence (push) nodes for definitions
 that will look back for earlier definitions (only) in the same scope,
-but don't require any to be found.
+but don't require any to be found:
+
+![node graph representation of reassignment of a variable](reassignment.png)
