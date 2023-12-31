@@ -26,3 +26,12 @@ repos:
     rev: 'v0.1.5'
     hooks:
       - id: ruff
+
+  - repo: local
+    hooks:
+      - id: test
+        name: run tests
+        language: system
+        types: [python]
+        pass_filenames: false
+        entry: make test
