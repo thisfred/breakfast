@@ -105,17 +105,19 @@ def test_finds_global_variable() -> None:
 def test_reassignment() -> None:
     source = make_source(
         """
-        a = 1
-        ...
-        a = 2
+        a = 0
+        def fun():
+            a = 1
+            ...
+            a = 2
         """,
         filename="module.py",
     )
 
-    position = Position(source, 3, 0)
-    assert all_occurrence_positions(position) == [
-        Position(source, 1, 0),
-        Position(source, 3, 0),
+    position = Position(source, 5, 4)
+    assert all_occurrence_positions(position, debug=True) == [
+        Position(source, 3, 4),
+        Position(source, 5, 4),
     ]
 
 

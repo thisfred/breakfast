@@ -112,10 +112,13 @@ For instance, how to handle redefinition of variables in Python,
 in in code like:
 
 ```python
-a = 1
-...
-a = 2
+a = 0
+def fun():
+    a = 1
+    ...
+    a = 2
 ```
+![node graph representation of reassignment of a variable](reassignment.png)
 
 One choice would be to view these as separate definitions, which would
 require separate rename refactorings. (And rewriting of statements like
