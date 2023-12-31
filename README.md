@@ -37,20 +37,18 @@ improve testing that will make stronger guarantees there.
 ## Implementation
 
 Based in part on the amazing work done on Scope Graphs/Stack Graphs by
-Eelco Visser, Hendrik van Antwerpen, Douglas Creager, and others. None
-of these very smart people are involved in this project or are even
-aware of its existence. It's likely that my implementation is naive or
-incorrect in places, and I've had to add in some (likely unsound) hacks
-to deal with things not covered by the papers and presentations I found
-online. [1](#1)
+Eelco Visser, Hendrik van Antwerpen, Douglas Creager, and others.
+(Though none of these people are responsible for/involved in this
+project or even aware it exists.)
 
+It's likely that my implementation is naive or incorrect, and I've added
+hacks to deal with things I couldn't figure out from the papers and
+presentations I found online. [1](#1)
 
 Douglas Creager's excellent Strangeloop talk in particular, is what
-inspired me to use Stack Graphs in this project. I had already been
-working on the project for a few years when I first discovered the talk,
-but it had stalled due to the poor way I was handling the inherent
-complexity. Even if you have no interest in using breakfast, I highly
-recommend the presentation:
+inspired me to switch to using Stack Graphs in this project. Even if you
+have no interest in using breakfast, I highly recommend his
+presentation:
 
 Links:
 
