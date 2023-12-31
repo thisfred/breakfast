@@ -74,7 +74,7 @@ class ScopeNode:
         return self
 
 
-@dataclass(frozen=True)
+@dataclass
 class Fragment:
     _entry: "ScopeNode | Fragment"
     _exit: "ScopeNode | Fragment"
