@@ -398,7 +398,7 @@ def test_should_find_instance_properties_that_are_assigned_to() -> None:
                 self.property = wat
         """
     )
-    occurrences = all_occurrence_positions(source.position(4, 13), debug=True)
+    occurrences = all_occurrence_positions(source.position(4, 13))
 
     assert [source.position(4, 13), source.position(7, 13)] == occurrences
 

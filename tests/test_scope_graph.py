@@ -20,7 +20,7 @@ def test_functions() -> None:
     )
 
     graph = build_graph([source])
-    definition = graph.traverse(graph.root, stack=("stove", ".", "broil"))
+    definition = graph.traverse_with_stack(graph.root, stack=("stove", ".", "broil"))
     assert definition.position == Position(source, 4, 4)
 
 
@@ -48,7 +48,7 @@ def test_import() -> None:
     )
 
     graph = build_graph([source1, source2])
-    definition = graph.traverse(graph.root, stack=("kitchen", ".", "broil"))
+    definition = graph.traverse_with_stack(graph.root, stack=("kitchen", ".", "broil"))
     assert definition.position == Position(source1, 4, 4)
 
 
@@ -68,7 +68,7 @@ def test_classes() -> None:
         filename="stove.py",
     )
     graph = build_graph([source])
-    definition = graph.traverse(
+    definition = graph.traverse_with_stack(
         graph.root, stack=("stove", ".", "Stove", "()", ".", "broil")
     )
     assert definition.position == Position(source, 5, 8)
@@ -105,5 +105,7 @@ def test_assignment() -> None:
         filename="stove.py",
     )
     graph = build_graph([source1, source2, source3])
-    definition = graph.traverse(graph.root, stack=("chef", ".", "stove", ".", "broil"))
+    definition = graph.traverse_with_stack(
+        graph.root, stack=("chef", ".", "stove", ".", "broil")
+    )
     assert definition.position == Position(source3, 5, 8)
