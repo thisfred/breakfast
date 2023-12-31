@@ -191,15 +191,12 @@ def visit_module(
     module_root = graph.add_scope()
     graph.module_roots[source.module_name] = module_root
 
-    with state.scope(module_root):
-        current = process_body(node.body, source, graph, state, current)
-
-    graph.add_edge(module_root, current)
-
     # XXX: when we encounter a module name like a.b.c, we want to connect to existing
     # nodes for a and b if they exist already.
     current = graph.root
+    packages = []
     for part in source.module_name.split("."):
+        packages.append(part)
         found = None
         for _, other_id in graph.edges[current.node_id]:
             other_node = graph.nodes[other_id]
@@ -234,6 +231,12 @@ def visit_module(
             )
 
     graph.add_edge(current, module_root, same_rank=True)
+    with state.scope(module_root):
+        with state.packages(packages):
+            current = process_body(node.body, source, graph, state, current)
+
+    graph.add_edge(module_root, current)
+
     yield Fragment(graph.root, graph.root)
 
 
@@ -659,16 +662,35 @@ def visit_class_definition(
     yield Fragment(original_scope, original_scope)
 
 
+def _get_relative_module_path(node: ast.ImportFrom, state: State) -> Iterable[str]:
+    if node.level == 0:
+        return
+
+    if node.level == 1:
+        module_path = tuple(state.package_path) if state.package_path else ()
+    elif node.level:
+        module_path = (
+            tuple(state.package_path[: -(node.level - 1)]) if state.package_path else ()
+        )
+    else:
+        module_path = ()
+
+    for p in module_path:
+        yield p
+        yield "."
+
+
 @visit.register
 def visit_import_from(
     node: ast.ImportFrom, source: Source, graph: ScopeGraph, state: State
 ) -> Iterator[Fragment]:
     current_scope = graph.add_scope()
 
+    module_path = tuple(_get_relative_module_path(node, state))
+
     if node.module is None:
-        module_path: tuple[str, ...] = (".",)
+        module_path += (".",)
     else:
-        module_path = ()
         for module_name in node.module.split("."):
             module_path += (module_name, ".")
 

@@ -435,9 +435,11 @@ class State:
         self.scope_hierarchy.pop()
 
     @contextmanager
-    def package(self, name: str) -> Iterator["State"]:
+    def packages(self, names: Iterable[str]) -> Iterator["State"]:
         if self.package_path is None:
             self.package_path = []
-        self.package_path.append(name)
+        for name in names:
+            self.package_path.append(name)
         yield self
-        self.package_path.pop()
+        for _ in names:
+            self.package_path.pop()

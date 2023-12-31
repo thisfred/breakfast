@@ -30,6 +30,9 @@ class Source:
             int, str
         ] = {}
 
+    def __repr__(self) -> str:
+        return f"Source(path={self.path})"
+
     @property
     def guaranteed_lines(self) -> tuple[str, ...]:
         if self.lines is None:
