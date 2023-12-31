@@ -1,7 +1,7 @@
-from breakfast.names import all_occurrence_position_tuples, all_occurrence_positions
+from breakfast.names import all_occurrence_positions
 from breakfast.position import Position
 
-from tests import make_source
+from tests import all_occurrence_position_tuples, make_source
 
 
 def test_assignment_occurrences() -> None:

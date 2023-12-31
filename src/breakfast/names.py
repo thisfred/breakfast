@@ -60,21 +60,6 @@ def all_occurrence_positions(
     )
 
 
-def all_occurrence_position_tuples(
-    position: Position,
-    *,
-    sources: Iterable[Source] | None = None,
-    in_reverse_order: bool = False,
-    debug: bool = False,
-) -> list[tuple[int, int]]:
-    return [
-        (p.row, p.column)
-        for p in all_occurrence_positions(
-            position, sources=sources, in_reverse_order=in_reverse_order, debug=debug
-        )
-    ]
-
-
 def find_definition(
     graph: ScopeGraph, position: Position, possible_occurrences: Iterable[ScopeNode]
 ) -> tuple[ScopeNode, dict[ScopeNode, set[ScopeNode]]]:
