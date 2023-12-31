@@ -21,7 +21,7 @@ repos:
     - id: mypy
       additional_dependencies: [lsprotocol, pygls]
 
-  - repo: https://github.com/charliermarsh/ruff-pre-commit
+  - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.
     rev: 'v0.1.5'
     hooks:

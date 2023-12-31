@@ -60,6 +60,21 @@ def all_occurrence_positions(
     )
 
 
+def all_occurrence_position_tuples(
+    position: Position,
+    *,
+    sources: Iterable[Source] | None = None,
+    in_reverse_order: bool = False,
+    debug: bool = False,
+) -> list[tuple[int, int]]:
+    return [
+        (p.row, p.column)
+        for p in all_occurrence_positions(
+            position, sources=sources, in_reverse_order=in_reverse_order, debug=debug
+        )
+    ]
+
+
 def find_definition(
     graph: ScopeGraph, position: Position, possible_occurrences: Iterable[ScopeNode]
 ) -> tuple[ScopeNode, dict[ScopeNode, set[ScopeNode]]]:
@@ -73,7 +88,7 @@ def find_definition(
             continue
 
         try:
-            definition = graph.traverse(occurrence, stack=())
+            definition = graph.find_definition(occurrence)
         except NotFoundError:
             continue
 
@@ -286,7 +301,7 @@ def visit_assign(
     else:
         if target_fragments:
             # XXX: this handles things like binary operator expressions on the rhs,
-            # which we need to find a different solution for yet.
+            # which I need to find a different solution for yet.
             for value_fragment in value_fragments:
                 graph.add_edge(
                     target_fragments[0].exit,
@@ -310,9 +325,7 @@ def visit_attribute(
             yield fragment
 
     position = node_position(node, source)
-    logger.debug(f"{position=}")
     names = names_from(node.value)
-    logger.debug(f"{names=}")
     positions = []
     for name in (*names, node.attr):
         logger.debug(f"{name=}, {position=}")
@@ -385,21 +398,20 @@ def add_instance_property(
             same_rank=True,
         )
 
-    for _, other_id in graph.edges[dot_scope.node_id]:
-        property_scope = graph.nodes[other_id]
-        if (
-            isinstance(property_scope.action, Pop)
-            and property_scope.action.path == attribute
-        ):
+    for node in graph.traverse(dot_scope):
+        if isinstance(node.action, Pop) and node.action.path == attribute:
             break
     else:
-        property_scope = graph.add_scope(
+        graph.add_scope(
             link_from=dot_scope,
             name=attribute,
             position=attribute_position,
             action=Pop(attribute),
             same_rank=True,
             is_definition=True,
+            # XXX: make this a link that is only traversed after other possibilities are
+            # exhausted, because if there is a class attribute, we want to reach that.
+            priority=1,
         )
 
 

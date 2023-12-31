@@ -37,3 +37,9 @@ class Position:
 
     def _add_offset(self, offset: int) -> "Position":
         return replace(self, column=self.column + offset)
+
+    def __repr__(self) -> str:
+        return (
+            f"<Position(row={self.row}, column={self.column}, "
+            f"source=Source(path={self.source.path})"
+        )

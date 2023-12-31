@@ -22,6 +22,11 @@ class Action(Protocol):
         ...
 
 
+class NodeCondition(Protocol):
+    def __call__(self, node: "ScopeNode") -> bool:
+        ...
+
+
 class NotFoundError(Exception):
     pass
 
@@ -34,6 +39,7 @@ class NotInScopeError(Exception):
 class Edge:
     same_rank: bool = False
     to_enclosing_scope: bool = False
+    priority: int = 0
 
 
 class Rule(Protocol):
@@ -156,6 +162,7 @@ class ScopeGraph:
         same_rank: bool = False,
         to_enclosing_scope: bool = False,
         rules: tuple[Rule, ...] = (),
+        priority: int = 0,
     ) -> ScopeNode:
         new_scope = self._add_scope(
             name=name,
@@ -171,6 +178,7 @@ class ScopeGraph:
                 link_to,
                 same_rank=same_rank,
                 to_enclosing_scope=to_enclosing_scope,
+                priority=priority,
             )
 
         if link_from:
@@ -179,6 +187,7 @@ class ScopeGraph:
                 new_scope,
                 same_rank=same_rank,
                 to_enclosing_scope=to_enclosing_scope,
+                priority=priority,
             )
 
         return new_scope
@@ -196,10 +205,15 @@ class ScopeGraph:
         scope_to: ScopeNode,
         same_rank: bool = False,
         to_enclosing_scope: bool = False,
+        priority: int = 0,
     ) -> None:
         self.edges[scope_from.node_id].add(
             (
-                Edge(same_rank=same_rank, to_enclosing_scope=to_enclosing_scope),
+                Edge(
+                    same_rank=same_rank,
+                    to_enclosing_scope=to_enclosing_scope,
+                    priority=priority,
+                ),
                 scope_to.node_id,
             )
         )
@@ -297,12 +311,10 @@ class ScopeGraph:
             | {n for e, n in edges_to[node_id] if e.same_rank}
         ) - seen_ids
 
-    def _traverse(self, start: ScopeNode | None = None) -> Iterator[ScopeNode]:
-        if not start:
-            start = self.root
-
+    def traverse(
+        self, start: ScopeNode, condition: NodeCondition | None = None
+    ) -> Iterator[ScopeNode]:
         queue: deque[ScopeNode] = deque([start])
-
         seen: set[ScopeNode] = {start}
         while queue:
             node = queue.popleft()
@@ -314,20 +326,29 @@ class ScopeGraph:
                 if next_node in seen:
                     continue
                 seen.add(next_node)
+                if condition and not condition(node):
+                    continue
                 queue.append(next_node)
 
-    def traverse(self, scope: ScopeNode, stack: Path) -> ScopeNode:
+    def find_definition(self, scope: ScopeNode) -> ScopeNode:
+        return self.traverse_with_stack(scope, stack=())
+
+    def traverse_with_stack(self, scope: ScopeNode, stack: Path) -> ScopeNode:
         node_id = scope.node_id
         rules = scope.rules
 
         if scope.action:
             stack = scope.action(stack)
 
-        queue: deque[tuple[ScopeNode, Path]] = deque()
-        self.extend_queue(node_id, stack, queue, rules)
+        queues: dict[int, deque[tuple[ScopeNode, Path]]] = {0: deque(), 1: deque()}
+        self.extend_queues(node_id, stack, queues, rules)
 
-        while queue:
-            (node, stack) = queue.popleft()
+        while any(q for q in queues.values()):
+            for _, queue in sorted(queues.items()):
+                if not queue:
+                    continue
+                (node, stack) = queue.popleft()
+                break
 
             if node.action:
                 stack = node.action(stack)
@@ -335,9 +356,23 @@ class ScopeGraph:
             if node.node_type is NodeType.DEFINITION and not stack:
                 return node
 
-            self.extend_queue(node.node_id, stack, queue, rules)
+            self.extend_queues(node.node_id, stack, queues, rules)
 
         raise NotFoundError
+
+    def extend_queues(
+        self,
+        node_id: int,
+        stack: Path,
+        queues: dict[int, deque[tuple[ScopeNode, Path]]],
+        rules: Iterable[Rule],
+    ) -> None:
+        for edge, next_id in self.edges[node_id]:
+            if not all(allowed(edge) for allowed in rules):
+                continue
+            next_node = self.nodes[next_id]
+            if next_node.action is None or next_node.action.precondition(stack):
+                queues[edge.priority].append((next_node, stack))
 
     def extend_queue(
         self,

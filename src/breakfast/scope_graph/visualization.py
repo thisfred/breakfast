@@ -32,10 +32,16 @@ def view_graph(graph: ScopeGraph) -> None:
 
     for from_id, to_nodes in graph.edges.items():
         for edge, to_node_id in to_nodes:
+            if edge.to_enclosing_scope:
+                label = "e"
+            elif edge.priority:
+                label = str(edge.priority)
+            else:
+                label = ""
             visualization.edge(
                 str(from_id),
                 str(to_node_id),
-                label="e" if edge.to_enclosing_scope else "",
+                label=label,
             )
 
     visualization.render(view=True)

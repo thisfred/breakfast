@@ -23,14 +23,14 @@ test = [
     "coverage",
     "pytest"]
 dev = [
+    "astpretty",
     "black",
     "mypy",
     "ruff",
     "pre-commit"]
 lsp = [
     "lsprotocol",
-    "pygls"
-]
+    "pygls"]
 
 [project.scripts]
 breakfast-lsp = "breakfast_lsp.__main__:main"
