@@ -82,43 +82,43 @@ def test_should_find_occurrences_along_longer_import_paths() -> None:
     ]
 
 
-# def test_should_find_occurrences_along_relative_import_paths() -> None:
-#     source1 = make_source(
-#         """
-#     from ..kitchen import Stove
+def test_should_find_occurrences_along_relative_import_paths() -> None:
+    source1 = make_source(
+        """
+    from ..kitchen import Stove
 
-#     stove = Stove()
-#     stove.broil()
-#     """,
-#         filename="cooking/chef.py",
-#     )
-#     source2 = make_source(
-#         """
-#     from ..stove import *
-#     """,
-#         filename="cooking/kitchen.py",
-#     )
-#     source3 = make_source(
-#         """
-#     class Stove:
-#         def bake():
-#             pass
+    stove = Stove()
+    stove.broil()
+    """,
+        filename="cooking/chef.py",
+    )
+    source2 = make_source(
+        """
+    from ..stove import *
+    """,
+        filename="cooking/kitchen.py",
+    )
+    source3 = make_source(
+        """
+    class Stove:
+        def bake():
+            pass
 
-#         def broil():
-#             pass
+        def broil():
+            pass
 
-#         def saute():
-#             pass
-#     """,
-#         filename="cooking/stove.py",
-#     )
-#     positions = all_occurrence_positions(
-#         Position(source1, 4, 6), sources=[source1, source2, source3], debug=True
-#     )
-#     assert positions == [
-#         Position(source1, 4, 6),
-#         Position(source3, 5, 8),
-#     ]
+        def saute():
+            pass
+    """,
+        filename="cooking/stove.py",
+    )
+    positions = all_occurrence_positions(
+        Position(source1, 4, 6), sources=[source1, source2, source3], debug=True
+    )
+    assert positions == [
+        Position(source1, 4, 6),
+        Position(source3, 5, 8),
+    ]
 
 
 def test_finds_global_variable() -> None:
