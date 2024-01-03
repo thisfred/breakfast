@@ -32,14 +32,6 @@ class Project:
         ]
         return sources
 
-    def find_importers(self, path: str) -> set[Source]:
-        importers = set()
-        for source in self.find_sources():
-            if path in source.get_imported_modules():
-                importers.add(source)
-
-        return importers
-
 
 def get_module_paths(path: Path) -> Iterator[Path]:
     logger.debug(f"{path=}")

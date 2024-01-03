@@ -5,9 +5,8 @@ import re
 import sys
 from ast import AST, parse
 from collections import defaultdict
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from dataclasses import dataclass
-from importlib.util import find_spec
 
 from breakfast.position import Position
 
@@ -76,27 +75,6 @@ class Source:
 
     def get_string_starting_at(self, position: Position) -> str:
         return self.guaranteed_lines[position.row][position.column :]
-
-    def get_imported_modules(self) -> list[str]:
-        with open(self.path, encoding="utf-8") as source_file:
-            self.lines = tuple(line[:-1] for line in source_file.readlines())
-
-        finder = ImportFinder()
-        finder.visit(self.get_ast())
-
-        return list(finder.imports.keys())
-
-    def get_imported_files(self) -> Iterable[tuple[str, str]]:
-        for module in self.get_imported_modules():
-            spec = find_spec(module)
-            if spec is None:
-                continue
-            filename = spec.origin
-            if isinstance(filename, str) and filename.startswith(self.project_root):
-                yield filename, spec.name
-
-    def imports(self, module_name: str) -> bool:
-        return module_name in self.get_imported_modules()
 
     @property
     def module_name(self) -> str:
