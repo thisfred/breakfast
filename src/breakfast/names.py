@@ -507,28 +507,14 @@ def visit_function_definition(
         and not is_class_method(node)
     )
     yield from visit_all(node.args.defaults, source, graph, state)
-    if node.returns:
-        if isinstance(node.returns, ast.Constant):
-            returns_position = node_position(node.returns, source)
-            yield from _visit_string_annotation(
-                node.returns, source, returns_position, graph, state
-            )
-        else:
-            yield from visit(node.returns, source, graph, state)
+    yield from _visit_type_annotation(node.returns, source, graph, state)
 
     self_name = None
     for i, arg in enumerate(node.args.args):
         current_scope = graph.add_scope(link_to=current_scope)
         arg_position = node_position(arg, source)
 
-        if arg.annotation:
-            if isinstance(arg.annotation, ast.Constant):
-                annotation_position = node_position(arg.annotation, source)
-                yield from _visit_string_annotation(
-                    arg.annotation, source, annotation_position, graph, state
-                )
-            else:
-                yield from visit(arg.annotation, source, graph, state)
+        yield from _visit_type_annotation(arg.annotation, source, graph, state)
         arg_definition = graph.add_scope(
             link_from=current_scope,
             name=arg.arg,
@@ -563,25 +549,28 @@ def visit_function_definition(
     yield Fragment(in_scope, out_scope)
 
 
-def _visit_string_annotation(
-    string: ast.Constant,
-    source: Source,
-    position: Position,
-    graph: ScopeGraph,
-    state: State,
+def _visit_type_annotation(
+    annotation: ast.AST | None, source: Source, graph: ScopeGraph, state: State
 ) -> Iterator[Fragment]:
-    yield from visit_all(
-        # XXX: parse always returns a module node, which we want to skip here, because
-        # the string annotation is part of the current module's scope.
-        ast.parse(string.value).body,
-        SubSource(
-            source=source,
-            start_position=position,
-            code=string.value,
-        ),
-        graph,
-        state,
-    )
+    if not annotation:
+        return
+
+    if isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
+        annotation_position = node_position(annotation, source)
+        yield from visit_all(
+            # XXX: parse always returns a module node, which we want to skip here, because
+            # the string annotation is part of the current module's scope.
+            ast.parse(annotation.value).body,
+            SubSource(
+                source=source,
+                start_position=annotation_position,
+                code=annotation.value,
+            ),
+            graph,
+            state,
+        )
+    else:
+        yield from visit(annotation, source, graph, state)
 
 
 def process_body(
