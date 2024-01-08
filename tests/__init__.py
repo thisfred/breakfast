@@ -1,7 +1,7 @@
 from collections.abc import Iterable
 
+from breakfast import types
 from breakfast.names import all_occurrence_positions
-from breakfast.position import Position
 from breakfast.source import Source
 
 
@@ -11,7 +11,7 @@ def dedent(code: str) -> str:
     return "\n".join(line[indentation:] for line in lines)
 
 
-def make_source(code: str, filename: str | None = None) -> Source:
+def make_source(code: str, filename: str | None = None) -> types.Source:
     return Source(
         lines=tuple(line for line in dedent(code).split("\n")),
         path=filename or "",
@@ -20,9 +20,9 @@ def make_source(code: str, filename: str | None = None) -> Source:
 
 
 def all_occurrence_position_tuples(
-    position: Position,
+    position: types.Position,
     *,
-    sources: Iterable[Source] | None = None,
+    sources: Iterable[types.Source] | None = None,
     in_reverse_order: bool = False,
     debug: bool = False,
 ) -> list[tuple[int, int]]:

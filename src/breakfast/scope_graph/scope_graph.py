@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Protocol
 
-from breakfast.position import Position
+from breakfast.types import Position
 
 logger = logging.getLogger(__name__)
 

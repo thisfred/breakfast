@@ -5,7 +5,6 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from functools import singledispatch
 
-from breakfast.position import Position
 from breakfast.scope_graph import (
     Fragment,
     NodeType,
@@ -16,7 +15,8 @@ from breakfast.scope_graph import (
     State,
     no_lookup_in_enclosing_scope,
 )
-from breakfast.source import Source
+from breakfast.source import SubSource
+from breakfast.types import Position, Source
 
 logger = logging.getLogger(__name__)
 
@@ -509,10 +509,12 @@ def visit_function_definition(
     yield from visit_all(node.args.defaults, source, graph, state)
     if node.returns:
         if isinstance(node.returns, ast.Constant):
-            logger.warning(
-                f"Cannot look inside string annotations: `{source.lines[position.row] if source.lines else ''}`"
+            returns_position = node_position(node.returns, source)
+            yield from _visit_string_annotation(
+                node.returns, source, returns_position, graph, state
             )
-        yield from visit(node.returns, source, graph, state)
+        else:
+            yield from visit(node.returns, source, graph, state)
 
     self_name = None
     for i, arg in enumerate(node.args.args):
@@ -521,8 +523,9 @@ def visit_function_definition(
 
         if arg.annotation:
             if isinstance(arg.annotation, ast.Constant):
-                logger.warning(
-                    f"Cannot look inside string annotations: `{source.lines[arg_position.row] if source.lines else ''}`"
+                annotation_position = node_position(arg.annotation, source)
+                yield from _visit_string_annotation(
+                    arg.annotation, source, annotation_position, graph, state
                 )
             else:
                 yield from visit(arg.annotation, source, graph, state)
@@ -558,6 +561,27 @@ def visit_function_definition(
             current_scope = process_body(node.body, source, graph, state, current_scope)
     graph.add_edge(function_bottom, current_scope)
     yield Fragment(in_scope, out_scope)
+
+
+def _visit_string_annotation(
+    string: ast.Constant,
+    source: Source,
+    position: Position,
+    graph: ScopeGraph,
+    state: State,
+) -> Iterator[Fragment]:
+    yield from visit_all(
+        # XXX: parse always returns a module node, which we want to skip here, because
+        # the string annotation is part of the current module's scope.
+        ast.parse(string.value).body,
+        SubSource(
+            source=source,
+            start_position=position,
+            code=string.value,
+        ),
+        graph,
+        state,
+    )
 
 
 def process_body(

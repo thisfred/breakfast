@@ -3,9 +3,9 @@ from collections.abc import Iterator
 from glob import iglob
 from pathlib import Path
 
+from breakfast import source
 from breakfast.names import all_occurrence_positions
-from breakfast.position import Position
-from breakfast.source import Source
+from breakfast.types import Position, Source
 
 logger = logging.getLogger(__name__)
 
@@ -20,16 +20,16 @@ class Project:
     ) -> list[Position]:
         return all_occurrence_positions(
             position,
-            sources=([self._initial_source] if self._initial_source else [])
+            sources=((self._initial_source,) if self._initial_source else ())
             + self.find_sources(),
             in_reverse_order=True,
         )
 
-    def find_sources(self) -> list[Source]:
-        sources = [
-            Source(path=str(path), project_root=self._root)
+    def find_sources(self) -> tuple[Source, ...]:
+        sources = tuple(
+            source.Source(path=str(path), project_root=self._root)
             for path in get_module_paths(Path(self._root))
-        ]
+        )
         return sources
 
 

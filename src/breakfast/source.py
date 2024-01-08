@@ -1,14 +1,12 @@
-import ast
 import logging
 import os
 import re
 import sys
 from ast import AST, parse
-from collections import defaultdict
 from collections.abc import Iterator
 from dataclasses import dataclass
 
-from breakfast.position import Position
+from breakfast import position, types
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +23,7 @@ class Source:
         return hash(self.path)
 
     def __post_init__(self) -> None:
-        self.changes: dict[  # pylint: disable=attribute-defined-outside-init
-            int, str
-        ] = {}
+        self.changes: dict[int, str] = {}
 
     def __repr__(self) -> str:
         return f"Source(path={self.path})"
@@ -39,10 +35,10 @@ class Source:
                 self.lines = tuple(line[:-1] for line in source_file.readlines())
         return self.lines
 
-    def position(self, row: int, column: int) -> Position:
-        return Position(source=self, row=row, column=column)
+    def position(self, row: int, column: int) -> types.Position:
+        return position.Position(source=self, row=row, column=column)
 
-    def get_name_at(self, position: Position) -> str:
+    def get_name_at(self, position: types.Position) -> str:
         match = WORD.search(self.get_string_starting_at(position))
         if not match:
             raise AssertionError("no match found")
@@ -54,16 +50,16 @@ class Source:
     def get_changes(self) -> Iterator[tuple[int, str]]:
         yield from sorted(self.changes.items())
 
-    def replace(self, position: Position, old: str, new: str) -> None:
+    def replace(self, position: types.Position, old: str, new: str) -> None:
         self.modify_line(start=position, end=position + len(old), new=new)
 
-    def modify_line(self, start: Position, end: Position, new: str) -> None:
+    def modify_line(self, start: types.Position, end: types.Position, new: str) -> None:
         line_number = start.row
         line = self.changes.get(line_number, self.guaranteed_lines[line_number])
         modified_line = line[: start.column] + new + line[end.column :]
         self.changes[line_number] = modified_line
 
-    def find_after(self, name: str, start: Position) -> Position:
+    def find_after(self, name: str, start: types.Position) -> types.Position:
         regex = re.compile(f"\\b{name}\\b")
         match = regex.search(self.get_string_starting_at(start))
         while start.row < len(self.guaranteed_lines) and not match:
@@ -73,7 +69,7 @@ class Source:
             raise AssertionError("no match found")
         return start + match.span()[0]
 
-    def get_string_starting_at(self, position: Position) -> str:
+    def get_string_starting_at(self, position: types.Position) -> str:
         return self.guaranteed_lines[position.row][position.column :]
 
     @property
@@ -103,14 +99,58 @@ class Source:
         return path
 
 
-class ImportFinder(ast.NodeVisitor):
-    def __init__(self) -> None:
-        self.imports: dict[str, set[str]] = defaultdict(set)
+class SubSource:
+    """Source that parses a single type annotation string.
 
-    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:  # noqa
-        if node.module:
-            self.imports[node.module] |= {a.asname or a.name for a in node.names}
+    `ast.parse()` does not parse type annotations specified as strings. This class
+    exists to be able to handle them: we explicitly parse the constant value and proxy
+    through to the actual source to get the real positions when needed.
 
-    def visit_Import(self, node: ast.Import) -> None:  # noqa
-        for name in node.names:
-            self.imports[name.asname or name.name] = set()
+    """
+
+    def __init__(
+        self, source: types.Source, start_position: types.Position, code: str
+    ) -> None:
+        self.parent_source = source
+        self.parent_start_position = start_position + 1
+        self.code = code
+
+    def __hash__(self) -> int:
+        return hash((self.parent_source.path, self.parent_start_position))
+
+    @property
+    def module_name(self) -> str:
+        return self.parent_source.module_name
+
+    @property
+    def path(self) -> str:
+        return self.parent_source.path
+
+    def get_string_starting_at(self, position: types.Position) -> str:
+        assert (  # noqa: S101
+            position.row == 0
+        ), "Multiline string type annotations are not supported"
+        return self.parent_source.get_string_starting_at(
+            self.parent_start_position + position.column
+        )
+
+    @property
+    def guaranteed_lines(self) -> tuple[str, ...]:
+        return self.parent_source.guaranteed_lines
+
+    def position(self, row: int, column: int) -> types.Position:
+        assert (  # noqa: S101
+            row == 0
+        ), "Multiline string type annotations are not supported"
+        return self.parent_start_position + column
+
+    def find_after(self, name: str, position: types.Position) -> types.Position:
+        assert (  # noqa: S101
+            position.row == 0
+        ), "Multiline string type annotations are not supported"
+        return self.parent_source.find_after(
+            name, self.parent_start_position + position.column
+        )
+
+    def get_ast(self) -> AST:
+        return self.parent_source.get_ast()
