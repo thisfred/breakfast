@@ -9,3 +9,4 @@
 * refactor State into the graph where possible
 * handle renames rest of the language
   * handle 3.12 generics
+* refactor lines/guaranteed lines (use fields?)
