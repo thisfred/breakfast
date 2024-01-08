@@ -1,3 +1,9 @@
+"""
+These types are part of the breakfast api, and should not be changed without taking
+great care not to break backwards compatibility. Adding fields and methods should be
+fine. Changing types or signatures of existing fields or methods is not.
+"""
+
 from ast import AST
 from dataclasses import dataclass
 from typing import Protocol
