@@ -507,14 +507,14 @@ def visit_function_definition(
         and not is_class_method(node)
     )
     yield from visit_all(node.args.defaults, source, graph, state)
-    yield from _visit_type_annotation(node.returns, source, graph, state)
+    yield from visit_type_annotation(node.returns, source, graph, state)
 
     self_name = None
     for i, arg in enumerate(node.args.args):
         current_scope = graph.add_scope(link_to=current_scope)
         arg_position = node_position(arg, source)
 
-        yield from _visit_type_annotation(arg.annotation, source, graph, state)
+        yield from visit_type_annotation(arg.annotation, source, graph, state)
         arg_definition = graph.add_scope(
             link_from=current_scope,
             name=arg.arg,
@@ -549,7 +549,7 @@ def visit_function_definition(
     yield Fragment(in_scope, out_scope)
 
 
-def _visit_type_annotation(
+def visit_type_annotation(
     annotation: ast.AST | None, source: Source, graph: ScopeGraph, state: State
 ) -> Iterator[Fragment]:
     if not annotation:
