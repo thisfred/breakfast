@@ -1023,3 +1023,17 @@ def test_should_find_class_used_in_return_annotation():
         (1, 6),
         (4, 11),
     ]
+
+
+def test_none_type_annotation_should_not_break_things():
+    source = make_source(
+        """
+        def f() -> None:
+            ...
+        """
+    )
+    position = source.position(1, 4)
+
+    assert all_occurrence_position_tuples(position, sources=[source]) == [
+        (1, 4),
+    ]
