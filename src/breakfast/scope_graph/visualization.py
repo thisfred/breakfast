@@ -35,7 +35,11 @@ def view_graph(graph: ScopeGraph) -> None:
             visualization.edge(
                 str(from_id),
                 str(to_node_id),
-                label="e" if edge.to_enclosing_scope else "",
+                label="e"
+                if edge.to_enclosing_scope
+                else "1"
+                if edge.priority == 1
+                else "",
             )
 
     visualization.render(view=True)
@@ -47,11 +51,7 @@ def render_node(node: ScopeNode, subgraph: Any, scope_graph: ScopeGraph) -> None
         subgraph.node(
             name=str(node.node_id),
             label=f"↑ {node.action.path}"
-            + (
-                f" {node.position.row}:{node.position.column}"
-                if node.position
-                else "<>"
-            )
+            + (f" {node.position.row}:{node.position.column}" if node.position else "")
             + (
                 f"{{{','.join(r.__doc__ for r in node.rules if r.__doc__)}}}"
                 if node.rules
@@ -67,11 +67,7 @@ def render_node(node: ScopeNode, subgraph: Any, scope_graph: ScopeGraph) -> None
         subgraph.node(
             name=str(node.node_id),
             label=f"↓ {node.action.path} "
-            + (
-                f" {node.position.row}:{node.position.column}"
-                if node.position
-                else "<>"
-            )
+            + (f" {node.position.row}:{node.position.column}" if node.position else "")
             + (
                 f"{{{','.join(r.__doc__ for r in node.rules if r.__doc__)}}}"
                 if node.rules
@@ -90,7 +86,7 @@ def render_node(node: ScopeNode, subgraph: Any, scope_graph: ScopeGraph) -> None
     else:
         subgraph.node(
             name=str(node.node_id),
-            label=node.name if node.name and node.name.isalpha() else "",
+            label=node.name if node.name else str(node.node_id),
             shape="circle",
             style="filled" if node is scope_graph.root else "",
             fillcolor="black" if node is scope_graph.root else "",

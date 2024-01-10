@@ -1037,3 +1037,20 @@ def test_none_type_annotation_should_not_break_things():
     assert all_occurrence_position_tuples(position, sources=[source]) == [
         (1, 4),
     ]
+
+
+def test_should_rename_annotated_class_property():
+    source = make_source(
+        """
+        class C:
+            property: str
+
+            def f(self):
+                self.property = ""
+        """
+    )
+    position = source.position(2, 4)
+    assert all_occurrence_position_tuples(position, sources=[source]) == [
+        (2, 4),
+        (5, 13),
+    ]

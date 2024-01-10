@@ -171,8 +171,6 @@ def visit_all(
 def visit_module(
     node: ast.Module, source: Source, graph: ScopeGraph, state: State
 ) -> Iterator[Fragment]:
-    current: ScopeNode = graph.add_scope()
-
     module_root = graph.add_scope()
     graph.module_roots[source.module_name] = module_root
 
@@ -231,7 +229,6 @@ def visit_name(
 ) -> Iterator[Fragment]:
     name = node.id
     position = node_position(node, source)
-
     if isinstance(node.ctx, ast.Store):
         scopes = [
             graph.add_scope(
@@ -590,6 +587,13 @@ def process_body(
                         if isinstance(entry_point, ScopeNode)
                         else entry_point.entry
                     )
+                case Fragment(
+                    entry_point, exit_point
+                ) if entry_point is exit_point and isinstance(
+                    entry_point, ScopeNode
+                ) and entry_point.node_type is NodeType.DEFINITION:
+                    current_scope = graph.add_scope(link_to=current_scope)
+                    graph.connect(current_scope, fragment)
                 case Fragment(_, exit_point, is_statement=False):
                     current_scope = graph.add_scope(link_to=current_scope)
                     graph.connect(exit_point, current_scope, same_rank=True)

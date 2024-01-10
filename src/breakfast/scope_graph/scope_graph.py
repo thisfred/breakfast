@@ -147,6 +147,7 @@ class ScopeGraph:
             node_type=node_type,
             rules=rules,
         )
+
         self._add_node(new_scope)
         return new_scope
 
