@@ -1,5 +1,8 @@
+import sys
+
 from breakfast.names import all_occurrence_positions
 from breakfast.position import Position
+from pytest import mark
 
 from tests import all_occurrence_position_tuples, make_source
 
@@ -1058,6 +1061,7 @@ def test_should_rename_annotated_class_property():
     ]
 
 
+@mark.skipif(sys.version_info < (3, 12), reason="requires Python 3.12 or higher")
 def test_should_rename_type_parameters():
     source = make_source(
         """
@@ -1073,6 +1077,7 @@ def test_should_rename_type_parameters():
     ]
 
 
+@mark.skipif(sys.version_info < (3, 12), reason="requires Python 3.12 or higher")
 def test_should_consider_type_vars_local_to_function():
     source = make_source(
         """
@@ -1091,6 +1096,7 @@ def test_should_consider_type_vars_local_to_function():
     ]
 
 
+@mark.skipif(sys.version_info < (3, 12), reason="requires Python 3.12 or higher")
 def test_should_rename_type_parameters_in_class():
     source = make_source(
         """
@@ -1107,6 +1113,7 @@ def test_should_rename_type_parameters_in_class():
     ]
 
 
+@mark.skipif(sys.version_info < (3, 12), reason="requires Python 3.12 or higher")
 def test_should_rename_type_variable_bounds():
     source = make_source(
         """

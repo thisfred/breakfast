@@ -510,7 +510,8 @@ def visit_function_definition(
         and not is_static_method(node)
         and not is_class_method(node)
     )
-    yield from visit_all(node.type_params, source, graph, state)
+    if type_params := getattr(node, "type_params", None):
+        yield from visit_all(type_params, source, graph, state)
     yield from visit_all(node.args.defaults, source, graph, state)
     yield from visit_type_annotation(node.returns, source, graph, state)
 
@@ -662,7 +663,8 @@ def visit_class_definition(
                 graph.add_edge(base_fragment.exit, state.scope_hierarchy[-1])
             base_fragments.append(base_fragment)
 
-    yield from visit_all(node.type_params, source, graph, state)
+    if type_params := getattr(node, "type_params", None):
+        yield from visit_all(type_params, source, graph, state)
     class_top_scope = graph.add_scope(link_to=original_scope)
     current_class_scope: ScopeNode = class_top_scope
     with state.instance(instance_scope=i_scope, class_name=name):
