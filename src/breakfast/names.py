@@ -3,7 +3,7 @@ import logging
 
 try:
     from ast import TypeVar
-except ImportError:
+except ImportError:  # pragma: nocover
     TypeVar = None  # type: ignore[assignment,misc]
 from collections import defaultdict
 from collections.abc import Iterable, Iterator
@@ -37,7 +37,7 @@ def all_occurrence_positions(
     debug: bool = False,
 ) -> list[Position]:
     graph = build_graph(sources or [position.source])
-    if debug:
+    if debug:  # pragma: nocover
         from breakfast.scope_graph.visualization import view_graph
 
         view_graph(graph)
@@ -695,12 +695,10 @@ def _get_relative_module_path(node: ast.ImportFrom, state: State) -> Iterable[st
 
     if node.level == 1:
         module_path = tuple(state.package_path) if state.package_path else ()
-    elif node.level:
+    else:
         module_path = (
             tuple(state.package_path[: -(node.level - 1)]) if state.package_path else ()
         )
-    else:
-        module_path = ()
 
     for p in module_path:
         yield p
