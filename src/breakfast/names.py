@@ -254,7 +254,8 @@ def visit_name(
         ]
 
     for scope in scopes:
-        yield Fragment(scope, scope, is_statement=False)
+        fragment = Fragment(scope, scope, is_statement=False)
+        yield fragment
 
 
 @visit.register
@@ -358,6 +359,7 @@ def visit_attribute(
     )
     yield fragment
 
+    # XXX: hate this
     if len(names) == 1 and state.instance_scope and names[0] == state.self:
         add_instance_property(graph, state, node.attr, position, state.instance_scope)
 
@@ -503,6 +505,7 @@ def visit_function_definition(
         and not is_static_method(node)
         and not is_class_method(node)
     )
+    yield from visit_all(node.type_params, source, graph, state)
     yield from visit_all(node.args.defaults, source, graph, state)
     yield from visit_type_annotation(node.returns, source, graph, state)
 
@@ -654,7 +657,8 @@ def visit_class_definition(
                 graph.add_edge(base_fragment.exit, state.scope_hierarchy[-1])
             base_fragments.append(base_fragment)
 
-    class_top_scope = graph.add_scope()
+    yield from visit_all(node.type_params, source, graph, state)
+    class_top_scope = graph.add_scope(link_to=original_scope)
     current_class_scope: ScopeNode = class_top_scope
     with state.instance(instance_scope=i_scope, class_name=name):
         with state.base_classes(base_fragments):
@@ -914,6 +918,21 @@ def visit_match_as(
         yield from visit(node.pattern, source, graph, state)
 
     yield Fragment(current_scope, current_scope)
+
+
+@visit.register
+def visit_type_var(
+    node: ast.TypeVar, source: Source, graph: ScopeGraph, state: State
+) -> Iterator[Fragment]:
+    position = node_position(node, source)
+    name = node.name
+    scope = graph.add_scope(
+        name=name,
+        position=position,
+        action=Pop(name),
+        is_definition=True,
+    )
+    yield Fragment(scope, scope, is_statement=False)
 
 
 @dataclass(frozen=True)

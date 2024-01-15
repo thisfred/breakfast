@@ -968,14 +968,15 @@ def test_pattern_matching_should_only_find_occurrences_in_a_single_case():
     ]
 
 
-def test_should_find_class_used_in_parameter_annotation():
+def test_should_find_class_used_in_method_annotation():
     source = make_source(
         """
         class C:
             ...
 
-        def f(c: C):
-            ...
+        class D:
+            def f(self, c: C) -> C:
+                ...
         """
     )
 
@@ -983,7 +984,8 @@ def test_should_find_class_used_in_parameter_annotation():
 
     assert all_occurrence_position_tuples(position, sources=[source]) == [
         (1, 6),
-        (4, 9),
+        (5, 19),
+        (5, 25),
     ]
 
 
@@ -1053,4 +1055,53 @@ def test_should_rename_annotated_class_property():
     assert all_occurrence_position_tuples(position, sources=[source]) == [
         (2, 4),
         (5, 13),
+    ]
+
+
+def test_should_rename_type_parameters():
+    source = make_source(
+        """
+        def f[T](a: Iterable[T]) -> T:
+            ...
+        """
+    )
+    position = source.position(1, 6)
+    assert all_occurrence_position_tuples(position, sources=[source]) == [
+        (1, 6),
+        (1, 21),
+        (1, 28),
+    ]
+
+
+def test_should_consider_type_vars_local_to_function():
+    source = make_source(
+        """
+        def f[T](a: Iterable[T]) -> T:
+            ...
+
+        def f2[T]() -> T:
+            ...
+        """
+    )
+    position = source.position(1, 6)
+    assert all_occurrence_position_tuples(position, sources=[source]) == [
+        (1, 6),
+        (1, 21),
+        (1, 28),
+    ]
+
+
+def test_should_rename_type_parameters_in_class():
+    source = make_source(
+        """
+        class C[T]:
+            def m(self, a:T) -> T:
+                ...
+        """
+    )
+    position = source.position(1, 8)
+    assert all_occurrence_position_tuples(position, sources=[source]) == [
+        (1, 8),
+        (2, 18),
+        (2, 24),
     ]
