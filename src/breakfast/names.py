@@ -1,5 +1,10 @@
 import ast
 import logging
+
+try:
+    from ast import TypeVar
+except ImportError:
+    TypeVar = None  # type: ignore[assignment,misc]
 from collections import defaultdict
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
@@ -922,7 +927,7 @@ def visit_match_as(
 
 @visit.register
 def visit_type_var(
-    node: ast.TypeVar, source: Source, graph: ScopeGraph, state: State
+    node: TypeVar, source: Source, graph: ScopeGraph, state: State
 ) -> Iterator[Fragment]:
     position = node_position(node, source)
     name = node.name
