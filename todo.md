@@ -7,7 +7,8 @@
   * inline function/method
 * add go to definition
 * refactor State into the graph where possible
+* migrate to tox or nox, so we can test against all supported python
+  versions locally as well as in github actions.
 * handle renames rest of the language
   * handle properties on return types
-  * handle 3.12 generics
 * refactor lines/guaranteed lines (use fields?)
