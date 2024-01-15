@@ -932,6 +932,8 @@ def visit_type_var(
         action=Pop(name),
         is_definition=True,
     )
+    if node.bound:
+        yield from visit(node.bound, source, graph, state)
     yield Fragment(scope, scope, is_statement=False)
 
 

@@ -1105,3 +1105,20 @@ def test_should_rename_type_parameters_in_class():
         (2, 18),
         (2, 24),
     ]
+
+
+def test_should_rename_type_variable_bounds():
+    source = make_source(
+        """
+        class V:
+            ...
+
+        type T[U: V] = X[U]
+
+        """
+    )
+    position = source.position(1, 6)
+    assert all_occurrence_position_tuples(position, sources=[source]) == [
+        (1, 6),
+        (4, 10),
+    ]
