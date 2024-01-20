@@ -1148,3 +1148,25 @@ def test_should_consider_parameter_instance_of_type_annotation():
         (2, 8),
         (6, 6),
     ]
+
+
+def test_should_consider_return_value_instance_of_type_annotation():
+    source = make_source(
+        """
+        class C:
+            def m():
+                ...
+
+        def f() -> C:
+            ...
+
+        a = f()
+        a.m()
+
+        """
+    )
+    position = source.position(2, 8)
+    assert all_occurrence_position_tuples(position, sources=[source]) == [
+        (2, 8),
+        (9, 2),
+    ]

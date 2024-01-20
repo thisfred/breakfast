@@ -515,18 +515,20 @@ def visit_function_definition(
     if type_params := getattr(node, "type_params", None):
         yield from visit_all(type_params, source, graph, state)
     yield from visit_all(node.args.defaults, source, graph, state)
-    yield from visit_type_annotation(node.returns, source, graph, state)
+
+    found = False
+    for fragment in visit_type_annotation(node.returns, source, graph, state):
+        if not found:
+            found = True
+            graph.add_edge(function_definition.exit, fragment.entry, same_rank=True)
+
+        yield fragment
 
     self_name = None
     for i, arg in enumerate(node.args.args):
         current_scope = graph.add_scope(link_to=current_scope)
         arg_position = node_position(arg, source)
 
-        first_fragment = None
-        for fragment in visit_type_annotation(arg.annotation, source, graph, state):
-            if first_fragment is None:
-                first_fragment = fragment
-            yield fragment
         arg_definition = graph.add_scope(
             link_from=current_scope,
             name=arg.arg,
@@ -535,8 +537,12 @@ def visit_function_definition(
             is_definition=True,
             same_rank=True,
         )
-        if first_fragment:
-            graph.add_edge(arg_definition.exit, first_fragment.entry, same_rank=True)
+        found = False
+        for fragment in visit_type_annotation(arg.annotation, source, graph, state):
+            if not found:
+                found = True
+                graph.add_edge(arg_definition.exit, fragment.entry, same_rank=True)
+            yield fragment
 
         if i == 0 and is_method and state.class_name:
             self_name = arg.arg
