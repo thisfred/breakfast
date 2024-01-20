@@ -12,5 +12,4 @@
 * handle renames rest of the language
   * handle multiple inheritance
   * handle double dotted relative imports
-  * handle properties on return types / parameter types
 * refactor lines/guaranteed lines (use fields?)
