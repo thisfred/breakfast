@@ -1129,3 +1129,22 @@ def test_should_rename_type_variable_bounds():
         (1, 6),
         (4, 10),
     ]
+
+
+def test_should_consider_parameter_instance_of_type_annotation():
+    source = make_source(
+        """
+        class C:
+            def m():
+                ...
+
+        def f(a: C):
+            a.m()
+
+        """
+    )
+    position = source.position(2, 8)
+    assert all_occurrence_position_tuples(position, sources=[source]) == [
+        (2, 8),
+        (6, 6),
+    ]

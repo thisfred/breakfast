@@ -10,7 +10,7 @@
 * migrate to tox or nox, so we can test against all supported python
   versions locally as well as in github actions.
 * handle renames rest of the language
-  * handle properties on return types
   * handle multiple inheritance
   * handle double dotted relative imports
+  * handle properties on return types / parameter types
 * refactor lines/guaranteed lines (use fields?)

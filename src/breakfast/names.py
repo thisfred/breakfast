@@ -282,9 +282,11 @@ def visit_assign(
                 graph.add_edge(fragment.exit, current_parent, same_rank=True)
     value_fragments = list(visit(node.value, source, graph, state))
     if len(value_fragments) == len(target_fragments):
-        for i, value_fragment in enumerate(value_fragments):
+        for target_fragment, value_fragment in zip(
+            target_fragments, value_fragments, strict=True
+        ):
             graph.add_edge(
-                target_fragments[i].exit,
+                target_fragment.exit,
                 value_fragment.entry,
                 same_rank=True,
             )
@@ -520,7 +522,11 @@ def visit_function_definition(
         current_scope = graph.add_scope(link_to=current_scope)
         arg_position = node_position(arg, source)
 
-        yield from visit_type_annotation(arg.annotation, source, graph, state)
+        first_fragment = None
+        for fragment in visit_type_annotation(arg.annotation, source, graph, state):
+            if first_fragment is None:
+                first_fragment = fragment
+            yield fragment
         arg_definition = graph.add_scope(
             link_from=current_scope,
             name=arg.arg,
@@ -529,6 +535,8 @@ def visit_function_definition(
             is_definition=True,
             same_rank=True,
         )
+        if first_fragment:
+            graph.add_edge(arg_definition.exit, first_fragment.entry, same_rank=True)
 
         if i == 0 and is_method and state.class_name:
             self_name = arg.arg

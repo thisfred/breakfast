@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 
-@dataclass(order=True, frozen=True)
+@dataclass(order=True, frozen=True)  # pragma: nocover
 class Position(Protocol):
     source: "Source"
     row: int
@@ -22,7 +22,7 @@ class Position(Protocol):
         ...
 
 
-class Source(Protocol):
+class Source(Protocol):  # pragma: nocover
     @property
     def path(self) -> str:
         ...
