@@ -11,5 +11,4 @@
   versions locally as well as in github actions.
 * handle renames rest of the language
   * handle multiple inheritance
-  * handle double dotted relative imports
 * refactor lines/guaranteed lines (use fields?)
