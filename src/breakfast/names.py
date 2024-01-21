@@ -707,12 +707,7 @@ def _get_relative_module_path(node: ast.ImportFrom, state: State) -> Iterable[st
     if node.level == 0:
         return
 
-    if node.level == 1:
-        module_path = tuple(state.package_path) if state.package_path else ()
-    else:
-        module_path = (
-            tuple(state.package_path[: -(node.level - 1)]) if state.package_path else ()
-        )
+    module_path = tuple(state.package_path[: -node.level]) if state.package_path else ()
 
     for p in module_path:
         yield p

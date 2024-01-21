@@ -88,31 +88,31 @@ def test_should_find_occurrences_along_longer_import_paths() -> None:
 def test_should_find_occurrences_along_relative_import_paths() -> None:
     source1 = make_source(
         """
-    from ..kitchen import Stove
+        from .kitchen import Stove
 
-    stove = Stove()
-    stove.broil()
-    """,
+        stove = Stove()
+        stove.broil()
+        """,
         filename="cooking/chef.py",
     )
     source2 = make_source(
         """
-    from ..stove import *
-    """,
+        from .stove import *
+        """,
         filename="cooking/kitchen.py",
     )
     source3 = make_source(
         """
-    class Stove:
-        def bake():
-            pass
+        class Stove:
+            def bake():
+                pass
 
-        def broil():
-            pass
+            def broil():
+                pass
 
-        def saute():
-            pass
-    """,
+            def saute():
+                pass
+        """,
         filename="cooking/stove.py",
     )
     positions = all_occurrence_positions(
