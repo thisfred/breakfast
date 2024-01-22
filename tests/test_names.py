@@ -558,7 +558,6 @@ def test_finds_superclasses() -> None:
     source = make_source(
         """
         class A:
-
             def method(self):
                 pass
 
@@ -571,11 +570,11 @@ def test_finds_superclasses() -> None:
         """
     )
 
-    position = source.position(row=3, column=8)
+    position = source.position(row=2, column=8)
 
     assert all_occurrence_positions(position) == [
-        source.position(row=3, column=8),
-        source.position(row=11, column=2),
+        source.position(row=2, column=8),
+        source.position(row=10, column=2),
     ]
 
 
