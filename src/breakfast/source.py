@@ -64,7 +64,7 @@ class Source:
         match = regex.search(self.get_string_starting_at(start))
         while start.row < len(self.guaranteed_lines) and not match:
             match = regex.search(self.get_string_starting_at(start))
-            start = start.next_line()
+            start = start.next_line
         if not match:
             raise AssertionError("no match found")
         return start + match.span()[0]

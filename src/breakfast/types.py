@@ -18,6 +18,11 @@ class Position(Protocol):
     def __add__(self, other: int, /) -> "Position":
         ...
 
+    @property
+    def start_of_line(self) -> "Position":
+        ...
+
+    @property
     def next_line(self) -> "Position":
         ...
 
