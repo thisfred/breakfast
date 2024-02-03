@@ -26,6 +26,9 @@ class Position(Protocol):
     def next_line(self) -> "Position":
         ...
 
+    def text_through(self, end: "Position") -> str:
+        ...
+
 
 class Source(Protocol):  # pragma: nocover
     @property
@@ -50,4 +53,7 @@ class Source(Protocol):  # pragma: nocover
         ...
 
     def get_ast(self) -> AST:
+        ...
+
+    def get_text(self, *, start: Position, end: Position) -> str:
         ...

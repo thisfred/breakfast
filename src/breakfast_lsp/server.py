@@ -1,13 +1,21 @@
 import logging
 import os
+from collections.abc import Iterable
 from itertools import groupby
 from pathlib import Path
 
 import breakfast
+from breakfast.refactoring.extract import Edit, extract_variable
 from lsprotocol.types import (
     INITIALIZE,
+    TEXT_DOCUMENT_CODE_ACTION,
     TEXT_DOCUMENT_PREPARE_RENAME,
     TEXT_DOCUMENT_RENAME,
+    AnnotatedTextEdit,
+    CodeAction,
+    CodeActionKind,
+    CodeActionOptions,
+    CodeActionParams,
     CreateFile,
     DeleteFile,
     InitializeParams,
@@ -131,6 +139,14 @@ async def prepare_rename(
     )
 
 
+def get_source(uri: str, project_root: str, lines: Iterable[str]) -> breakfast.Source:
+    return breakfast.Source(
+        lines=tuple(line for line in lines),
+        path=uri[len("file://") :],
+        project_root=project_root,
+    )
+
+
 @LSP_SERVER.feature(TEXT_DOCUMENT_RENAME)
 async def rename(server: LanguageServer, params: RenameParams) -> WorkspaceEdit | None:
     document = server.workspace.get_text_document(params.text_document.uri)
@@ -142,10 +158,8 @@ async def rename(server: LanguageServer, params: RenameParams) -> WorkspaceEdit 
         return None
 
     project_root = server.workspace.root_uri[len("file://") :]
-    source = breakfast.Source(
-        lines=tuple(line for line in source_lines),
-        path=params.text_document.uri[len("file://") :],
-        project_root=project_root,
+    source = get_source(
+        uri=params.text_document.uri, project_root=project_root, lines=source_lines
     )
     application = breakfast.Project(source=source, root=project_root)
     position = source.position(row=params.position.line, column=start)
@@ -188,6 +202,95 @@ async def rename(server: LanguageServer, params: RenameParams) -> WorkspaceEdit 
     return WorkspaceEdit(
         document_changes=document_changes,
     )
+
+
+def edits_to_text_edits(
+    edits: Iterable[Edit],
+) -> list[TextEdit | AnnotatedTextEdit]:
+    return [
+        TextEdit(
+            range=Range(
+                start=Position(line=edit.start.row, character=edit.start.column),
+                end=Position(line=edit.end.row, character=edit.end.column),
+            ),
+            new_text=edit.text,
+        )
+        for edit in edits
+    ]
+
+
+@LSP_SERVER.feature(
+    TEXT_DOCUMENT_CODE_ACTION,
+    CodeActionOptions(
+        code_action_kinds=[
+            CodeActionKind.RefactorExtract,
+        ],
+        resolve_provider=True,
+    ),
+)
+async def code_action(
+    server: LanguageServer, params: CodeActionParams
+) -> list[CodeAction] | None:
+    logger.info(f"{params=}")
+    actions: list[CodeAction] = []
+    if params.range:
+        document = server.workspace.get_text_document(params.text_document.uri)
+        source_lines = tuple(document.source.split("\n"))
+        project_root = server.workspace.root_uri[len("file://") :]
+        document_uri = params.text_document.uri
+        client_documents = server.workspace.text_documents
+        version = (
+            versioned.version
+            if (versioned := client_documents.get(document_uri))
+            else None
+        )
+        edit = await _extract_variable(
+            project_root=project_root,
+            document_uri=document_uri,
+            source_lines=source_lines,
+            extraction_range=params.range,
+            version=version,
+        )
+        actions.append(
+            CodeAction(
+                title="breakfast: extract variable",
+                kind=CodeActionKind.RefactorExtract,
+                data=params.text_document.uri,
+                edit=edit,
+                diagnostics=[],
+            ),
+        )
+    return actions
+
+
+async def _extract_variable(
+    project_root: str,
+    document_uri: str,
+    source_lines: tuple[str, ...],
+    extraction_range: Range,
+    version: None,
+) -> WorkspaceEdit:
+    source = get_source(uri=document_uri, project_root=project_root, lines=source_lines)
+    extraction_start = source.position(
+        row=extraction_range.start.line, column=extraction_range.start.character
+    )
+    extraction_end = source.position(
+        row=extraction_range.end.line, column=extraction_range.end.character
+    )
+    edits = extract_variable(
+        name="extracted_variable", start=extraction_start, end=extraction_end
+    )
+
+    text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
+    document_changes: list[TextDocumentEdit | CreateFile | RenameFile | DeleteFile] = [
+        TextDocumentEdit(
+            text_document=OptionalVersionedTextDocumentIdentifier(
+                uri=document_uri, version=version
+            ),
+            edits=text_edits,
+        )
+    ]
+    return WorkspaceEdit(document_changes=document_changes)
 
 
 def show_message(message: str) -> None:

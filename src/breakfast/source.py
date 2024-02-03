@@ -50,6 +50,20 @@ class Source:
     def get_changes(self) -> Iterator[tuple[int, str]]:
         yield from sorted(self.changes.items())
 
+    def get_text(self, *, start: types.Position, end: types.Position) -> str:
+        assert start.source == end.source  # noqa: S101
+        assert end > start  # noqa: S101
+        lines = []
+        for i, line in enumerate(self.guaranteed_lines[start.row :]):
+            current_row = start.row + i
+            if current_row <= end.row:
+                offset = start.column if current_row == start.row else 0
+                cutoff = end.column + 1 if current_row == end.row else -1
+                lines.append(line[offset:cutoff])
+                continue
+            break
+        return "\n".join(lines)
+
     def replace(self, position: types.Position, old: str, new: str) -> None:
         self.modify_line(start=position, end=position + len(old), new=new)
 
@@ -154,3 +168,6 @@ class SubSource:
 
     def get_ast(self) -> AST:
         return self.parent_source.get_ast()
+
+    def get_text(self, *, start: types.Position, end: types.Position) -> str:
+        return self.parent_source.get_text(start=start, end=end)
