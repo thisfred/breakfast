@@ -31,5 +31,3 @@ jobs:
         uses: actions/checkout@v4
       - name: ruff
         uses: chartboost/ruff-action@v1
-      - name: black
-        uses: psf/black@stable
