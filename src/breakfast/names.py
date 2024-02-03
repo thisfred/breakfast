@@ -578,8 +578,8 @@ def visit_type_annotation(
     if isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
         annotation_position = node_position(annotation, source)
         yield from visit_all(
-            # XXX: parse always returns a module node, which we want to skip here, because
-            # the string annotation is part of the current module's scope.
+            # XXX: parse always returns a module node, which we want to skip here,
+            # because the string annotation is part of the current module's scope.
             ast.parse(annotation.value).body,
             SubSource(
                 source=source,
