@@ -36,13 +36,12 @@ lsp = [
 breakfast-lsp = "breakfast_lsp.__main__:main"
 
 [tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
 select = ["E", "F", "I", "C", "W", "UP", "N", "YTT", "S", "B", "A", "DTZ", "RUF"]
-ignore = [
-    "E501",  # covered by black
-    "A003",  # not actually a problem
-    ]
-unfixable = ["F401"]  # autofixing unused imports is dangerous
-target-version = "py310"
+fixable = ["ALL"]
+unfixable = []
 
 [tool.ruff.per-file-ignores]
 "*test*" = ["S101"]
