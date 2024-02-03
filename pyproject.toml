@@ -43,10 +43,10 @@ select = ["E", "F", "I", "C", "W", "UP", "N", "YTT", "S", "B", "A", "DTZ", "RUF"
 fixable = ["ALL"]
 unfixable = []
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "*test*" = ["S101"]
 
-[tool.ruff.mccabe]
+[tool.ruff.lint.mccabe]
 max-complexity = 10
 
 [tool.setuptools]
