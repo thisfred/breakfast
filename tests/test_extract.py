@@ -111,6 +111,25 @@ def test_extract_variable_should_extract_value_in_index_position():
     assert insert.start.row == 2
 
 
+def test_extract_variable_should_retain_indentation_level():
+    source = make_source(
+        """
+        def f():
+            a = (
+                b,
+                some_calculation() + 3,
+                c,
+            )
+        """
+    )
+    extraction_start = source.position(4, 8)
+    extraction_end = source.position(4, 25)
+    insert, *_ = extract_variable(
+        name="result", start=extraction_start, end=extraction_end
+    )
+    assert insert.start == source.position(2, 4)
+
+
 @pytest.mark.xfail()
 def test_extract_variable_should_extract_all_identical_nodes_in_the_same_scope():
     source = make_source(
@@ -132,22 +151,3 @@ def test_extract_variable_should_extract_all_identical_nodes_in_the_same_scope()
     )
 
     assert len(edits) == 3
-
-
-def test_extract_variable_should_retain_indentation_level():
-    source = make_source(
-        """
-        def f():
-            a = (
-                b,
-                some_calculation() + 3,
-                c,
-            )
-        """
-    )
-    extraction_start = source.position(4, 8)
-    extraction_end = source.position(4, 25)
-    insert, *_ = extract_variable(
-        name="result", start=extraction_start, end=extraction_end
-    )
-    assert insert.start == source.position(2, 4)
