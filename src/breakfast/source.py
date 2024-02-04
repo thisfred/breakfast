@@ -118,14 +118,15 @@ class Source:
 
         (Note that ast.AST's col_offset is in *bytes*)
         """
-        line = self.guaranteed_lines[node.lineno - 1]
+        row = node.lineno - 1
+        line = self.guaranteed_lines[row]
         if line.isascii():
             column_offset = node.col_offset
         else:
             byte_prefix = line.encode("utf-8")[: node.col_offset]
             column_offset = len(byte_prefix.decode("utf-8"))
 
-        return self.position(row=(node.lineno - 1), column=column_offset)
+        return self.position(row=row, column=column_offset)
 
 
 class SubSource:

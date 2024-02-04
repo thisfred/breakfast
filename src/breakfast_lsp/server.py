@@ -212,7 +212,10 @@ def edits_to_text_edits(
         TextEdit(
             range=Range(
                 start=Position(line=edit.start.row, character=edit.start.column),
-                end=Position(line=edit.end.row, character=edit.end.column),
+                end=Position(
+                    line=edit.end.row,
+                    character=edit.end.column + (0 if edit.start == edit.end else 1),
+                ),
             ),
             new_text=edit.text,
         )
@@ -275,7 +278,7 @@ async def _extract_variable(
         row=extraction_range.start.line, column=extraction_range.start.character
     )
     extraction_end = source.position(
-        row=extraction_range.end.line, column=extraction_range.end.character
+        row=extraction_range.end.line, column=extraction_range.end.character - 1
     )
     edits = extract_variable(
         name="extracted_variable", start=extraction_start, end=extraction_end

@@ -22,6 +22,7 @@ def is_single_expression(text: str) -> bool:
 
 def extract_variable(name: str, start: Position, end: Position) -> tuple[Edit, ...]:
     extracted = start.text_through(end)
+    logger.info(f"{extracted=}")
 
     if not is_single_expression(extracted):
         return ()
@@ -68,21 +69,9 @@ def visit_expression(node: ast.Expr) -> Iterator[ast.AST]:
 
 
 @visit.register
-def visit_module(node: ast.Module) -> Iterator[ast.AST]:
-    yield from process_body(node.body)
-
-
-@visit.register
-def visit_function(node: ast.FunctionDef) -> Iterator[ast.AST]:
-    yield from process_body(node.body)
-
-
-@visit.register
-def visit_class(node: ast.ClassDef) -> Iterator[ast.AST]:
-    yield from process_body(node.body)
-
-
-def process_body(body: Iterable[ast.AST]) -> Iterator[ast.AST]:
-    for child in body:
+def visit_node_with_body(
+    node: ast.Module | ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
+) -> Iterator[ast.AST]:
+    for child in node.body:
         yield child
         yield from visit(child)

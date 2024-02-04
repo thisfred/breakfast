@@ -96,6 +96,21 @@ def test_extract_variable_should_move_definition_before_current_statement():
     assert insert.start.row == 1
 
 
+def test_extract_variable_should_extract_value_in_index_position():
+    source = make_source(
+        """
+        def node_position(self, node: AST) -> types.Position:
+            line = self.guaranteed_lines[node.lineno - 1]
+        """
+    )
+    extraction_start = source.position(2, 33)
+    extraction_end = source.position(2, 47)
+    insert, _ = extract_variable(
+        name="result", start=extraction_start, end=extraction_end
+    )
+    assert insert.start.row == 2
+
+
 @pytest.mark.xfail()
 def test_extract_variable_should_extract_all_identical_nodes_in_the_same_scope():
     source = make_source(
