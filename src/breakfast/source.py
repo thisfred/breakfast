@@ -112,6 +112,21 @@ class Source:
 
         return path
 
+    def node_position(self, node: AST) -> types.Position:
+        """
+        Return the start position of the node in unicode characters.
+
+        (Note that ast.AST's col_offset is in *bytes*)
+        """
+        line = self.guaranteed_lines[node.lineno - 1]
+        if line.isascii():
+            column_offset = node.col_offset
+        else:
+            byte_prefix = line.encode("utf-8")[: node.col_offset]
+            column_offset = len(byte_prefix.decode("utf-8"))
+
+        return self.position(row=(node.lineno - 1), column=column_offset)
+
 
 class SubSource:
     """Source that parses a single type annotation string.
@@ -150,7 +165,7 @@ class SubSource:
 
     @property
     def guaranteed_lines(self) -> tuple[str, ...]:
-        return self.parent_source.guaranteed_lines
+        return tuple(self.code)
 
     def position(self, row: int, column: int) -> types.Position:
         assert (  # noqa: S101
@@ -171,3 +186,17 @@ class SubSource:
 
     def get_text(self, *, start: types.Position, end: types.Position) -> str:
         return self.parent_source.get_text(start=start, end=end)
+
+    def node_position(self, node: AST) -> types.Position:
+        row = node.lineno - 1
+        assert (  # noqa: S101
+            row == 0
+        ), "Multiline string type annotations are not supported"
+        line = self.guaranteed_lines[row]
+        if line.isascii():
+            column_offset = node.col_offset
+        else:
+            byte_prefix = line.encode("utf-8")[: node.col_offset]
+            column_offset = len(byte_prefix.decode("utf-8"))
+
+        return self.parent_start_position + column_offset

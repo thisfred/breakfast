@@ -115,23 +115,6 @@ def consolidate_definitions(
     return found_group
 
 
-def node_position(node: ast.AST, source: Source) -> Position:
-    """
-    Return the start position of the node in unicode characters.
-
-    (Note that ast.AST's col_offset is in *bytes*)
-    """
-    logger.debug(f"{node=}, {node.lineno=},  {node.col_offset=}")
-    line = source.guaranteed_lines[node.lineno - 1]
-    if line.isascii():
-        column_offset = node.col_offset
-    else:
-        byte_prefix = line.encode("utf-8")[: node.col_offset]
-        column_offset = len(byte_prefix.decode("utf-8"))
-
-    return source.position(row=(node.lineno - 1), column=column_offset)
-
-
 def generic_visit(
     node: ast.AST, source: Source, graph: ScopeGraph, state: State
 ) -> Iterator[Fragment]:
@@ -233,7 +216,7 @@ def visit_name(
     node: ast.Name, source: Source, graph: ScopeGraph, state: State
 ) -> Iterator[Fragment]:
     name = node.id
-    position = node_position(node, source)
+    position = source.node_position(node)
     if isinstance(node.ctx, ast.Store):
         scopes = [
             graph.add_scope(
@@ -317,7 +300,7 @@ def visit_attribute(
         else:
             yield fragment
 
-    position = node_position(node, source)
+    position = source.node_position(node)
     names = names_from(node.value)
     positions = []
     for name in (*names, node.attr):
@@ -441,13 +424,13 @@ def visit_call(
     for fragment in expressions:
         graph.add_edge(in_scope, fragment.entry, same_rank=True)
 
-        keyword_position = node_position(node, source)
+        keyword_position = source.node_position(node)
         for keyword in node.keywords:
             if not keyword.arg:
                 continue
 
             yield from visit(keyword.value, source, graph, state)
-            keyword_position = node_position(keyword, source)
+            keyword_position = source.node_position(keyword)
             graph.add_scope(
                 link_to=in_scope,
                 name=keyword.arg,
@@ -484,7 +467,7 @@ def visit_function_definition(
     node: ast.FunctionDef, source: Source, graph: ScopeGraph, state: State
 ) -> Iterator[Fragment]:
     name = node.name
-    position = node_position(node, source) + DEF_OFFSET
+    position = source.node_position(node) + DEF_OFFSET
     in_scope = out_scope = graph.add_scope()
 
     call_scope = graph.add_scope(
@@ -527,7 +510,7 @@ def visit_function_definition(
     self_name = None
     for i, arg in enumerate(node.args.args):
         current_scope = graph.add_scope(link_to=current_scope)
-        arg_position = node_position(arg, source)
+        arg_position = source.node_position(arg)
 
         arg_definition = graph.add_scope(
             link_from=current_scope,
@@ -576,7 +559,7 @@ def visit_type_annotation(
         return
 
     if isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
-        annotation_position = node_position(annotation, source)
+        annotation_position = source.node_position(annotation)
         yield from visit_all(
             # XXX: parse always returns a module node, which we want to skip here,
             # because the string annotation is part of the current module's scope.
@@ -646,7 +629,7 @@ def visit_class_definition(
     current_scope = graph.add_scope()
     original_scope = current_scope
 
-    position = node_position(node, source) + CLASS_OFFSET
+    position = source.node_position(node) + CLASS_OFFSET
 
     instance_scope = graph.add_scope(action=Pop("."), same_rank=True)
     i_scope = graph.add_scope(
@@ -739,7 +722,7 @@ def visit_import_from(
             graph.add_edge(parent, graph.root)
         else:
             local_name = alias.asname or name
-            position = node_position(alias, source)
+            position = source.node_position(alias)
 
             parent = graph.add_scope(
                 link_from=current_scope,
@@ -770,7 +753,7 @@ def visit_import(
     for alias in node.names:
         name = alias.name
         local_name = alias.asname or name
-        position = node_position(alias, source)
+        position = source.node_position(alias)
 
         local = graph.add_scope(
             link_from=current_scope,
@@ -796,7 +779,7 @@ def visit_global(
 ) -> Iterator[Fragment]:
     current_scope = graph.add_scope()
 
-    start = node_position(node, source)
+    start = source.node_position(node)
     for name in node.names:
         position = source.find_after(name, start)
 
@@ -825,7 +808,7 @@ def visit_nonlocal(
 ) -> Iterator[Fragment]:
     current_scope = graph.add_scope()
 
-    start = node_position(node, source)
+    start = source.node_position(node)
     for name in node.names:
         position = source.find_after(name, start)
 
@@ -918,7 +901,7 @@ def visit_match_as(
     current_scope = graph.add_scope()
 
     if node.name:
-        start = node_position(node, source)
+        start = source.node_position(node)
         position = source.find_after(node.name, start)
         graph.add_scope(
             link_from=current_scope,
@@ -938,7 +921,7 @@ def visit_match_as(
 def visit_type_var(
     node: TypeVar, source: Source, graph: ScopeGraph, state: State
 ) -> Iterator[Fragment]:
-    position = node_position(node, source)
+    position = source.node_position(node)
     name = node.name
     scope = graph.add_scope(
         name=name,

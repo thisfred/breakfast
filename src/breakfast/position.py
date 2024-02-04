@@ -41,5 +41,10 @@ class Position:
         assert end > self  # noqa: S101
         return self.source.get_text(start=self, end=end)
 
+    def text_until(self, end: types.Position) -> str:
+        assert self.source == end.source  # noqa: S101
+        assert end > self  # noqa: S101
+        return self.source.get_text(start=self, end=end - 1)
+
     def _add_offset(self, offset: int) -> types.Position:
         return replace(self, column=self.column + offset)

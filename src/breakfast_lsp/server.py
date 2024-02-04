@@ -5,7 +5,8 @@ from itertools import groupby
 from pathlib import Path
 
 import breakfast
-from breakfast.refactoring.extract import Edit, extract_variable
+from breakfast.refactoring.extract import extract_variable
+from breakfast.types import Edit
 from lsprotocol.types import (
     INITIALIZE,
     TEXT_DOCUMENT_CODE_ACTION,
@@ -231,7 +232,6 @@ def edits_to_text_edits(
 async def code_action(
     server: LanguageServer, params: CodeActionParams
 ) -> list[CodeAction] | None:
-    logger.info(f"{params=}")
     actions: list[CodeAction] = []
     if params.range:
         document = server.workspace.get_text_document(params.text_document.uri)

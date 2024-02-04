@@ -18,6 +18,9 @@ class Position(Protocol):
     def __add__(self, other: int, /) -> "Position":
         ...
 
+    def __sub__(self, to_subtract: int, /) -> "Position":
+        ...
+
     @property
     def start_of_line(self) -> "Position":
         ...
@@ -27,6 +30,9 @@ class Position(Protocol):
         ...
 
     def text_through(self, end: "Position") -> str:
+        ...
+
+    def text_until(self, end: "Position") -> str:
         ...
 
 
@@ -57,3 +63,13 @@ class Source(Protocol):  # pragma: nocover
 
     def get_text(self, *, start: Position, end: Position) -> str:
         ...
+
+    def node_position(self, node: AST) -> Position:
+        ...
+
+
+@dataclass
+class Edit:
+    start: Position
+    end: Position
+    text: str
