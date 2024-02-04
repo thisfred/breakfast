@@ -1,6 +1,10 @@
 import ast
 import logging
-from ast import TypeVar
+
+try:
+    from ast import TypeVar
+except ImportError:  # pragma: nocover
+    TypeVar = None  # type: ignore[assignment,misc]
 from collections import defaultdict
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
