@@ -1,4 +1,3 @@
-import pytest
 from breakfast.refactoring.extract import Edit, extract_variable
 
 from tests import make_source
@@ -130,7 +129,6 @@ def test_extract_variable_should_retain_indentation_level():
     assert insert.start == source.position(2, 4)
 
 
-@pytest.mark.xfail()
 def test_extract_variable_should_extract_all_identical_nodes_in_the_same_scope():
     source = make_source(
         """
@@ -144,7 +142,7 @@ def test_extract_variable_should_extract_all_identical_nodes_in_the_same_scope()
         """
     )
     extraction_start = source.position(1, 4)
-    extraction_end = source.position(1, 21)
+    extraction_end = source.position(1, 25)
 
     _, *edits = extract_variable(
         name="result", start=extraction_start, end=extraction_end
