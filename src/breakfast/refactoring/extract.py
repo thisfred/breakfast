@@ -71,24 +71,29 @@ def extract_variable(name: str, start: Position, end: Position) -> tuple[Edit, .
     if not (expression := get_single_expression_value(extracted)):
         return ()
 
-    statement_start = None
     source = start.source
     source_ast = source.get_ast()
-    for statement in visit(source_ast):
-        if (statement_position := source.node_position(statement)) < start:
-            statement_start = statement_position
 
-    insert_point = statement_start or start.start_of_line
-    indentation = " " * insert_point.column
-    definition = f"{name} = {extracted}\n{indentation}"
-    insert = Edit(start=insert_point, end=insert_point, text=definition)
     other_occurrences = find_other_occurrences(
         source_ast=source_ast, node=expression, position=start
     )
     other_edits = [
         make_edit(source, o, len(extracted), new_text=name) for o in other_occurrences
     ]
-    edits = [Edit(start=start, end=end, text=name), *other_edits]
+    edits = sorted([Edit(start=start, end=end, text=name), *other_edits])
+    first_edit_position = edits[0].start
+
+    statement_start = None
+    for statement in visit(source_ast):
+        if (
+            statement_position := source.node_position(statement)
+        ) < first_edit_position:
+            statement_start = statement_position
+
+    insert_point = statement_start or first_edit_position.start_of_line
+    indentation = " " * insert_point.column
+    definition = f"{name} = {extracted}\n{indentation}"
+    insert = Edit(start=insert_point, end=insert_point, text=definition)
     return (insert, *edits)
 
 

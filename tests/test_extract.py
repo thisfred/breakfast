@@ -149,3 +149,26 @@ def test_extract_variable_should_extract_all_identical_nodes_in_the_same_scope()
     )
 
     assert len(edits) == 3
+
+
+def test_extract_variable_should_extract_before_first_occurrence():
+    source = make_source(
+        """
+        b = some_calculation() + 3
+        a = (
+            b,
+            some_calculation() + 3,
+            c,
+        )
+        some_calculation() + 3
+        """
+    )
+    extraction_start = source.position(4, 4)
+    extraction_end = source.position(4, 25)
+
+    insert, *_ = extract_variable(
+        name="result", start=extraction_start, end=extraction_end
+    )
+
+    assert insert.start.row == 1
+    assert insert.start.column == 0

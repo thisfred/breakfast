@@ -68,7 +68,7 @@ class Source(Protocol):  # pragma: nocover
         ...
 
 
-@dataclass
+@dataclass(order=True, frozen=True)
 class Edit:
     start: Position
     end: Position
