@@ -68,8 +68,8 @@ def find_similar_nodes(
 
 
 @find_similar_nodes.register
-def find_similar_nodes_in_function(
-    source_ast: ast.FunctionDef, node: ast.AST, scope: tuple[str, ...]
+def find_similar_nodes_in_subscope(
+    source_ast: ast.FunctionDef | ast.ClassDef, node: ast.AST, scope: tuple[str, ...]
 ) -> Iterator[tuple[tuple[str, ...], ast.AST]]:
     if is_structurally_identical(node, source_ast):
         yield scope, source_ast

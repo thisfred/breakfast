@@ -1,8 +1,6 @@
 from breakfast.refactoring.extract import (
     Edit,
     extract_variable,
-    find_similar_nodes,
-    get_single_expression_value,
 )
 
 from tests import make_source
@@ -198,21 +196,22 @@ def test_extract_variable_should_not_extract_occurrences_in_other_function():
     assert len(edits) == 1
 
 
-def test_find_similar_nodes_should_include_scope():
+def test_extract_variable_should_not_extract_occurrences_in_other_method_of_the_same_name():
     source = make_source(
         """
-        def f():
-            b = some_calculation() + 3
+        class A:
+            def f():
+                b = some_calculation() + 3
 
-        def g():
-            c = some_calculation() + 3
+        class B:
+            def f():
+                c = some_calculation() + 3
         """
     )
+    extraction_start = source.position(3, 12)
+    extraction_end = source.position(3, 33)
+    _insert, *edits = extract_variable(
+        name="result", start=extraction_start, end=extraction_end
+    )
 
-    ast = source.get_ast()
-    expression = get_single_expression_value("some_calculation() + 3")
-    assert expression is not None
-
-    assert [
-        scope for scope, _ in find_similar_nodes(ast, node=expression, scope=())
-    ] == [("f",), ("g",)]
+    assert len(edits) == 1
