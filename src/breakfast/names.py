@@ -466,6 +466,7 @@ def visit_for_loop(
 def visit_function_definition(
     node: ast.FunctionDef, source: Source, graph: ScopeGraph, state: State
 ) -> Iterator[Fragment]:
+    yield from visit_all(node.decorator_list, source, graph, state)
     name = node.name
     position = source.node_position(node) + DEF_OFFSET
     in_scope = out_scope = graph.add_scope()
@@ -624,6 +625,7 @@ def is_class_method(node: ast.FunctionDef) -> bool:
 def visit_class_definition(
     node: ast.ClassDef, source: Source, graph: ScopeGraph, state: State
 ) -> Iterator[Fragment]:
+    yield from visit_all(node.decorator_list, source, graph, state)
     name = node.name
 
     current_scope = graph.add_scope()

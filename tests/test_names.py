@@ -1156,3 +1156,21 @@ def test_should_consider_return_value_instance_of_type_annotation():
         (2, 8),
         (9, 2),
     ]
+
+
+def test_should_find_decorators():
+    source = make_source(
+        """
+        def f():
+            ...
+
+        @f
+        def g():
+            ...
+        """
+    )
+    position = source.position(1, 4)
+    assert all_occurrence_position_tuples(position, sources=[source]) == [
+        (1, 4),
+        (4, 1),
+    ]

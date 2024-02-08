@@ -15,5 +15,3 @@
 * refactor rename to use Edit
 
 ### Bugs:
-
-* rename visit in `@visit.register`
