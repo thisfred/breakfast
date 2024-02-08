@@ -1,4 +1,3 @@
-import pytest
 from breakfast.refactoring.extract import (
     Edit,
     extract_variable,
@@ -180,8 +179,7 @@ def test_extract_variable_should_extract_before_first_occurrence():
     assert insert.start.column == 0
 
 
-@pytest.mark.xfail
-def test_extract_variable_should_not_extract_occurrences_in_other_scopes():
+def test_extract_variable_should_not_extract_occurrences_in_other_function():
     source = make_source(
         """
         def f():

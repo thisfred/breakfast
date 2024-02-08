@@ -23,11 +23,25 @@ def get_single_expression_value(text: str) -> ast.AST | None:
 
 def find_other_occurrences(
     *, source_ast: ast.AST, node: ast.AST, position: Position
-) -> Iterator[ast.AST]:
-    for _scope, similar in find_similar_nodes(source_ast, node, scope=()):
+) -> list[ast.AST]:
+    results = []
+    original_scope: tuple[str, ...] = ()
+    for scope, similar in find_similar_nodes(source_ast, node, scope=()):
         if position.source.node_position(similar) == position:
+            original_scope = scope
             continue
-        yield similar
+        else:
+            results.append((scope, similar))
+
+    return [
+        similar
+        for scope, similar in results
+        if is_compatible_with(scope, original_scope)
+    ]
+
+
+def is_compatible_with(scope: tuple[str, ...], original_scope: tuple[str, ...]) -> bool:
+    return all(scope[i] == s for i, s in enumerate(original_scope))
 
 
 def generic_find_similar_nodes(
