@@ -73,15 +73,10 @@ def find_similar_nodes_in_subscope(
 ) -> Iterator[tuple[tuple[str, ...], ast.AST]]:
     if is_structurally_identical(node, source_ast):
         yield scope, source_ast
-    for _, value in ast.iter_fields(source_ast):
-        if isinstance(value, list):
-            for new_ast in value:
-                if isinstance(new_ast, ast.AST):
-                    yield from find_similar_nodes(
-                        new_ast, node, (*scope, source_ast.name)
-                    )
-        elif isinstance(value, ast.AST):
-            yield from find_similar_nodes(value, node, (*scope, source_ast.name))
+    else:
+        yield from generic_find_similar_nodes(
+            source_ast, node, (*scope, source_ast.name)
+        )
 
 
 def is_structurally_identical(node: ast.AST, other_node: Any) -> bool:
@@ -125,7 +120,7 @@ def extract_variable(name: str, start: Position, end: Position) -> tuple[Edit, .
     first_edit_position = edits[0].start
 
     statement_start = None
-    for statement in get_statements(source_ast):
+    for statement in find_statements(source_ast):
         if (
             statement_position := source.node_position(statement)
         ) < first_edit_position:
@@ -139,25 +134,25 @@ def extract_variable(name: str, start: Position, end: Position) -> tuple[Edit, .
 
 
 @singledispatch
-def get_statements(node: ast.AST) -> Iterator[ast.AST]:
+def find_statements(node: ast.AST) -> Iterator[ast.AST]:
     for _, value in ast.iter_fields(node):
         if isinstance(value, list):
             for node in value:
                 if isinstance(node, ast.AST):
-                    yield from get_statements(node)
+                    yield from find_statements(node)
         elif isinstance(value, ast.AST):
-            yield from get_statements(value)
+            yield from find_statements(value)
 
 
-@get_statements.register
+@find_statements.register
 def get_statements_from_expression(node: ast.Expr) -> Iterator[ast.AST]:
     yield from ()
 
 
-@get_statements.register
+@find_statements.register
 def get_statements_from_node_with_body(
     node: ast.Module | ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
 ) -> Iterator[ast.AST]:
     for child in node.body:
         yield child
-        yield from get_statements(child)
+        yield from find_statements(child)
