@@ -1,5 +1,6 @@
 ## To do list
 
+### Features:
 
 * cache scope graphs (and/or partial paths?)
 * add other refactorings
@@ -12,3 +13,7 @@
   versions locally as well as in github actions.
 * refactor lines/guaranteed lines (use fields?)
 * refactor rename to use Edit
+
+### Bugs:
+
+* rename visit in `@visit.register`

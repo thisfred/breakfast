@@ -1,6 +1,6 @@
 import ast
 import logging
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from functools import singledispatch
 from typing import Any
 
@@ -24,24 +24,50 @@ def get_single_expression_value(text: str) -> ast.AST | None:
 def find_other_occurrences(
     *, source_ast: ast.AST, node: ast.AST, position: Position
 ) -> Iterator[ast.AST]:
-    for similar in find_similar_nodes(source_ast, node):
+    for _scope, similar in find_similar_nodes(source_ast, node, scope=()):
         if position.source.node_position(similar) == position:
             continue
         yield similar
 
 
-def find_similar_nodes(source_ast: ast.AST, node: ast.AST) -> Iterator[ast.AST]:
-    if is_structurally_identical(node, source_ast):
-        yield source_ast
-    else:
-        for _, value in ast.iter_fields(source_ast):
-            if isinstance(value, list):
-                for new_ast in value:
-                    if isinstance(new_ast, ast.AST):
-                        yield from find_similar_nodes(new_ast, node)
+def generic_find_similar_nodes(
+    source_ast: ast.AST, /, node: ast.AST, scope: tuple[str, ...]
+) -> Iterator[tuple[tuple[str, ...], ast.AST]]:
+    for _, value in ast.iter_fields(source_ast):
+        if isinstance(value, list):
+            for new_ast in value:
+                if isinstance(new_ast, ast.AST):
+                    yield from find_similar_nodes(new_ast, node, scope)
 
-            elif isinstance(value, ast.AST):
-                yield from find_similar_nodes(value, node)
+        elif isinstance(value, ast.AST):
+            yield from find_similar_nodes(value, node, scope)
+
+
+@singledispatch
+def find_similar_nodes(
+    source_ast: ast.AST, /, node: ast.AST, scope: tuple[str, ...]
+) -> Iterator[tuple[tuple[str, ...], ast.AST]]:
+    if is_structurally_identical(node, source_ast):
+        yield scope, source_ast
+    else:
+        yield from generic_find_similar_nodes(source_ast, node, scope)
+
+
+@find_similar_nodes.register
+def find_similar_nodes_in_function(
+    source_ast: ast.FunctionDef, node: ast.AST, scope: tuple[str, ...]
+) -> Iterator[tuple[tuple[str, ...], ast.AST]]:
+    if is_structurally_identical(node, source_ast):
+        yield scope, source_ast
+    for _, value in ast.iter_fields(source_ast):
+        if isinstance(value, list):
+            for new_ast in value:
+                if isinstance(new_ast, ast.AST):
+                    yield from find_similar_nodes(
+                        new_ast, node, (*scope, source_ast.name)
+                    )
+        elif isinstance(value, ast.AST):
+            yield from find_similar_nodes(value, node, (*scope, source_ast.name))
 
 
 def is_structurally_identical(node: ast.AST, other_node: Any) -> bool:
@@ -50,11 +76,12 @@ def is_structurally_identical(node: ast.AST, other_node: Any) -> bool:
 
     for name, value in ast.iter_fields(node):
         other_value = getattr(other_node, name, None)
-        if not isinstance(value, ast.AST):
-            return bool(value == other_value)
-        else:
+        if isinstance(value, ast.AST):
             if not is_structurally_identical(value, other_value):
                 return False
+
+        elif value != other_value:
+            return False
 
     return True
 
@@ -84,7 +111,7 @@ def extract_variable(name: str, start: Position, end: Position) -> tuple[Edit, .
     first_edit_position = edits[0].start
 
     statement_start = None
-    for statement in visit(source_ast):
+    for statement in get_statements(source_ast):
         if (
             statement_position := source.node_position(statement)
         ) < first_edit_position:
@@ -97,35 +124,26 @@ def extract_variable(name: str, start: Position, end: Position) -> tuple[Edit, .
     return (insert, *edits)
 
 
-def generic_visit(node: ast.AST) -> Iterator[ast.AST]:
+@singledispatch
+def get_statements(node: ast.AST) -> Iterator[ast.AST]:
     for _, value in ast.iter_fields(node):
         if isinstance(value, list):
-            yield from visit_all(value)
-
+            for node in value:
+                if isinstance(node, ast.AST):
+                    yield from get_statements(node)
         elif isinstance(value, ast.AST):
-            yield from visit(value)
+            yield from get_statements(value)
 
 
-@singledispatch
-def visit(node: ast.AST) -> Iterator[ast.AST]:
-    yield from generic_visit(node)
-
-
-def visit_all(nodes: Iterable[ast.AST]) -> Iterator[ast.AST]:
-    for node in nodes:
-        if isinstance(node, ast.AST):
-            yield from visit(node)
-
-
-@visit.register
-def visit_expression(node: ast.Expr) -> Iterator[ast.AST]:
+@get_statements.register
+def get_statements_from_expression(node: ast.Expr) -> Iterator[ast.AST]:
     yield from ()
 
 
-@visit.register
-def visit_node_with_body(
+@get_statements.register
+def get_statements_from_node_with_body(
     node: ast.Module | ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
 ) -> Iterator[ast.AST]:
     for child in node.body:
         yield child
-        yield from visit(child)
+        yield from get_statements(child)

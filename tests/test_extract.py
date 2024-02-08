@@ -1,4 +1,10 @@
-from breakfast.refactoring.extract import Edit, extract_variable
+import pytest
+from breakfast.refactoring.extract import (
+    Edit,
+    extract_variable,
+    find_similar_nodes,
+    get_single_expression_value,
+)
 
 from tests import make_source
 
@@ -166,9 +172,49 @@ def test_extract_variable_should_extract_before_first_occurrence():
     extraction_start = source.position(4, 4)
     extraction_end = source.position(4, 25)
 
-    insert, *_ = extract_variable(
+    insert, *edits = extract_variable(
         name="result", start=extraction_start, end=extraction_end
     )
 
     assert insert.start.row == 1
     assert insert.start.column == 0
+
+
+@pytest.mark.xfail
+def test_extract_variable_should_not_extract_occurrences_in_other_scopes():
+    source = make_source(
+        """
+        def f():
+            b = some_calculation() + 3
+
+        def g():
+            c = some_calculation() + 3
+        """
+    )
+    extraction_start = source.position(2, 8)
+    extraction_end = source.position(2, 29)
+    _insert, *edits = extract_variable(
+        name="result", start=extraction_start, end=extraction_end
+    )
+
+    assert len(edits) == 1
+
+
+def test_find_similar_nodes_should_include_scope():
+    source = make_source(
+        """
+        def f():
+            b = some_calculation() + 3
+
+        def g():
+            c = some_calculation() + 3
+        """
+    )
+
+    ast = source.get_ast()
+    expression = get_single_expression_value("some_calculation() + 3")
+    assert expression is not None
+
+    assert [
+        scope for scope, _ in find_similar_nodes(ast, node=expression, scope=())
+    ] == [("f",), ("g",)]
