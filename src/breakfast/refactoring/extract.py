@@ -1,12 +1,118 @@
 import ast
 import logging
-from collections.abc import Iterator
+from collections.abc import Callable, Iterable, Iterator
 from functools import singledispatch
-from typing import Any
+from typing import Any, Concatenate, ParamSpec, TypeVar
 
 from breakfast.types import Edit, Position, Source
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
+P = ParamSpec("P")
+
+
+def generic_visit(
+    f: Callable[Concatenate[ast.AST, P], Iterator[T]],
+    node: ast.AST,
+    *args: P.args,
+    **kwargs: P.kwargs,
+) -> Iterator[T]:
+    for _, value in ast.iter_fields(node):
+        if isinstance(value, list):
+            for node in value:
+                if isinstance(node, ast.AST):
+                    yield from f(node, *args, **kwargs)
+        elif isinstance(value, ast.AST):
+            yield from f(value, *args, **kwargs)
+
+
+def extract_variable(name: str, start: Position, end: Position) -> tuple[Edit, ...]:
+    extracted = start.text_through(end)
+    logger.info(f"{extracted=}")
+
+    if not (expression := get_single_expression_value(extracted)):
+        return ()
+
+    source = start.source
+    source_ast = source.get_ast()
+
+    other_occurrences = find_other_occurrences(
+        source_ast=source_ast, node=expression, position=start
+    )
+    other_edits = [
+        make_edit(source, o, len(extracted), new_text=name) for o in other_occurrences
+    ]
+    edits = sorted([Edit(start=start, end=end, text=name), *other_edits])
+    first_edit_position = edits[0].start
+
+    statement_start = None
+    for statement in find_statements(source_ast):
+        if (
+            statement_position := source.node_position(statement)
+        ) < first_edit_position:
+            statement_start = statement_position
+
+    insert_point = statement_start or first_edit_position.start_of_line
+    indentation = " " * insert_point.column
+    definition = f"{name} = {extracted}\n{indentation}"
+    insert = Edit(start=insert_point, end=insert_point, text=definition)
+    return (insert, *edits)
+
+
+def extract_function(name: str, start: Position, end: Position) -> tuple[Edit, ...]:
+    indentation = "    "
+    if start.row < end.row:
+        start = start.start_of_line
+        end = end.next_line
+    text = start.text_through(end)
+
+    logger.info(f"{text=}")
+    extracted = "\n".join([f"{indentation}{line}" for line in text.split("\n")])
+    logger.info(f"{extracted=}")
+
+    insert_point = start
+    local_names = find_undefined_local_names(start.source, text, start, end)
+    params = ", ".join(local_names)
+    insert = Edit(
+        start=insert_point,
+        end=insert_point,
+        text=f"\ndef function({params}):\n{extracted}\n",
+    )
+    return (insert,)
+
+
+def find_undefined_local_names(
+    source: Source, text: str, start: Position, end: Position
+) -> Iterable[str]:
+    source_ast = source.get_ast()
+
+    defined_outside_subtree = set()
+    loaded_in_subtree = set()
+    order = {}
+    for i, name in enumerate(find_names(source_ast)):
+        position = source.node_position(name)
+        if isinstance(name.ctx, ast.Store) and position < start:
+            defined_outside_subtree.add(name.id)
+        elif isinstance(name.ctx, ast.Load) and position > start and position < end:
+            loaded_in_subtree.add(name.id)
+            if name.id not in order:
+                order[name.id] = i
+
+    return sorted(
+        defined_outside_subtree & loaded_in_subtree,
+        key=lambda name: order.get(name, 100),
+    )
+
+
+@singledispatch
+def find_names(node: ast.AST) -> Iterator[ast.Name]:
+    yield from generic_visit(find_names, node)
+
+
+@find_names.register
+def find_names_in_name(node: ast.Name) -> Iterator[ast.Name]:
+    yield node
 
 
 def get_single_expression_value(text: str) -> ast.AST | None:
@@ -44,27 +150,14 @@ def is_compatible_with(scope: tuple[str, ...], original_scope: tuple[str, ...]) 
     return all(scope[i] == s for i, s in enumerate(original_scope))
 
 
-def generic_find_similar_nodes(
-    source_ast: ast.AST, /, node: ast.AST, scope: tuple[str, ...]
-) -> Iterator[tuple[tuple[str, ...], ast.AST]]:
-    for _, value in ast.iter_fields(source_ast):
-        if isinstance(value, list):
-            for new_ast in value:
-                if isinstance(new_ast, ast.AST):
-                    yield from find_similar_nodes(new_ast, node, scope)
-
-        elif isinstance(value, ast.AST):
-            yield from find_similar_nodes(value, node, scope)
-
-
 @singledispatch
 def find_similar_nodes(
-    source_ast: ast.AST, /, node: ast.AST, scope: tuple[str, ...]
+    source_ast: ast.AST, node: ast.AST, scope: tuple[str, ...]
 ) -> Iterator[tuple[tuple[str, ...], ast.AST]]:
     if is_structurally_identical(node, source_ast):
         yield scope, source_ast
     else:
-        yield from generic_find_similar_nodes(source_ast, node, scope)
+        yield from generic_visit(find_similar_nodes, source_ast, node, scope)
 
 
 @find_similar_nodes.register
@@ -74,8 +167,8 @@ def find_similar_nodes_in_subscope(
     if is_structurally_identical(node, source_ast):
         yield scope, source_ast
     else:
-        yield from generic_find_similar_nodes(
-            source_ast, node, (*scope, source_ast.name)
+        yield from generic_visit(
+            find_similar_nodes, source_ast, node, (*scope, source_ast.name)
         )
 
 
@@ -100,57 +193,18 @@ def make_edit(source: Source, node: ast.AST, length: int, new_text: str) -> Edit
     return Edit(start=start, end=start + (length - 1), text=new_text)
 
 
-def extract_variable(name: str, start: Position, end: Position) -> tuple[Edit, ...]:
-    extracted = start.text_through(end)
-    logger.info(f"{extracted=}")
-
-    if not (expression := get_single_expression_value(extracted)):
-        return ()
-
-    source = start.source
-    source_ast = source.get_ast()
-
-    other_occurrences = find_other_occurrences(
-        source_ast=source_ast, node=expression, position=start
-    )
-    other_edits = [
-        make_edit(source, o, len(extracted), new_text=name) for o in other_occurrences
-    ]
-    edits = sorted([Edit(start=start, end=end, text=name), *other_edits])
-    first_edit_position = edits[0].start
-
-    statement_start = None
-    for statement in find_statements(source_ast):
-        if (
-            statement_position := source.node_position(statement)
-        ) < first_edit_position:
-            statement_start = statement_position
-
-    insert_point = statement_start or first_edit_position.start_of_line
-    indentation = " " * insert_point.column
-    definition = f"{name} = {extracted}\n{indentation}"
-    insert = Edit(start=insert_point, end=insert_point, text=definition)
-    return (insert, *edits)
-
-
 @singledispatch
 def find_statements(node: ast.AST) -> Iterator[ast.AST]:
-    for _, value in ast.iter_fields(node):
-        if isinstance(value, list):
-            for node in value:
-                if isinstance(node, ast.AST):
-                    yield from find_statements(node)
-        elif isinstance(value, ast.AST):
-            yield from find_statements(value)
+    yield from generic_visit(find_statements, node)
 
 
 @find_statements.register
-def get_statements_from_expression(node: ast.Expr) -> Iterator[ast.AST]:
+def find_statements_in_expression(node: ast.Expr) -> Iterator[ast.AST]:
     yield from ()
 
 
 @find_statements.register
-def get_statements_from_node_with_body(
+def find_statements_in_node_with_body(
     node: ast.Module | ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
 ) -> Iterator[ast.AST]:
     for child in node.body:

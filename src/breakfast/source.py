@@ -58,7 +58,7 @@ class Source:
             current_row = start.row + i
             if current_row <= end.row:
                 offset = start.column if current_row == start.row else 0
-                cutoff = end.column + 1 if current_row == end.row else -1
+                cutoff = end.column + 1 if current_row == end.row else None
                 lines.append(line[offset:cutoff])
                 continue
             break

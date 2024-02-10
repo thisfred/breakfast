@@ -1,9 +1,10 @@
 from breakfast.refactoring.extract import (
     Edit,
+    extract_function,
     extract_variable,
 )
 
-from tests import make_source
+from tests import dedent, make_source
 
 
 def test_extract_variable_should_insert_name_definition():
@@ -215,3 +216,77 @@ def test_extract_variable_should_not_extract_occurrences_in_other_method_of_the_
     )
 
     assert len(edits) == 1
+
+
+def test_extract_function_should_insert_function_definition():
+    source = make_source(
+        """
+        value = 0
+        something = print(value + 8)
+        """
+    )
+    extraction_start = source.position(2, 12)
+    extraction_end = source.position(2, 27)
+
+    insert, *_edits = extract_function(
+        name="function", start=extraction_start, end=extraction_end
+    )
+
+    assert insert.text == dedent(
+        """
+        def function(value):
+            print(value + 8)
+        """
+    )
+
+
+def test_extract_function_should_insert_function_definition_with_multiple_statements():
+    source = make_source(
+        """
+        value = 0
+        print(value + 20)
+        print(max(value, 0))
+        """
+    )
+    extraction_start = source.position(2, 0)
+    extraction_end = source.position(3, 21)
+
+    insert, *_edits = extract_function(
+        name="function", start=extraction_start, end=extraction_end
+    )
+
+    result = dedent(
+        """
+        def function(value):
+            print(value + 20)
+            print(max(value, 0))
+        """
+    )
+
+    assert insert.text.rstrip() == result.rstrip()
+
+
+def test_extract_function_should_create_arguments_for_local_variables():
+    source = make_source(
+        """
+        value = 0
+        other_value = 1
+        print(value + 20)
+        print(max(other_value, value))
+        """
+    )
+
+    start = source.position(3, 0)
+    end = source.position(10, 21)
+
+    insert, *_edits = extract_function(name="function", start=start, end=end)
+
+    result = dedent(
+        """
+        def function(value, other_value):
+            print(value + 20)
+            print(max(other_value, value))
+        """
+    )
+
+    assert insert.text.rstrip() == result.rstrip()
