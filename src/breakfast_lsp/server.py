@@ -142,7 +142,7 @@ async def prepare_rename(
 
 def get_source(uri: str, project_root: str, lines: Iterable[str]) -> breakfast.Source:
     return breakfast.Source(
-        lines=tuple(line for line in lines),
+        input_lines=tuple(line for line in lines),
         path=uri[len("file://") :],
         project_root=project_root,
     )

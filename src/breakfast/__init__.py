@@ -1,5 +1,6 @@
 """Refactoring tools for Python."""
 
-from breakfast.types import Position, Source
+from breakfast.project import Project
+from breakfast.source import Position, Source
 
-__all__ = ["Source", "Position"]
+__all__ = ["Source", "Position", "Project"]

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from breakfast.main import Project, get_module_paths, is_allowed
+from breakfast.project import Project, get_module_paths, is_allowed
 
 
 def test_returns_paths(project_root):
