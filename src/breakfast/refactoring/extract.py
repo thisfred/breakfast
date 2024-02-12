@@ -1,30 +1,13 @@
 import ast
 import logging
-from collections.abc import Callable, Container, Iterable, Iterator
+from collections.abc import Container, Iterable, Iterator
 from functools import singledispatch
-from typing import Any, Concatenate, ParamSpec, TypeVar
+from typing import Any
 
 from breakfast.types import Edit, Line, Position, Source
+from breakfast.visitor import generic_visit
 
 logger = logging.getLogger(__name__)
-
-T = TypeVar("T")
-P = ParamSpec("P")
-
-
-def generic_visit(
-    f: Callable[Concatenate[ast.AST, P], Iterator[T]],
-    node: ast.AST,
-    *args: P.args,
-    **kwargs: P.kwargs,
-) -> Iterator[T]:
-    for _, value in ast.iter_fields(node):
-        if isinstance(value, list):
-            for node in value:
-                if isinstance(node, ast.AST):
-                    yield from f(node, *args, **kwargs)
-        elif isinstance(value, ast.AST):
-            yield from f(value, *args, **kwargs)
 
 
 def extract_variable(name: str, start: Position, end: Position) -> tuple[Edit, ...]:
