@@ -67,7 +67,7 @@ class Source(Protocol):  # pragma: nocover
         ...
 
     @property
-    def guaranteed_lines(self) -> tuple[str, ...]:
+    def text(self) -> tuple[str, ...]:
         ...
 
     @property

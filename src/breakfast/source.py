@@ -70,7 +70,7 @@ class Line:
 
     @property
     def text(self) -> str:
-        return self.source.guaranteed_lines[self.row]
+        return self.source.text[self.row]
 
     @property
     def start(self) -> types.Position:
@@ -98,7 +98,7 @@ class Source:
         return f"Source(path={self.path})"
 
     @property
-    def guaranteed_lines(self) -> tuple[str, ...]:
+    def text(self) -> tuple[str, ...]:
         if self._lines is None:
             with open(self.path, encoding="utf-8") as source_file:
                 self._lines = tuple(line[:-1] for line in source_file.readlines())
@@ -106,7 +106,7 @@ class Source:
 
     @property
     def lines(self) -> tuple[types.Line, ...]:
-        return tuple(Line(self, i) for i in range(len(self.guaranteed_lines)))
+        return tuple(Line(self, i) for i in range(len(self.text)))
 
     def position(self, row: int, column: int) -> types.Position:
         return Position(source=self, row=row, column=column)
@@ -118,7 +118,7 @@ class Source:
         return match.group()
 
     def get_ast(self) -> AST:
-        return parse("\n".join(self.guaranteed_lines))
+        return parse("\n".join(self.text))
 
     def get_changes(self) -> Iterator[tuple[int, str]]:
         yield from sorted(self.changes.items())
@@ -127,7 +127,7 @@ class Source:
         assert start.source == end.source  # noqa: S101
         assert end > start  # noqa: S101
         lines = []
-        for i, line in enumerate(self.guaranteed_lines[start.row :]):
+        for i, line in enumerate(self.text[start.row :]):
             current_row = start.row + i
             if current_row <= end.row:
                 offset = start.column if current_row == start.row else 0
@@ -142,14 +142,14 @@ class Source:
 
     def modify_line(self, start: types.Position, end: types.Position, new: str) -> None:
         line_number = start.row
-        line = self.changes.get(line_number, self.guaranteed_lines[line_number])
+        line = self.changes.get(line_number, self.text[line_number])
         modified_line = line[: start.column] + new + line[end.column :]
         self.changes[line_number] = modified_line
 
     def find_after(self, name: str, start: types.Position) -> types.Position:
         regex = re.compile(f"\\b{name}\\b")
         match = regex.search(self.get_string_starting_at(start))
-        while start.row < len(self.guaranteed_lines) and not match:
+        while start.row < len(self.text) and not match:
             match = regex.search(self.get_string_starting_at(start))
             start = start.next_line
         if not match:
@@ -157,7 +157,7 @@ class Source:
         return start + match.span()[0]
 
     def get_string_starting_at(self, position: types.Position) -> str:
-        return self.guaranteed_lines[position.row][position.column :]
+        return self.text[position.row][position.column :]
 
     @property
     def module_name(self) -> str:
@@ -192,7 +192,7 @@ class Source:
         (Note that ast.AST's col_offset is in *bytes*)
         """
         row = node.lineno - 1
-        line = self.guaranteed_lines[row]
+        line = self.text[row]
         if line.isascii():
             column_offset = node.col_offset
         else:
@@ -238,7 +238,7 @@ class SubSource:
         )
 
     @property
-    def guaranteed_lines(self) -> tuple[str, ...]:
+    def text(self) -> tuple[str, ...]:
         return tuple(self.code)
 
     @property
@@ -270,7 +270,7 @@ class SubSource:
         assert (  # noqa: S101
             row == 0
         ), "Multiline string type annotations are not supported"
-        line = self.guaranteed_lines[row]
+        line = self.text[row]
         if line.isascii():
             column_offset = node.col_offset
         else:
