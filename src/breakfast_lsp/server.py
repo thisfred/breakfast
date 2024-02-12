@@ -5,7 +5,7 @@ from itertools import groupby
 from pathlib import Path
 
 import breakfast
-from breakfast.refactoring.extract import extract_variable
+from breakfast.refactoring.extract import extract_variable, slide_statements
 from breakfast.types import Edit
 from lsprotocol.types import (
     INITIALIZE,
@@ -214,7 +214,8 @@ def edits_to_text_edits(
                 start=Position(line=edit.start.row, character=edit.start.column),
                 end=Position(
                     line=edit.end.row,
-                    character=edit.end.column + (0 if edit.start == edit.end else 1),
+                    character=edit.end.column
+                    + (0 if (edit.start == edit.end or edit.end.column == 0) else 1),
                 ),
             ),
             new_text=edit.text,
@@ -247,7 +248,7 @@ async def code_action(
             if (versioned := client_documents.get(document_uri))
             else None
         )
-        edit = await _extract_variable(
+        extract_edit = await _extract_variable(
             project_root=project_root,
             document_uri=document_uri,
             source_lines=source_lines,
@@ -259,10 +260,28 @@ async def code_action(
                 title="breakfast: extract variable",
                 kind=CodeActionKind.RefactorExtract,
                 data=params.text_document.uri,
-                edit=edit,
+                edit=extract_edit,
                 diagnostics=[],
             ),
         )
+
+        slide_statements_edit = await _slide_statements(
+            project_root=project_root,
+            document_uri=document_uri,
+            source_lines=source_lines,
+            extraction_range=params.range,
+            version=version,
+        )
+        actions.append(
+            CodeAction(
+                title="breakfast: slide statements",
+                kind=CodeActionKind.Refactor,
+                data=params.text_document.uri,
+                edit=slide_statements_edit,
+                diagnostics=[],
+            ),
+        )
+
     return actions
 
 
@@ -278,12 +297,35 @@ async def _extract_variable(
         row=extraction_range.start.line, column=extraction_range.start.character
     )
     extraction_end = source.position(
-        row=extraction_range.end.line, column=extraction_range.end.character - 1
+        row=extraction_range.end.line, column=max(extraction_range.end.character - 1, 0)
     )
     edits = extract_variable(
         name="extracted_variable", start=extraction_start, end=extraction_end
     )
 
+    text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
+    document_changes: list[TextDocumentEdit | CreateFile | RenameFile | DeleteFile] = [
+        TextDocumentEdit(
+            text_document=OptionalVersionedTextDocumentIdentifier(
+                uri=document_uri, version=version
+            ),
+            edits=text_edits,
+        )
+    ]
+    return WorkspaceEdit(document_changes=document_changes)
+
+
+async def _slide_statements(
+    project_root: str,
+    document_uri: str,
+    source_lines: tuple[str, ...],
+    extraction_range: Range,
+    version: None,
+) -> WorkspaceEdit:
+    source = get_source(uri=document_uri, project_root=project_root, lines=source_lines)
+    first_line = source.lines[extraction_range.start.line]
+    last_line = source.lines[extraction_range.end.line]
+    edits = slide_statements(first=first_line, last=last_line)
     text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
     document_changes: list[TextDocumentEdit | CreateFile | RenameFile | DeleteFile] = [
         TextDocumentEdit(

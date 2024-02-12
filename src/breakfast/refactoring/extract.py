@@ -44,15 +44,13 @@ def extract_variable(name: str, start: Position, end: Position) -> tuple[Edit, .
 
 
 def extract_function(name: str, start: Position, end: Position) -> tuple[Edit, ...]:
-    indentation = "    "
     if start.row < end.row:
         start = start.start_of_line
         end = end.next_line
-    text = start.text_through(end)
 
-    logger.info(f"{text=}")
+    text = start.text_through(end)
+    indentation = "    "
     extracted = "\n".join([f"{indentation}{line}" for line in text.split("\n")])
-    logger.info(f"{extracted=}")
 
     insert_point = start
     local_names = find_undefined_local_names(start, end)
@@ -67,22 +65,25 @@ def extract_function(name: str, start: Position, end: Position) -> tuple[Edit, .
 
 def slide_statements(first: Line, last: Line) -> tuple[Edit, ...]:
     target = find_slide_target(first, last)
-    if target.row <= first.row:
+    if target is None:
         return ()
     insert = Edit(start=target, end=target, text=first.text + "\n")
     delete = Edit(start=first.start, end=last.end, text="")
+    logger.info(f"{insert=}")
+    logger.info(f"{delete=}")
     return (insert, delete)
 
 
-def find_slide_target(first: Line, last: Line) -> Position:
+def find_slide_target(first: Line, last: Line) -> Position | None:
     source = first.start.source
     source_ast = source.get_ast()
     names_defined_in_statements = find_names_defined(source_ast, first, last)
     first_usage = find_first_usage(source_ast, names_defined_in_statements, after=last)
+    logger.info(f"{first_usage=}")
     if first_usage and first_usage.row > last.row + 1:
         return first_usage.start_of_line
 
-    return first.start
+    return None
 
 
 def find_names_defined(source_ast: ast.AST, first: Line, last: Line) -> set[str]:
@@ -104,7 +105,7 @@ def find_first_usage(
     for name in find_names(source_ast):
         position = after.source.node_position(name)
 
-        if position <= after.start:
+        if position.row <= after.row:
             continue
         if name.id in names:
             return position
