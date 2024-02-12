@@ -36,9 +36,34 @@ class Position(Protocol):
         ...
 
 
+@dataclass(order=True, frozen=True)  # pragma: nocover
+class Line(Protocol):
+    source: "Source"
+    row: int
+
+    def text_through(self, last: "Line") -> str:
+        ...
+
+    @property
+    def text(self) -> str:
+        ...
+
+    @property
+    def start(self) -> Position:
+        ...
+
+    @property
+    def end(self) -> Position:
+        ...
+
+
 class Source(Protocol):  # pragma: nocover
     @property
     def path(self) -> str:
+        ...
+
+    @property
+    def lines(self) -> tuple[Line, ...]:
         ...
 
     @property

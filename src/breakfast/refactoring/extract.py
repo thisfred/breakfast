@@ -1,10 +1,10 @@
 import ast
 import logging
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Container, Iterable, Iterator
 from functools import singledispatch
 from typing import Any, Concatenate, ParamSpec, TypeVar
 
-from breakfast.types import Edit, Position, Source
+from breakfast.types import Edit, Line, Position, Source
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ def extract_function(name: str, start: Position, end: Position) -> tuple[Edit, .
     logger.info(f"{extracted=}")
 
     insert_point = start
-    local_names = find_undefined_local_names(start.source, text, start, end)
+    local_names = find_undefined_local_names(start, end)
     params = ", ".join(local_names)
     insert = Edit(
         start=insert_point,
@@ -82,9 +82,54 @@ def extract_function(name: str, start: Position, end: Position) -> tuple[Edit, .
     return (insert,)
 
 
-def find_undefined_local_names(
-    source: Source, text: str, start: Position, end: Position
-) -> Iterable[str]:
+def slide_statements(first: Line, last: Line) -> tuple[Edit, ...]:
+    target = find_slide_target(first, last)
+    if target.row <= first.row:
+        return ()
+    insert = Edit(start=target, end=target, text=first.text + "\n")
+    delete = Edit(start=first.start, end=last.end, text="")
+    return (insert, delete)
+
+
+def find_slide_target(first: Line, last: Line) -> Position:
+    source = first.start.source
+    source_ast = source.get_ast()
+    names_defined_in_statements = find_names_defined(source_ast, first, last)
+    first_usage = find_first_usage(source_ast, names_defined_in_statements, after=last)
+    if first_usage:
+        return first_usage.start_of_line
+
+    return first.start
+
+
+def find_names_defined(source_ast: ast.AST, first: Line, last: Line) -> set[str]:
+    defined_inside_subtree = set()
+    for name in find_names(source_ast):
+        position = first.source.node_position(name)
+        if position > last.end:
+            break
+        if position < first.start:
+            continue
+        if isinstance(name.ctx, ast.Store):
+            defined_inside_subtree.add(name.id)
+    return defined_inside_subtree
+
+
+def find_first_usage(
+    source_ast: ast.AST, names: Container[str], after: Line
+) -> Position | None:
+    for name in find_names(source_ast):
+        position = after.source.node_position(name)
+        if position < after.start:
+            continue
+        if name.id in names:
+            return position
+
+    return None
+
+
+def find_undefined_local_names(start: Position, end: Position) -> Iterable[str]:
+    source = start.source
     source_ast = source.get_ast()
 
     defined_outside_subtree = set()
@@ -92,6 +137,8 @@ def find_undefined_local_names(
     order = {}
     for i, name in enumerate(find_names(source_ast)):
         position = source.node_position(name)
+        if position > end:
+            break
         if isinstance(name.ctx, ast.Store) and position < start:
             defined_outside_subtree.add(name.id)
         elif isinstance(name.ctx, ast.Load) and position > start and position < end:

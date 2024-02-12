@@ -13,7 +13,7 @@ def dedent(code: str) -> str:
 
 def make_source(code: str, filename: str | None = None) -> types.Source:
     return Source(
-        lines=tuple(line for line in dedent(code).split("\n")),
+        input_lines=tuple(line for line in dedent(code).split("\n")),
         path=filename or "",
         project_root=".",
     )

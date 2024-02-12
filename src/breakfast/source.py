@@ -4,7 +4,7 @@ import re
 import sys
 from ast import AST, parse
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import InitVar, dataclass
 
 from breakfast import position, types
 
@@ -13,16 +13,38 @@ logger = logging.getLogger(__name__)
 WORD = re.compile(r"\w+|\W+")
 
 
+@dataclass(order=True, frozen=True)
+class Line:
+    source: types.Source
+    row: int
+
+    def text_through(self, last: types.Line) -> str:
+        return "\n".join(line.text for line in self.source.lines[self.row : last.row])
+
+    @property
+    def text(self) -> str:
+        return self.source.guaranteed_lines[self.row]
+
+    @property
+    def start(self) -> types.Position:
+        return self.source.position(self.row, 0)
+
+    @property
+    def end(self) -> types.Position:
+        return self.source.position(self.row, len(self.text) - 1)
+
+
 @dataclass(order=True)
 class Source:
     path: str
     project_root: str
-    lines: tuple[str, ...] | None = None
+    input_lines: InitVar[tuple[str, ...] | None] = None
 
     def __hash__(self) -> int:
         return hash(self.path)
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, input_lines: tuple[str, ...] | None) -> None:
+        self._lines = input_lines
         self.changes: dict[int, str] = {}
 
     def __repr__(self) -> str:
@@ -30,10 +52,14 @@ class Source:
 
     @property
     def guaranteed_lines(self) -> tuple[str, ...]:
-        if self.lines is None:
+        if self._lines is None:
             with open(self.path, encoding="utf-8") as source_file:
-                self.lines = tuple(line[:-1] for line in source_file.readlines())
-        return self.lines
+                self._lines = tuple(line[:-1] for line in source_file.readlines())
+        return self._lines
+
+    @property
+    def lines(self) -> tuple[types.Line, ...]:
+        return tuple(Line(self, i) for i in range(len(self.guaranteed_lines)))
 
     def position(self, row: int, column: int) -> types.Position:
         return position.Position(source=self, row=row, column=column)
@@ -167,6 +193,10 @@ class SubSource:
     @property
     def guaranteed_lines(self) -> tuple[str, ...]:
         return tuple(self.code)
+
+    @property
+    def lines(self) -> tuple[types.Line, ...]:
+        return self.parent_source.lines
 
     def position(self, row: int, column: int) -> types.Position:
         assert (  # noqa: S101

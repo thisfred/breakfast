@@ -1,7 +1,9 @@
+import pytest
 from breakfast.refactoring.extract import (
     Edit,
     extract_function,
     extract_variable,
+    slide_statements,
 )
 
 from tests import dedent, make_source
@@ -290,3 +292,38 @@ def test_extract_function_should_create_arguments_for_local_variables():
     )
 
     assert insert.text.rstrip() == result.rstrip()
+
+
+def test_slide_statements_should_not_slide_beyond_first_usage():
+    source = make_source(
+        """
+        value = 0
+        print(value + 20)
+        """
+    )
+
+    first = source.lines[1]
+    last = source.lines[1]
+
+    edits = slide_statements(first=first, last=last)
+
+    assert not edits
+
+
+@pytest.mark.xfail
+def test_slide_statements_should_slide_past_irrelevant_statements():
+    source = make_source(
+        """
+        value = 0
+        other_value = 3
+        print(value + 20)
+        """
+    )
+
+    first = source.lines[1]
+    last = source.lines[1]
+
+    insert, delete = slide_statements(first=first, last=last)
+
+    assert insert.start.row == 3
+    assert delete.start.row == 1
