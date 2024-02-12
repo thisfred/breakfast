@@ -1,9 +1,8 @@
 import pytest
-from breakfast.position import IllegalPositionError, Position
-from breakfast.source import Source
+from breakfast.source import IllegalPositionError, Position, Source
 
 
-@pytest.fixture  # type: ignore
+@pytest.fixture  # type: ignore[misc]
 def source() -> Source:
     return Source(path=".", project_root=".")
 

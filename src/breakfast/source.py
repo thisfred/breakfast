@@ -4,13 +4,60 @@ import re
 import sys
 from ast import AST, parse
 from collections.abc import Iterator
-from dataclasses import InitVar, dataclass
+from dataclasses import InitVar, dataclass, replace
 
-from breakfast import position, types
+from breakfast import types
 
 logger = logging.getLogger(__name__)
 
 WORD = re.compile(r"\w+|\W+")
+
+
+class IllegalPositionError(Exception):
+    pass
+
+
+@dataclass(order=True, frozen=True)
+class Position:
+    source: types.Source
+    row: int
+    column: int
+
+    def __post_init__(self) -> None:
+        if self.column < 0:
+            raise IllegalPositionError(f"Illegal value for column: {self.column}.")
+        if self.row < 0:
+            raise IllegalPositionError(f"Illegal value for row: {self.row}.")
+
+    def __add__(self, column_offset: int, /) -> types.Position:
+        return self._add_offset(column_offset)
+
+    def __sub__(self, to_subtract: int, /) -> types.Position:
+        if to_subtract > self.column:
+            raise IllegalPositionError()
+
+        return self._add_offset(-to_subtract)
+
+    @property
+    def start_of_line(self) -> types.Position:
+        return replace(self, column=0)
+
+    @property
+    def next_line(self) -> types.Position:
+        return replace(self, row=self.row + 1, column=0)
+
+    def text_through(self, end: types.Position) -> str:
+        assert self.source == end.source  # noqa: S101
+        assert end > self  # noqa: S101
+        return self.source.get_text(start=self, end=end)
+
+    def text_until(self, end: types.Position) -> str:
+        assert self.source == end.source  # noqa: S101
+        assert end > self  # noqa: S101
+        return self.source.get_text(start=self, end=end - 1)
+
+    def _add_offset(self, offset: int) -> types.Position:
+        return replace(self, column=self.column + offset)
 
 
 @dataclass(order=True, frozen=True)
@@ -62,7 +109,7 @@ class Source:
         return tuple(Line(self, i) for i in range(len(self.guaranteed_lines)))
 
     def position(self, row: int, column: int) -> types.Position:
-        return position.Position(source=self, row=row, column=column)
+        return Position(source=self, row=row, column=column)
 
     def get_name_at(self, position: types.Position) -> str:
         match = WORD.search(self.get_string_starting_at(position))
