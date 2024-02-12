@@ -96,7 +96,7 @@ def find_slide_target(first: Line, last: Line) -> Position:
     source_ast = source.get_ast()
     names_defined_in_statements = find_names_defined(source_ast, first, last)
     first_usage = find_first_usage(source_ast, names_defined_in_statements, after=last)
-    if first_usage:
+    if first_usage and first_usage.row > last.row + 1:
         return first_usage.start_of_line
 
     return first.start
@@ -120,7 +120,8 @@ def find_first_usage(
 ) -> Position | None:
     for name in find_names(source_ast):
         position = after.source.node_position(name)
-        if position < after.start:
+
+        if position <= after.start:
             continue
         if name.id in names:
             return position

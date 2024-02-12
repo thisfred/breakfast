@@ -1,4 +1,3 @@
-import pytest
 from breakfast.refactoring.extract import (
     Edit,
     extract_function,
@@ -310,7 +309,6 @@ def test_slide_statements_should_not_slide_beyond_first_usage():
     assert not edits
 
 
-@pytest.mark.xfail
 def test_slide_statements_should_slide_past_irrelevant_statements():
     source = make_source(
         """
