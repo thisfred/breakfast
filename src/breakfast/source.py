@@ -66,7 +66,10 @@ class Line:
     row: int
 
     def text_through(self, last: types.Line) -> str:
-        return "\n".join(line.text for line in self.source.lines[self.row : last.row])
+        result = "\n".join(
+            line.text for line in self.source.lines[self.row : last.row + 1]
+        )
+        return result
 
     @property
     def text(self) -> str:

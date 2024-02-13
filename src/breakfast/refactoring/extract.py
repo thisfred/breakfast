@@ -67,7 +67,7 @@ def slide_statements(first: Line, last: Line) -> tuple[Edit, ...]:
     target = find_slide_target(first, last)
     if target is None:
         return ()
-    insert = Edit(start=target, end=target, text=first.text + "\n")
+    insert = Edit(start=target, end=target, text=first.text_through(last) + "\n")
     delete = Edit(start=first.start, end=last.end, text="")
     logger.info(f"{insert=}")
     logger.info(f"{delete=}")

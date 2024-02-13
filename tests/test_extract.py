@@ -325,3 +325,28 @@ def test_slide_statements_should_slide_past_irrelevant_statements():
 
     assert insert.start.row == 3
     assert delete.start.row == 1
+
+
+def test_slide_statements_should_slide_multiple_lines():
+    source = make_source(
+        """
+        value = 0
+        other_value = 3
+        ...
+        ...
+        print(value + 20)
+        """
+    )
+
+    first = source.lines[1]
+    last = source.lines[2]
+
+    insert, delete = slide_statements(first=first, last=last)
+
+    assert insert.start.row == 5
+    assert insert.text == dedent(
+        """\
+        value = 0
+        other_value = 3
+        """
+    )
