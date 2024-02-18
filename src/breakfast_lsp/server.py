@@ -3,9 +3,14 @@ import os
 from collections.abc import Iterable
 from itertools import groupby
 from pathlib import Path
+from time import time
 
 import breakfast
-from breakfast.refactoring.extract import extract_variable, slide_statements
+from breakfast.refactoring.extract import (
+    extract_function,
+    extract_variable,
+    slide_statements,
+)
 from breakfast.types import Edit
 from lsprotocol.types import (
     INITIALIZE,
@@ -54,6 +59,10 @@ LSP_SERVER = LanguageServer(
 CLIENT_CAPABILITIES: dict[str, bool] = {
     TEXT_DOCUMENT_RENAME: True,
 }
+
+
+def timestamp() -> str:
+    return str(time()).replace(".", "_")
 
 
 def find_identifier_range_at(
@@ -248,10 +257,12 @@ async def code_action(
             if (versioned := client_documents.get(document_uri))
             else None
         )
+        source = get_source(
+            uri=document_uri, project_root=project_root, lines=source_lines
+        )
         extract_edit = await _extract_variable(
-            project_root=project_root,
+            source=source,
             document_uri=document_uri,
-            source_lines=source_lines,
             extraction_range=params.range,
             version=version,
         )
@@ -265,10 +276,24 @@ async def code_action(
             ),
         )
 
-        slide_statements_edit = await _slide_statements(
-            project_root=project_root,
+        extract_edit = await _extract_function(
+            source=source,
             document_uri=document_uri,
-            source_lines=source_lines,
+            extraction_range=params.range,
+            version=version,
+        )
+        actions.append(
+            CodeAction(
+                title="breakfast: extract function",
+                kind=CodeActionKind.RefactorExtract,
+                data=params.text_document.uri,
+                edit=extract_edit,
+                diagnostics=[],
+            ),
+        )
+        slide_statements_edit = await _slide_statements(
+            source=source,
+            document_uri=document_uri,
             extraction_range=params.range,
             version=version,
         )
@@ -285,14 +310,42 @@ async def code_action(
     return actions
 
 
-async def _extract_variable(
-    project_root: str,
+async def _extract_function(
+    source: breakfast.Source,
     document_uri: str,
-    source_lines: tuple[str, ...],
     extraction_range: Range,
     version: None,
 ) -> WorkspaceEdit:
-    source = get_source(uri=document_uri, project_root=project_root, lines=source_lines)
+    extraction_start = source.position(
+        row=extraction_range.start.line, column=extraction_range.start.character
+    )
+    extraction_end = source.position(
+        row=extraction_range.end.line, column=max(extraction_range.end.character - 1, 0)
+    )
+    edits = extract_function(
+        name=f"extracted_function_{timestamp()}",
+        start=extraction_start,
+        end=extraction_end,
+    )
+
+    text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
+    document_changes: list[TextDocumentEdit | CreateFile | RenameFile | DeleteFile] = [
+        TextDocumentEdit(
+            text_document=OptionalVersionedTextDocumentIdentifier(
+                uri=document_uri, version=version
+            ),
+            edits=text_edits,
+        )
+    ]
+    return WorkspaceEdit(document_changes=document_changes)
+
+
+async def _extract_variable(
+    source: breakfast.Source,
+    document_uri: str,
+    extraction_range: Range,
+    version: None,
+) -> WorkspaceEdit:
     extraction_start = source.position(
         row=extraction_range.start.line, column=extraction_range.start.character
     )
@@ -300,7 +353,9 @@ async def _extract_variable(
         row=extraction_range.end.line, column=max(extraction_range.end.character - 1, 0)
     )
     edits = extract_variable(
-        name="extracted_variable", start=extraction_start, end=extraction_end
+        name=f"extracted_variable_{timestamp()}",
+        start=extraction_start,
+        end=extraction_end,
     )
 
     text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
@@ -316,13 +371,11 @@ async def _extract_variable(
 
 
 async def _slide_statements(
-    project_root: str,
+    source: breakfast.Source,
     document_uri: str,
-    source_lines: tuple[str, ...],
     extraction_range: Range,
     version: None,
 ) -> WorkspaceEdit:
-    source = get_source(uri=document_uri, project_root=project_root, lines=source_lines)
     first_line = source.lines[extraction_range.start.line]
     last_line = source.lines[extraction_range.end.line]
     edits = slide_statements(first=first_line, last=last_line)

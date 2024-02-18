@@ -43,33 +43,30 @@ class Position:
         return replace(self, column=0)
 
     @property
-    def next_line(self) -> types.Position:
-        return replace(self, row=self.row + 1, column=0)
+    def line(self) -> types.Line:
+        return self.source.lines[self.row]
 
-    def text_through(self, end: types.Position) -> str:
-        assert self.source == end.source  # noqa: S101
-        assert end > self  # noqa: S101
-        return self.source.get_text(start=self, end=end)
-
-    def text_until(self, end: types.Position) -> str:
-        assert self.source == end.source  # noqa: S101
-        assert end > self  # noqa: S101
-        return self.source.get_text(start=self, end=end - 1)
+    def through(self, end: types.Position) -> types.TextRange:
+        return TextRange(self, end)
 
     def _add_offset(self, offset: int) -> types.Position:
         return replace(self, column=self.column + offset)
 
 
 @dataclass(order=True, frozen=True)
+class TextRange:
+    start: types.Position
+    end: types.Position
+
+    @property
+    def text(self) -> str:
+        return self.start.source.get_text(start=self.start, end=self.end)
+
+
+@dataclass(order=True, frozen=True)
 class Line:
     source: types.Source
     row: int
-
-    def text_through(self, last: types.Line) -> str:
-        result = "\n".join(
-            line.text for line in self.source.lines[self.row : last.row + 1]
-        )
-        return result
 
     @property
     def text(self) -> str:
@@ -81,7 +78,19 @@ class Line:
 
     @property
     def end(self) -> types.Position:
-        return self.source.position(self.row, len(self.text) - 1)
+        return self.source.position(self.row, max(len(self.text) - 1, 0))
+
+    @property
+    def previous(self) -> types.Line | None:
+        if self.row == 0:
+            return None
+        return self.source.lines[self.row - 1]
+
+    @property
+    def next(self) -> types.Line | None:
+        if self.row >= len(self.source.lines) - 1:
+            return None
+        return self.source.lines[self.row + 1]
 
 
 @dataclass(order=True)
@@ -154,7 +163,7 @@ class Source:
         match = regex.search(self.get_string_starting_at(start))
         while start.row < len(self.text) and not match:
             match = regex.search(self.get_string_starting_at(start))
-            start = start.next_line
+            start = start.line.next.start if start.line.next else start
         if not match:
             raise AssertionError("no match found")
         return start + match.span()[0]

@@ -4,6 +4,7 @@ from breakfast.refactoring.extract import (
     extract_variable,
     slide_statements,
 )
+from breakfast.source import Source
 
 from tests import dedent, make_source
 
@@ -278,7 +279,7 @@ def test_extract_function_should_create_arguments_for_local_variables():
     )
 
     start = source.position(3, 0)
-    end = source.position(10, 21)
+    end = source.position(4, 21)
 
     insert, *_edits = extract_function(name="function", start=start, end=end)
 
@@ -291,6 +292,125 @@ def test_extract_function_should_create_arguments_for_local_variables():
     )
 
     assert insert.text.rstrip() == result.rstrip()
+
+
+def test_extract_function_should_return_modified_variable_used_after_call():
+    source = make_source(
+        """
+        a = 1
+        b = a + 2
+        print(b)
+        """
+    )
+    start = source.position(2, 0)
+    end = source.position(2, 8)
+    insert, *_edits = extract_function(name="function", start=start, end=end)
+
+    result = dedent(
+        """
+        def function(a):
+            b = a + 2
+            return b
+        """
+    )
+
+    assert insert.text.rstrip() == result.rstrip()
+
+
+def test_extract_function_should_respect_indentation():
+    source = make_source(
+        """
+        def f():
+            a = 1
+            b = a + 2
+            print(b)
+        """
+    )
+    start = source.position(3, 0)
+    end = source.position(3, 12)
+    insert, *_edits = extract_function(name="function", start=start, end=end)
+
+    result = """
+    def function(a):
+        b = a + 2
+        return b
+"""
+
+    assert insert.text.rstrip() == result.rstrip()
+
+
+def test_extract_function_should_only_consider_variables_in_scope():
+    source = make_source(
+        """
+        b = 1
+
+        def f2(a):
+            b = a + 2
+            print(b)
+        """
+    )
+    start = source.position(4, 0)
+    end = source.position(4, 12)
+    insert, replace = extract_function(name="function", start=start, end=end)
+
+    assert "function(a)" in insert.text
+
+
+def test_extract_function_should_replace_extracted_code_with_function_call():
+    source = make_source(
+        """
+        def f():
+            a = 1
+            b = a + 2
+            print(b)
+        """
+    )
+    start = source.position(3, 0)
+    end = source.position(3, 12)
+    _insert, replace = extract_function(name="function", start=start, end=end)
+
+    assert replace.text == "    b = function(a=a)\n"
+    assert replace.start == source.position(3, 0)
+    assert replace.end == source.position(3, 12)
+
+
+def test_extract_function_should_return_multiple_values_where_necessary():
+    source = make_source(
+        """
+        a = 1
+        b = a + 2
+
+        print(a)
+        print(b)
+        """
+    )
+    start = source.position(1, 0)
+    end = source.position(3, 0)
+    insert, replace = extract_function(name="function", start=start, end=end)
+
+    assert "a, b = function()" in replace.text
+    assert "return a, b" in insert.text
+
+
+def test_extract_function_should_handle_empty_lines():
+    code = """\
+b = 1
+
+def f(a):
+
+    b = a + 2
+    print(b)"""
+    source = Source(
+        input_lines=tuple(line for line in code.split("\n")),
+        path="",
+        project_root=".",
+    )
+    start = source.position(4, 0)
+    end = source.position(4, 12)
+    insert, replace = extract_function(name="function", start=start, end=end)
+
+    assert "def function(a):" in insert.text
+    assert "b = function(a=a)" in replace.text
 
 
 def test_slide_statements_should_not_slide_beyond_first_usage():
@@ -306,6 +426,22 @@ def test_slide_statements_should_not_slide_beyond_first_usage():
 
     edits = slide_statements(first=first, last=last)
 
+    assert not edits
+
+
+def test_slide_statements_should_not_slide_into_nested_scopes():
+    source = make_source(
+        """
+        value = 0
+        print(
+            value + 20)
+        """
+    )
+
+    first = source.lines[1]
+    last = source.lines[1]
+
+    edits = slide_statements(first=first, last=last)
     assert not edits
 
 

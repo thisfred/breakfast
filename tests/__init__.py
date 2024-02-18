@@ -1,14 +1,9 @@
 from collections.abc import Iterable
+from textwrap import dedent
 
 from breakfast import types
 from breakfast.names import all_occurrence_positions
 from breakfast.source import Source
-
-
-def dedent(code: str) -> str:
-    lines = code.split("\n")
-    indentation = len(lines[-1])
-    return "\n".join(line[indentation:] for line in lines)
 
 
 def make_source(code: str, filename: str | None = None) -> types.Source:

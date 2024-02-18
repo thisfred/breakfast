@@ -26,13 +26,20 @@ class Position(Protocol):
         ...
 
     @property
-    def next_line(self) -> "Position":
+    def line(self) -> "Line":
         ...
 
-    def text_through(self, end: "Position") -> str:
+    def through(self, end: "Position") -> "TextRange":
         ...
 
-    def text_until(self, end: "Position") -> str:
+
+@dataclass(order=True, frozen=True)  # pragma: nocover
+class TextRange(Protocol):
+    start: Position
+    end: Position
+
+    @property
+    def text(self) -> str:
         ...
 
 
@@ -40,9 +47,6 @@ class Position(Protocol):
 class Line(Protocol):
     source: "Source"
     row: int
-
-    def text_through(self, last: "Line") -> str:
-        ...
 
     @property
     def text(self) -> str:
@@ -54,6 +58,14 @@ class Line(Protocol):
 
     @property
     def end(self) -> Position:
+        ...
+
+    @property
+    def next(self) -> "Line | None":
+        ...
+
+    @property
+    def previous(self) -> "Line | None":
         ...
 
 

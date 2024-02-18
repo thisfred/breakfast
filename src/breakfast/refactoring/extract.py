@@ -1,17 +1,21 @@
 import ast
 import logging
+import re
 from collections.abc import Container, Iterable, Iterator
 from functools import singledispatch
 from typing import Any
 
-from breakfast.types import Edit, Line, Position, Source
+from breakfast.types import Edit, Line, Position, Source, TextRange
 from breakfast.visitor import generic_visit
 
 logger = logging.getLogger(__name__)
 
+INDENTATION = re.compile(r"^(\s+)")
+FOUR_SPACES = "    "
+
 
 def extract_variable(name: str, start: Position, end: Position) -> tuple[Edit, ...]:
-    extracted = start.text_through(end)
+    extracted = start.through(end).text
     logger.info(f"{extracted=}")
 
     if not (expression := get_single_expression_value(extracted)):
@@ -46,90 +50,164 @@ def extract_variable(name: str, start: Position, end: Position) -> tuple[Edit, .
 def extract_function(name: str, start: Position, end: Position) -> tuple[Edit, ...]:
     if start.row < end.row:
         start = start.start_of_line
-        end = end.next_line
+        end = end.line.next.start if end.line.next else end
 
-    text = start.text_through(end)
-    indentation = "    "
-    extracted = "\n".join([f"{indentation}{line}" for line in text.split("\n")])
+    scope = get_scope(at=start)
+    source_ast = start.source.get_ast()
+    names_modified_in_body = find_modified_names(source_ast, start, end)
+    names_used_after = find_names_defined_before_range(
+        end, scope.end, scope_start=scope.start
+    )
+    return_values = [n for n in names_modified_in_body if n in set(names_used_after)]
 
-    insert_point = start
-    local_names = find_undefined_local_names(start, end)
+    original_indentation = get_indentation(at=start)
+    new_indentation = original_indentation + FOUR_SPACES
+    text = start.through(end).text
+    extracted = "\n".join(
+        [f"{FOUR_SPACES}{line}".rstrip() for line in text.split("\n")]
+    )
+    if return_values:
+        return_values_as_string = f'{", ".join(return_values)}'
+
+        extracted += f"\n{new_indentation}return {return_values_as_string}"
+        assignment = f"{return_values_as_string} = "
+    else:
+        assignment = ""
+
+    local_names = find_names_defined_before_range(start, end, scope_start=scope.start)
     params = ", ".join(local_names)
     insert = Edit(
-        start=insert_point,
-        end=insert_point,
-        text=f"\ndef function({params}):\n{extracted}\n",
+        start=start,
+        end=start,
+        text=f"\n{original_indentation}def {name}({params}):\n{extracted}\n",
     )
-    return (insert,)
+    args = ", ".join(f"{n}={n}" for n in local_names)
+    call = f"{name}({args})"
+    replace = Edit(
+        start=start, end=end, text=f"{original_indentation}{assignment}{call}\n"
+    )
+    return (insert, replace)
+
+
+def get_scope(at: Position) -> TextRange:
+    line = at.source.lines[at.row]
+    indentation = get_indentation(at)
+    start_line = end_line = line
+    while (previous_line := start_line.previous) and (
+        previous_line.text.strip() == ""
+        or previous_line.text.startswith(indentation)
+        or previous_line.text.lstrip().startswith("def ")
+    ):
+        start_line = previous_line
+        if start_line.text.lstrip().startswith(
+            "def "
+        ) and not start_line.text.startswith(indentation):
+            break
+
+    while (next_line := end_line.next) and (
+        next_line.text.strip() == "" or next_line.text.startswith(indentation)
+    ):
+        end_line = next_line
+
+    text_range = start_line.start.through(end_line.end)
+    return text_range
+
+
+def get_indentation(at: Position) -> str:
+    text = at.source.lines[at.row].text
+    if not (indentation_match := INDENTATION.match(text)):
+        return ""
+    if not (groups := indentation_match.groups()):
+        return ""
+
+    return groups[0]
+
+
+def find_modified_names(
+    source_ast: ast.AST, start: Position, end: Position
+) -> list[str]:
+    defined_inside_subtree = []
+    for name, position, ctx in find_names(source_ast, start.source):
+        if position > end:
+            break
+        if position < start:
+            continue
+        if isinstance(ctx, ast.Store):
+            defined_inside_subtree.append(name)
+
+    return defined_inside_subtree
 
 
 def slide_statements(first: Line, last: Line) -> tuple[Edit, ...]:
     target = find_slide_target(first, last)
     if target is None:
         return ()
-    insert = Edit(start=target, end=target, text=first.text_through(last) + "\n")
+    insert = Edit(
+        start=target, end=target, text=first.start.through(last.end).text + "\n"
+    )
     delete = Edit(start=first.start, end=last.end, text="")
-    logger.info(f"{insert=}")
-    logger.info(f"{delete=}")
     return (insert, delete)
 
 
 def find_slide_target(first: Line, last: Line) -> Position | None:
     source = first.start.source
     source_ast = source.get_ast()
-    names_defined_in_statements = find_names_defined(source_ast, first, last)
-    first_usage = find_first_usage(source_ast, names_defined_in_statements, after=last)
-    logger.info(f"{first_usage=}")
-    if first_usage and first_usage.row > last.row + 1:
-        return first_usage.start_of_line
+    names_defined_in_statements = find_modified_names(source_ast, first.start, last.end)
+    target = find_first_usage(
+        source, source_ast, set(names_defined_in_statements), after=last
+    )
+    if not target:
+        return None
+
+    lines = source.lines[first.row : last.row + 1]
+    original_indentation = min(get_indentation(at=line.start) for line in lines)
+
+    while (
+        target.row > last.row + 1 and get_indentation(at=target) != original_indentation
+    ):
+        previous = target.line.previous
+        if not previous:
+            break
+        target = previous.start
+
+    if target and target.row > last.row + 1:
+        return target.start_of_line
 
     return None
 
 
-def find_names_defined(source_ast: ast.AST, first: Line, last: Line) -> set[str]:
-    defined_inside_subtree = set()
-    for name in find_names(source_ast):
-        position = first.source.node_position(name)
-        if position > last.end:
-            break
-        if position < first.start:
-            continue
-        if isinstance(name.ctx, ast.Store):
-            defined_inside_subtree.add(name.id)
-    return defined_inside_subtree
-
-
 def find_first_usage(
-    source_ast: ast.AST, names: Container[str], after: Line
+    source: Source, source_ast: ast.AST, names: Container[str], after: Line
 ) -> Position | None:
-    for name in find_names(source_ast):
-        position = after.source.node_position(name)
-
+    for name, position, _ in find_names(source_ast, source):
         if position.row <= after.row:
             continue
-        if name.id in names:
+        if name in names:
             return position
 
     return None
 
 
-def find_undefined_local_names(start: Position, end: Position) -> Iterable[str]:
+def find_names_defined_before_range(
+    start: Position, end: Position, *, scope_start: Position
+) -> Iterable[str]:
     source = start.source
     source_ast = source.get_ast()
 
     defined_outside_subtree = set()
     loaded_in_subtree = set()
     order = {}
-    for i, name in enumerate(find_names(source_ast)):
-        position = source.node_position(name)
+    for i, (name, position, ctx) in enumerate(find_names(source_ast, source)):
+        if position < scope_start:
+            continue
         if position > end:
             break
-        if isinstance(name.ctx, ast.Store) and position < start:
-            defined_outside_subtree.add(name.id)
-        elif isinstance(name.ctx, ast.Load) and position > start and position < end:
-            loaded_in_subtree.add(name.id)
-            if name.id not in order:
-                order[name.id] = i
+        if isinstance(ctx, ast.Store) and position < start:
+            defined_outside_subtree.add(name)
+        elif isinstance(ctx, ast.Load) and position > start and position < end:
+            loaded_in_subtree.add(name)
+            if name not in order:
+                order[name] = i
 
     return sorted(
         defined_outside_subtree & loaded_in_subtree,
@@ -138,13 +216,26 @@ def find_undefined_local_names(start: Position, end: Position) -> Iterable[str]:
 
 
 @singledispatch
-def find_names(node: ast.AST) -> Iterator[ast.Name]:
-    yield from generic_visit(find_names, node)
+def find_names(
+    node: ast.AST, source: Source
+) -> Iterator[tuple[str, Position, ast.expr_context]]:
+    yield from generic_visit(find_names, node, source)
 
 
 @find_names.register
-def find_names_in_name(node: ast.Name) -> Iterator[ast.Name]:
-    yield node
+def find_names_in_name(
+    node: ast.Name, source: Source
+) -> Iterator[tuple[str, Position, ast.expr_context]]:
+    yield node.id, source.node_position(node), node.ctx
+
+
+@find_names.register
+def find_names_in_function(
+    node: ast.FunctionDef, source: Source
+) -> Iterator[tuple[str, Position, ast.expr_context]]:
+    for arg in node.args.args:
+        yield arg.arg, source.position(arg.lineno - 1, arg.col_offset), ast.Store()
+    yield from generic_visit(find_names, node, source)
 
 
 def get_single_expression_value(text: str) -> ast.AST | None:
