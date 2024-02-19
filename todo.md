@@ -4,16 +4,16 @@
 
 * cache scope graphs (and/or partial paths?)
 * add other refactorings
-  * extract function/method
-  * inline function/method
-  * extract variable
+  * inline function
+  * inline method
+  * inline variable
+  * extract method
 * add go to definition
 * add Undo
 
 ### Refactoring
 
 * refactor State into the graph where possible
-* refactor lines/guaranteed lines (use fields?)
 * refactor rename to use Edit
 
 ### Chores
