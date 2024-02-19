@@ -5,8 +5,8 @@ from collections.abc import Container, Iterable, Iterator
 from functools import singledispatch
 from typing import Any
 
-from breakfast.names import build_graph
-from breakfast.types import Edit, Line, Position, Source, TextRange
+from breakfast.names import all_occurrence_positions, build_graph
+from breakfast.types import Edit, Line, NotFoundError, Position, Source, TextRange
 from breakfast.visitor import generic_visit
 
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ class Refactor:
         self.text_range = text_range
         self.source = self.text_range.start.source
         self.source_ast = self.source.get_ast()
-        self.graph = build_graph([self.source])
+        self.scope_graph = build_graph([self.source])
 
     def extract_variable(self, name: str) -> tuple[Edit, ...]:
         extracted = self.text_range.text
@@ -65,13 +65,11 @@ class Refactor:
             end = end.line.next.start if end.line.next else end
 
         scope = get_scope(at=start)
-        names_modified_in_body = find_modified_names(self.source_ast, start, end)
-        names_used_after = find_names_defined_before_range(
-            end, scope.end, scope_start=scope.start
-        )
-        return_values = [
-            n for n in names_modified_in_body if n in set(names_used_after)
-        ]
+        names_modified_in_body = self.find_modified_names(start, end)
+
+        names_used_after = set(self.find_names_defined_before_range(end, scope.end))
+
+        return_values = [n for n in names_modified_in_body if n in names_used_after]
 
         original_indentation = get_indentation(at=start)
         new_indentation = original_indentation + FOUR_SPACES
@@ -86,9 +84,7 @@ class Refactor:
         else:
             assignment = ""
 
-        local_names = find_names_defined_before_range(
-            start, end, scope_start=scope.start
-        )
+        local_names = list(self.find_names_defined_before_range(start, end))
         params = ", ".join(local_names)
         insert = Edit(
             start=start,
@@ -104,7 +100,7 @@ class Refactor:
 
     def slide_statements(self) -> tuple[Edit, ...]:
         first, last = self.text_range.start.line, self.text_range.end.line
-        target = find_slide_target(first, last)
+        target = self.find_slide_target(first, last)
         if target is None:
             return ()
         insert = Edit(
@@ -112,6 +108,73 @@ class Refactor:
         )
         delete = Edit(start=first.start, end=last.end, text="")
         return (insert, delete)
+
+    def find_names_defined_before_range(
+        self, start: Position, end: Position
+    ) -> Iterable[str]:
+        found = set()
+        for name, position, _ in find_names(self.source_ast, self.source):
+            if name in found:
+                continue
+            if position < start:
+                continue
+            if position > end:
+                break
+            try:
+                occurrences = all_occurrence_positions(position, graph=self.scope_graph)
+            except NotFoundError:
+                continue
+            for occurrence in occurrences:
+                if occurrence < start:
+                    found.add(name)
+                    yield name
+                    break
+                if occurrence >= start:
+                    break
+
+    def find_modified_names(self, start: Position, end: Position) -> list[str]:
+        defined_inside_subtree = []
+        for name, position, ctx in find_names(self.source_ast, self.source):
+            if position > end:
+                break
+            if position < start:
+                continue
+            if isinstance(ctx, ast.Store):
+                defined_inside_subtree.append(name)
+
+        return defined_inside_subtree
+
+    def find_slide_target(self, first: Line, last: Line) -> Position | None:
+        names_defined_in_statements = self.find_modified_names(first.start, last.end)
+        target = self.find_first_usage(set(names_defined_in_statements), after=last)
+        if not target:
+            return None
+
+        lines = self.source.lines[first.row : last.row + 1]
+        original_indentation = min(get_indentation(at=line.start) for line in lines)
+
+        while (
+            target.row > last.row + 1
+            and get_indentation(at=target) != original_indentation
+        ):
+            previous = target.line.previous
+            if not previous:
+                break
+            target = previous.start
+
+        if target and target.row > last.row + 1:
+            return target.start_of_line
+
+        return None
+
+    def find_first_usage(self, names: Container[str], after: Line) -> Position | None:
+        for name, position, _ in find_names(self.source_ast, self.source):
+            if position.row <= after.row:
+                continue
+            if name in names:
+                return position
+
+        return None
 
 
 def get_scope(at: Position) -> TextRange:
@@ -146,87 +209,6 @@ def get_indentation(at: Position) -> str:
         return ""
 
     return groups[0]
-
-
-def find_modified_names(
-    source_ast: ast.AST, start: Position, end: Position
-) -> list[str]:
-    defined_inside_subtree = []
-    for name, position, ctx in find_names(source_ast, start.source):
-        if position > end:
-            break
-        if position < start:
-            continue
-        if isinstance(ctx, ast.Store):
-            defined_inside_subtree.append(name)
-
-    return defined_inside_subtree
-
-
-def find_slide_target(first: Line, last: Line) -> Position | None:
-    source = first.start.source
-    source_ast = source.get_ast()
-    names_defined_in_statements = find_modified_names(source_ast, first.start, last.end)
-    target = find_first_usage(
-        source, source_ast, set(names_defined_in_statements), after=last
-    )
-    if not target:
-        return None
-
-    lines = source.lines[first.row : last.row + 1]
-    original_indentation = min(get_indentation(at=line.start) for line in lines)
-
-    while (
-        target.row > last.row + 1 and get_indentation(at=target) != original_indentation
-    ):
-        previous = target.line.previous
-        if not previous:
-            break
-        target = previous.start
-
-    if target and target.row > last.row + 1:
-        return target.start_of_line
-
-    return None
-
-
-def find_first_usage(
-    source: Source, source_ast: ast.AST, names: Container[str], after: Line
-) -> Position | None:
-    for name, position, _ in find_names(source_ast, source):
-        if position.row <= after.row:
-            continue
-        if name in names:
-            return position
-
-    return None
-
-
-def find_names_defined_before_range(
-    start: Position, end: Position, *, scope_start: Position
-) -> Iterable[str]:
-    source = start.source
-    source_ast = source.get_ast()
-
-    defined_outside_subtree = set()
-    loaded_in_subtree = set()
-    order = {}
-    for i, (name, position, ctx) in enumerate(find_names(source_ast, source)):
-        if position < scope_start:
-            continue
-        if position > end:
-            break
-        if isinstance(ctx, ast.Store) and position < start:
-            defined_outside_subtree.add(name)
-        elif isinstance(ctx, ast.Load) and position > start and position < end:
-            loaded_in_subtree.add(name)
-            if name not in order:
-                order[name] = i
-
-    return sorted(
-        defined_outside_subtree & loaded_in_subtree,
-        key=lambda name: order.get(name, 100),
-    )
 
 
 @singledispatch

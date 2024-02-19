@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Protocol
 
-from breakfast.types import Position
+from breakfast.types import NotFoundError, Position
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +25,6 @@ class Action(Protocol):
 class NodeCondition(Protocol):
     def __call__(self, node: "ScopeNode") -> bool:
         ...
-
-
-class NotFoundError(Exception):
-    pass
 
 
 class NotInScopeError(Exception):

@@ -9,6 +9,10 @@ from dataclasses import dataclass
 from typing import Protocol
 
 
+class NotFoundError(Exception):
+    pass
+
+
 @dataclass(order=True, frozen=True)  # pragma: nocover
 class Position(Protocol):
     source: "Source"
