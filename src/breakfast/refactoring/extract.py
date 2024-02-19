@@ -64,11 +64,8 @@ class Refactor:
             start = start.start_of_line
             end = end.line.next.start if end.line.next else end
 
-        scope = get_scope(at=start)
         names_modified_in_body = self.find_modified_names(start, end)
-
-        names_used_after = set(self.find_names_defined_before_range(end, scope.end))
-
+        names_used_after = set(self.find_names_used_after_range(start, end))
         return_values = [n for n in names_modified_in_body if n in names_used_after]
 
         original_indentation = get_indentation(at=start)
@@ -132,17 +129,38 @@ class Refactor:
                 if occurrence >= start:
                     break
 
+    def find_names_used_after_range(
+        self, start: Position, end: Position
+    ) -> Iterable[str]:
+        found = set()
+        for name, position, _ in find_names(self.source_ast, self.source):
+            if name in found:
+                continue
+            if position < start:
+                continue
+            if position > end:
+                break
+            try:
+                occurrences = all_occurrence_positions(position, graph=self.scope_graph)
+            except NotFoundError:
+                continue
+            for occurrence in occurrences:
+                if occurrence > end:
+                    found.add(name)
+                    yield name
+                    break
+
     def find_modified_names(self, start: Position, end: Position) -> list[str]:
-        defined_inside_subtree = []
+        modified = []
         for name, position, ctx in find_names(self.source_ast, self.source):
             if position > end:
                 break
             if position < start:
                 continue
             if isinstance(ctx, ast.Store):
-                defined_inside_subtree.append(name)
+                modified.append(name)
 
-        return defined_inside_subtree
+        return modified
 
     def find_slide_target(self, first: Line, last: Line) -> Position | None:
         names_defined_in_statements = self.find_modified_names(first.start, last.end)
@@ -175,30 +193,6 @@ class Refactor:
                 return position
 
         return None
-
-
-def get_scope(at: Position) -> TextRange:
-    line = at.source.lines[at.row]
-    indentation = get_indentation(at)
-    start_line = end_line = line
-    while (previous_line := start_line.previous) and (
-        previous_line.text.strip() == ""
-        or previous_line.text.startswith(indentation)
-        or previous_line.text.lstrip().startswith("def ")
-    ):
-        start_line = previous_line
-        if start_line.text.lstrip().startswith(
-            "def "
-        ) and not start_line.text.startswith(indentation):
-            break
-
-    while (next_line := end_line.next) and (
-        next_line.text.strip() == "" or next_line.text.startswith(indentation)
-    ):
-        end_line = next_line
-
-    text_range = start_line.start.through(end_line.end)
-    return text_range
 
 
 def get_indentation(at: Position) -> str:
