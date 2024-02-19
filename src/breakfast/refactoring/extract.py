@@ -1,7 +1,7 @@
 import ast
 import logging
 import re
-from collections.abc import Container, Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from functools import singledispatch
 from typing import Any
 
@@ -198,15 +198,6 @@ class Refactor:
 
         if target and target.row > last.row + 1:
             return target.start_of_line
-
-        return None
-
-    def find_first_usage(self, names: Container[str], after: Line) -> Position | None:
-        for name, position, _ in find_names(self.source_ast, self.source):
-            if position.row <= after.row:
-                continue
-            if name in names:
-                return position
 
         return None
 
