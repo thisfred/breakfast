@@ -1,10 +1,5 @@
-from breakfast.refactoring.extract import (
-    Edit,
-    extract_function,
-    extract_variable,
-    slide_statements,
-)
-from breakfast.source import Source
+from breakfast.refactoring.extract import Edit, Refactor
+from breakfast.source import Source, TextRange
 
 from tests import dedent, make_source
 
@@ -18,7 +13,8 @@ def test_extract_variable_should_insert_name_definition():
     extraction_start = source.position(1, 4)
     extraction_end = source.position(1, 8)
 
-    insert, *_ = extract_variable(name="b", start=extraction_start, end=extraction_end)
+    refactor = Refactor(TextRange(extraction_start, extraction_end))
+    insert, *_ = refactor.extract_variable(name="b")
     assert insert.text == "b = a + 3\n"
 
 
@@ -31,7 +27,8 @@ def test_extract_variable_should_replace_extracted_test_with_new_name():
     extraction_start = source.position(1, 4)
     extraction_end = source.position(1, 8)
 
-    _, replace = extract_variable(name="b", start=extraction_start, end=extraction_end)
+    refactor = Refactor(TextRange(extraction_start, extraction_end))
+    _, replace = refactor.extract_variable(name="b")
     assert replace == Edit(start=extraction_start, end=extraction_end, text="b")
 
 
@@ -44,7 +41,8 @@ def test_extract_variable_should_insert_name_definition_before_extraction_point(
     extraction_start = source.position(1, 4)
     extraction_end = source.position(1, 8)
 
-    insert, *_ = extract_variable(name="b", start=extraction_start, end=extraction_end)
+    refactor = Refactor(TextRange(extraction_start, extraction_end))
+    insert, *_ = refactor.extract_variable(name="b")
 
     assert insert.start < extraction_start
 
@@ -58,7 +56,8 @@ def test_extract_variable_should_replace_code_with_variable():
 
     extraction_start = source.position(1, 4)
     extraction_end = source.position(1, 21)
-    edits = extract_variable(name="result", start=extraction_start, end=extraction_end)
+    refactor = Refactor(TextRange(extraction_start, extraction_end))
+    edits = refactor.extract_variable(name="result")
 
     assert edits == (
         Edit(
@@ -79,7 +78,8 @@ def test_extract_variable_will_not_extract_partial_expression():
 
     extraction_start = source.position(1, 4)
     extraction_end = source.position(1, 20)
-    edits = extract_variable(name="result", start=extraction_start, end=extraction_end)
+    refactor = Refactor(TextRange(extraction_start, extraction_end))
+    edits = refactor.extract_variable(name="result")
     assert not edits
 
 
@@ -95,9 +95,8 @@ def test_extract_variable_should_move_definition_before_current_statement():
     )
     extraction_start = source.position(3, 4)
     extraction_end = source.position(3, 21)
-    insert, _ = extract_variable(
-        name="result", start=extraction_start, end=extraction_end
-    )
+    refactor = Refactor(TextRange(extraction_start, extraction_end))
+    insert, _ = refactor.extract_variable(name="result")
     assert insert.start.row == 1
 
 
@@ -110,9 +109,8 @@ def test_extract_variable_should_extract_value_in_index_position():
     )
     extraction_start = source.position(2, 33)
     extraction_end = source.position(2, 47)
-    insert, _ = extract_variable(
-        name="result", start=extraction_start, end=extraction_end
-    )
+    refactor = Refactor(TextRange(extraction_start, extraction_end))
+    insert, _ = refactor.extract_variable(name="result")
     assert insert.start.row == 2
 
 
@@ -129,9 +127,8 @@ def test_extract_variable_should_retain_indentation_level():
     )
     extraction_start = source.position(4, 8)
     extraction_end = source.position(4, 25)
-    insert, *_ = extract_variable(
-        name="result", start=extraction_start, end=extraction_end
-    )
+    refactor = Refactor(TextRange(extraction_start, extraction_end))
+    insert, *_ = refactor.extract_variable(name="result")
     assert insert.start == source.position(2, 4)
 
 
@@ -150,9 +147,8 @@ def test_extract_variable_should_extract_all_identical_nodes_in_the_same_scope()
     extraction_start = source.position(1, 4)
     extraction_end = source.position(1, 25)
 
-    _, *edits = extract_variable(
-        name="result", start=extraction_start, end=extraction_end
-    )
+    refactor = Refactor(TextRange(extraction_start, extraction_end))
+    _, *edits = refactor.extract_variable(name="result")
 
     assert len(edits) == 3
 
@@ -172,9 +168,8 @@ def test_extract_variable_should_extract_before_first_occurrence():
     extraction_start = source.position(4, 4)
     extraction_end = source.position(4, 25)
 
-    insert, *edits = extract_variable(
-        name="result", start=extraction_start, end=extraction_end
-    )
+    refactor = Refactor(TextRange(extraction_start, extraction_end))
+    insert, *edits = refactor.extract_variable(name="result")
 
     assert insert.start.row == 1
     assert insert.start.column == 0
@@ -192,9 +187,8 @@ def test_extract_variable_should_not_extract_occurrences_in_other_function():
     )
     extraction_start = source.position(2, 8)
     extraction_end = source.position(2, 29)
-    _insert, *edits = extract_variable(
-        name="result", start=extraction_start, end=extraction_end
-    )
+    refactor = Refactor(TextRange(extraction_start, extraction_end))
+    _insert, *edits = refactor.extract_variable(name="result")
 
     assert len(edits) == 1
 
@@ -213,9 +207,8 @@ def test_extract_variable_should_not_extract_occurrences_in_other_method_of_the_
     )
     extraction_start = source.position(3, 12)
     extraction_end = source.position(3, 33)
-    _insert, *edits = extract_variable(
-        name="result", start=extraction_start, end=extraction_end
-    )
+    refactor = Refactor(TextRange(extraction_start, extraction_end))
+    _insert, *edits = refactor.extract_variable(name="result")
 
     assert len(edits) == 1
 
@@ -230,9 +223,8 @@ def test_extract_function_should_insert_function_definition():
     extraction_start = source.position(2, 12)
     extraction_end = source.position(2, 27)
 
-    insert, *_edits = extract_function(
-        name="function", start=extraction_start, end=extraction_end
-    )
+    refactor = Refactor(TextRange(extraction_start, extraction_end))
+    insert, *_edits = refactor.extract_function(name="function")
 
     assert insert.text == dedent(
         """
@@ -253,9 +245,8 @@ def test_extract_function_should_insert_function_definition_with_multiple_statem
     extraction_start = source.position(2, 0)
     extraction_end = source.position(3, 21)
 
-    insert, *_edits = extract_function(
-        name="function", start=extraction_start, end=extraction_end
-    )
+    refactor = Refactor(TextRange(extraction_start, extraction_end))
+    insert, *_edits = refactor.extract_function(name="function")
 
     result = dedent(
         """
@@ -281,7 +272,8 @@ def test_extract_function_should_create_arguments_for_local_variables():
     start = source.position(3, 0)
     end = source.position(4, 21)
 
-    insert, *_edits = extract_function(name="function", start=start, end=end)
+    refactor = Refactor(TextRange(start, end))
+    insert, *_edits = refactor.extract_function(name="function")
 
     result = dedent(
         """
@@ -304,7 +296,8 @@ def test_extract_function_should_return_modified_variable_used_after_call():
     )
     start = source.position(2, 0)
     end = source.position(2, 8)
-    insert, *_edits = extract_function(name="function", start=start, end=end)
+    refactor = Refactor(TextRange(start, end))
+    insert, *_edits = refactor.extract_function(name="function")
 
     result = dedent(
         """
@@ -328,7 +321,8 @@ def test_extract_function_should_respect_indentation():
     )
     start = source.position(3, 0)
     end = source.position(3, 12)
-    insert, *_edits = extract_function(name="function", start=start, end=end)
+    refactor = Refactor(TextRange(start, end))
+    insert, *_edits = refactor.extract_function(name="function")
 
     result = """
     def function(a):
@@ -351,7 +345,9 @@ def test_extract_function_should_only_consider_variables_in_scope():
     )
     start = source.position(4, 0)
     end = source.position(4, 12)
-    insert, replace = extract_function(name="function", start=start, end=end)
+
+    refactor = Refactor(TextRange(start, end))
+    insert, replace = refactor.extract_function(name="function")
 
     assert "function(a)" in insert.text
 
@@ -367,7 +363,9 @@ def test_extract_function_should_replace_extracted_code_with_function_call():
     )
     start = source.position(3, 0)
     end = source.position(3, 12)
-    _insert, replace = extract_function(name="function", start=start, end=end)
+
+    refactor = Refactor(TextRange(start, end))
+    _insert, replace = refactor.extract_function(name="function")
 
     assert replace.text == "    b = function(a=a)\n"
     assert replace.start == source.position(3, 0)
@@ -386,7 +384,8 @@ def test_extract_function_should_return_multiple_values_where_necessary():
     )
     start = source.position(1, 0)
     end = source.position(3, 0)
-    insert, replace = extract_function(name="function", start=start, end=end)
+    refactor = Refactor(TextRange(start, end))
+    insert, replace = refactor.extract_function(name="function")
 
     assert "a, b = function()" in replace.text
     assert "return a, b" in insert.text
@@ -407,7 +406,8 @@ def f(a):
     )
     start = source.position(4, 0)
     end = source.position(4, 12)
-    insert, replace = extract_function(name="function", start=start, end=end)
+    refactor = Refactor(TextRange(start, end))
+    insert, replace = refactor.extract_function(name="function")
 
     assert "def function(a):" in insert.text
     assert "b = function(a=a)" in replace.text
@@ -424,7 +424,8 @@ def test_slide_statements_should_not_slide_beyond_first_usage():
     first = source.lines[1]
     last = source.lines[1]
 
-    edits = slide_statements(first=first, last=last)
+    refactor = Refactor(TextRange(first.start, last.end))
+    edits = refactor.slide_statements()
 
     assert not edits
 
@@ -441,7 +442,8 @@ def test_slide_statements_should_not_slide_into_nested_scopes():
     first = source.lines[1]
     last = source.lines[1]
 
-    edits = slide_statements(first=first, last=last)
+    refactor = Refactor(TextRange(first.start, last.end))
+    edits = refactor.slide_statements()
     assert not edits
 
 
@@ -457,7 +459,8 @@ def test_slide_statements_should_slide_past_irrelevant_statements():
     first = source.lines[1]
     last = source.lines[1]
 
-    insert, delete = slide_statements(first=first, last=last)
+    refactor = Refactor(TextRange(first.start, last.end))
+    insert, delete = refactor.slide_statements()
 
     assert insert.start.row == 3
     assert delete.start.row == 1
@@ -477,7 +480,8 @@ def test_slide_statements_should_slide_multiple_lines():
     first = source.lines[1]
     last = source.lines[2]
 
-    insert, delete = slide_statements(first=first, last=last)
+    refactor = Refactor(TextRange(first.start, last.end))
+    insert, delete = refactor.slide_statements()
 
     assert insert.start.row == 5
     assert insert.text == dedent(

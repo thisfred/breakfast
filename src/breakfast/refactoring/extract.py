@@ -5,6 +5,7 @@ from collections.abc import Container, Iterable, Iterator
 from functools import singledispatch
 from typing import Any
 
+from breakfast.names import build_graph
 from breakfast.types import Edit, Line, Position, Source, TextRange
 from breakfast.visitor import generic_visit
 
@@ -14,79 +15,103 @@ INDENTATION = re.compile(r"^(\s+)")
 FOUR_SPACES = "    "
 
 
-def extract_variable(name: str, start: Position, end: Position) -> tuple[Edit, ...]:
-    extracted = start.through(end).text
-    logger.info(f"{extracted=}")
+class Refactor:
+    def __init__(self, text_range: TextRange):
+        self.text_range = text_range
+        self.source = self.text_range.start.source
+        self.source_ast = self.source.get_ast()
+        self.graph = build_graph([self.source])
 
-    if not (expression := get_single_expression_value(extracted)):
-        return ()
+    def extract_variable(self, name: str) -> tuple[Edit, ...]:
+        extracted = self.text_range.text
+        logger.info(f"{extracted=}")
 
-    source = start.source
-    source_ast = source.get_ast()
+        if not (expression := get_single_expression_value(extracted)):
+            return ()
 
-    other_occurrences = find_other_occurrences(
-        source_ast=source_ast, node=expression, position=start
-    )
-    other_edits = [
-        make_edit(source, o, len(extracted), new_text=name) for o in other_occurrences
-    ]
-    edits = sorted([Edit(start=start, end=end, text=name), *other_edits])
-    first_edit_position = edits[0].start
+        other_occurrences = find_other_occurrences(
+            source_ast=self.source_ast, node=expression, position=self.text_range.start
+        )
+        other_edits = [
+            make_edit(self.source, o, len(extracted), new_text=name)
+            for o in other_occurrences
+        ]
+        edits = sorted(
+            [
+                Edit(start=self.text_range.start, end=self.text_range.end, text=name),
+                *other_edits,
+            ]
+        )
+        first_edit_position = edits[0].start
 
-    statement_start = None
-    for statement in find_statements(source_ast):
-        if (
-            statement_position := source.node_position(statement)
-        ) < first_edit_position:
-            statement_start = statement_position
+        statement_start = None
+        for statement in find_statements(self.source_ast):
+            if (
+                statement_position := self.source.node_position(statement)
+            ) < first_edit_position:
+                statement_start = statement_position
 
-    insert_point = statement_start or first_edit_position.start_of_line
-    indentation = " " * insert_point.column
-    definition = f"{name} = {extracted}\n{indentation}"
-    insert = Edit(start=insert_point, end=insert_point, text=definition)
-    return (insert, *edits)
+        insert_point = statement_start or first_edit_position.start_of_line
+        indentation = " " * insert_point.column
+        definition = f"{name} = {extracted}\n{indentation}"
+        insert = Edit(start=insert_point, end=insert_point, text=definition)
+        return (insert, *edits)
 
+    def extract_function(self, name: str) -> tuple[Edit, ...]:
+        start = self.text_range.start
+        end = self.text_range.end
+        if start.row < end.row:
+            start = start.start_of_line
+            end = end.line.next.start if end.line.next else end
 
-def extract_function(name: str, start: Position, end: Position) -> tuple[Edit, ...]:
-    if start.row < end.row:
-        start = start.start_of_line
-        end = end.line.next.start if end.line.next else end
+        scope = get_scope(at=start)
+        names_modified_in_body = find_modified_names(self.source_ast, start, end)
+        names_used_after = find_names_defined_before_range(
+            end, scope.end, scope_start=scope.start
+        )
+        return_values = [
+            n for n in names_modified_in_body if n in set(names_used_after)
+        ]
 
-    scope = get_scope(at=start)
-    source_ast = start.source.get_ast()
-    names_modified_in_body = find_modified_names(source_ast, start, end)
-    names_used_after = find_names_defined_before_range(
-        end, scope.end, scope_start=scope.start
-    )
-    return_values = [n for n in names_modified_in_body if n in set(names_used_after)]
+        original_indentation = get_indentation(at=start)
+        new_indentation = original_indentation + FOUR_SPACES
+        text = start.through(end).text
+        extracted = "\n".join(
+            [f"{FOUR_SPACES}{line}".rstrip() for line in text.split("\n")]
+        )
+        if return_values:
+            return_values_as_string = f'{", ".join(return_values)}'
+            extracted += f"\n{new_indentation}return {return_values_as_string}"
+            assignment = f"{return_values_as_string} = "
+        else:
+            assignment = ""
 
-    original_indentation = get_indentation(at=start)
-    new_indentation = original_indentation + FOUR_SPACES
-    text = start.through(end).text
-    extracted = "\n".join(
-        [f"{FOUR_SPACES}{line}".rstrip() for line in text.split("\n")]
-    )
-    if return_values:
-        return_values_as_string = f'{", ".join(return_values)}'
+        local_names = find_names_defined_before_range(
+            start, end, scope_start=scope.start
+        )
+        params = ", ".join(local_names)
+        insert = Edit(
+            start=start,
+            end=start,
+            text=f"\n{original_indentation}def {name}({params}):\n{extracted}\n",
+        )
+        args = ", ".join(f"{n}={n}" for n in local_names)
+        call = f"{name}({args})"
+        replace = Edit(
+            start=start, end=end, text=f"{original_indentation}{assignment}{call}\n"
+        )
+        return (insert, replace)
 
-        extracted += f"\n{new_indentation}return {return_values_as_string}"
-        assignment = f"{return_values_as_string} = "
-    else:
-        assignment = ""
-
-    local_names = find_names_defined_before_range(start, end, scope_start=scope.start)
-    params = ", ".join(local_names)
-    insert = Edit(
-        start=start,
-        end=start,
-        text=f"\n{original_indentation}def {name}({params}):\n{extracted}\n",
-    )
-    args = ", ".join(f"{n}={n}" for n in local_names)
-    call = f"{name}({args})"
-    replace = Edit(
-        start=start, end=end, text=f"{original_indentation}{assignment}{call}\n"
-    )
-    return (insert, replace)
+    def slide_statements(self) -> tuple[Edit, ...]:
+        first, last = self.text_range.start.line, self.text_range.end.line
+        target = find_slide_target(first, last)
+        if target is None:
+            return ()
+        insert = Edit(
+            start=target, end=target, text=first.start.through(last.end).text + "\n"
+        )
+        delete = Edit(start=first.start, end=last.end, text="")
+        return (insert, delete)
 
 
 def get_scope(at: Position) -> TextRange:
@@ -136,17 +161,6 @@ def find_modified_names(
             defined_inside_subtree.append(name)
 
     return defined_inside_subtree
-
-
-def slide_statements(first: Line, last: Line) -> tuple[Edit, ...]:
-    target = find_slide_target(first, last)
-    if target is None:
-        return ()
-    insert = Edit(
-        start=target, end=target, text=first.start.through(last.end).text + "\n"
-    )
-    delete = Edit(start=first.start, end=last.end, text="")
-    return (insert, delete)
 
 
 def find_slide_target(first: Line, last: Line) -> Position | None:

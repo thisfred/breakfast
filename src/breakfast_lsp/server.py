@@ -7,10 +7,9 @@ from time import time
 
 import breakfast
 from breakfast.refactoring.extract import (
-    extract_function,
-    extract_variable,
-    slide_statements,
+    Refactor,
 )
+from breakfast.source import TextRange
 from breakfast.types import Edit
 from lsprotocol.types import (
     INITIALIZE,
@@ -171,9 +170,9 @@ async def rename(server: LanguageServer, params: RenameParams) -> WorkspaceEdit 
     source = get_source(
         uri=params.text_document.uri, project_root=project_root, lines=source_lines
     )
-    application = breakfast.Project(source=source, root=project_root)
+    project = breakfast.Project(source=source, root=project_root)
     position = source.position(row=params.position.line, column=start)
-    occurrences = application.get_occurrences(position)
+    occurrences = project.get_occurrences(position)
     if not occurrences:
         return None
 
@@ -260,11 +259,18 @@ async def code_action(
         source = get_source(
             uri=document_uri, project_root=project_root, lines=source_lines
         )
+        extraction_range = params.range
+        start = source.position(
+            row=extraction_range.start.line, column=extraction_range.start.character
+        )
+        end = source.position(
+            row=extraction_range.end.line,
+            column=max(extraction_range.end.character - 1, 0),
+        )
+        refactor = Refactor(text_range=TextRange(start, end))
+
         extract_edit = await _extract_variable(
-            source=source,
-            document_uri=document_uri,
-            extraction_range=params.range,
-            version=version,
+            refactor, document_uri=document_uri, version=version
         )
         actions.append(
             CodeAction(
@@ -277,10 +283,7 @@ async def code_action(
         )
 
         extract_edit = await _extract_function(
-            source=source,
-            document_uri=document_uri,
-            extraction_range=params.range,
-            version=version,
+            refactor, document_uri=document_uri, version=version
         )
         actions.append(
             CodeAction(
@@ -292,9 +295,8 @@ async def code_action(
             ),
         )
         slide_statements_edit = await _slide_statements(
-            source=source,
+            refactor,
             document_uri=document_uri,
-            extraction_range=params.range,
             version=version,
         )
         actions.append(
@@ -311,22 +313,11 @@ async def code_action(
 
 
 async def _extract_function(
-    source: breakfast.Source,
+    refactor: Refactor,
     document_uri: str,
-    extraction_range: Range,
     version: None,
 ) -> WorkspaceEdit:
-    extraction_start = source.position(
-        row=extraction_range.start.line, column=extraction_range.start.character
-    )
-    extraction_end = source.position(
-        row=extraction_range.end.line, column=max(extraction_range.end.character - 1, 0)
-    )
-    edits = extract_function(
-        name=f"extracted_function_{timestamp()}",
-        start=extraction_start,
-        end=extraction_end,
-    )
+    edits = refactor.extract_function(name=f"extracted_function_{timestamp()}")
 
     text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
     document_changes: list[TextDocumentEdit | CreateFile | RenameFile | DeleteFile] = [
@@ -341,21 +332,12 @@ async def _extract_function(
 
 
 async def _extract_variable(
-    source: breakfast.Source,
+    refactor: Refactor,
     document_uri: str,
-    extraction_range: Range,
     version: None,
 ) -> WorkspaceEdit:
-    extraction_start = source.position(
-        row=extraction_range.start.line, column=extraction_range.start.character
-    )
-    extraction_end = source.position(
-        row=extraction_range.end.line, column=max(extraction_range.end.character - 1, 0)
-    )
-    edits = extract_variable(
+    edits = refactor.extract_variable(
         name=f"extracted_variable_{timestamp()}",
-        start=extraction_start,
-        end=extraction_end,
     )
 
     text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
@@ -371,14 +353,11 @@ async def _extract_variable(
 
 
 async def _slide_statements(
-    source: breakfast.Source,
+    refactor: Refactor,
     document_uri: str,
-    extraction_range: Range,
     version: None,
 ) -> WorkspaceEdit:
-    first_line = source.lines[extraction_range.start.line]
-    last_line = source.lines[extraction_range.end.line]
-    edits = slide_statements(first=first_line, last=last_line)
+    edits = refactor.slide_statements()
     text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
     document_changes: list[TextDocumentEdit | CreateFile | RenameFile | DeleteFile] = [
         TextDocumentEdit(

@@ -35,8 +35,9 @@ def all_occurrence_positions(
     sources: Iterable[Source] | None = None,
     in_reverse_order: bool = False,
     debug: bool = False,
+    graph: ScopeGraph | None = None,
 ) -> list[Position]:
-    graph = build_graph(sources or [position.source])
+    graph = graph or build_graph(sources or [position.source])
     if debug:  # pragma: nocover
         from breakfast.scope_graph.visualization import view_graph
 

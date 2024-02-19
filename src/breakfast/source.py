@@ -3,7 +3,6 @@ import os
 import re
 import sys
 from ast import AST, parse
-from collections.abc import Iterator
 from dataclasses import InitVar, dataclass, replace
 
 from breakfast import types
@@ -104,7 +103,7 @@ class Source:
 
     def __post_init__(self, input_lines: tuple[str, ...] | None) -> None:
         self._lines = input_lines
-        self.changes: dict[int, str] = {}
+        self._ast: AST | None = None
 
     def __repr__(self) -> str:
         return f"Source(path={self.path})"
@@ -130,10 +129,9 @@ class Source:
         return match.group()
 
     def get_ast(self) -> AST:
-        return parse("\n".join(self.text))
-
-    def get_changes(self) -> Iterator[tuple[int, str]]:
-        yield from sorted(self.changes.items())
+        if self._ast is None:
+            self._ast = parse("\n".join(self.text))
+        return self._ast
 
     def get_text(self, *, start: types.Position, end: types.Position) -> str:
         assert start.source == end.source  # noqa: S101
@@ -148,15 +146,6 @@ class Source:
                 continue
             break
         return "\n".join(lines)
-
-    def replace(self, position: types.Position, old: str, new: str) -> None:
-        self.modify_line(start=position, end=position + len(old), new=new)
-
-    def modify_line(self, start: types.Position, end: types.Position, new: str) -> None:
-        line_number = start.row
-        line = self.changes.get(line_number, self.text[line_number])
-        modified_line = line[: start.column] + new + line[end.column :]
-        self.changes[line_number] = modified_line
 
     def find_after(self, name: str, start: types.Position) -> types.Position:
         regex = re.compile(f"\\b{name}\\b")
