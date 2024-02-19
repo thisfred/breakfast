@@ -1,7 +1,7 @@
 import ast
 import logging
 import re
-from collections.abc import Container, Iterable, Iterator
+from collections.abc import Container, Iterable, Iterator, Sequence
 from functools import singledispatch
 from typing import Any
 
@@ -64,8 +64,16 @@ class Refactor:
             start = start.start_of_line
             end = end.line.next.start if end.line.next else end
 
-        names_modified_in_body = self.find_modified_names(start, end)
-        names_used_after = set(self.find_names_used_after_range(start, end))
+        names_in_range = self.get_names_in_range(start, end)
+        names_modified_in_body = [
+            name for name, _, ctx in names_in_range if isinstance(ctx, ast.Store)
+        ]
+        names_used_after = {
+            n
+            for n, _ in self.find_names_used_after_position(
+                [(n, p) for n, p, _ in names_in_range], end
+            )
+        }
         return_values = [n for n in names_modified_in_body if n in names_used_after]
 
         original_indentation = get_indentation(at=start)
@@ -81,7 +89,9 @@ class Refactor:
         else:
             assignment = ""
 
-        local_names = list(self.find_names_defined_before_range(start, end))
+        local_names = list(
+            self.find_names_defined_before_range(names_in_range, start, end)
+        )
         params = ", ".join(local_names)
         insert = Edit(
             start=start,
@@ -106,17 +116,29 @@ class Refactor:
         delete = Edit(start=first.start, end=last.end, text="")
         return (insert, delete)
 
-    def find_names_defined_before_range(
+    def get_names_in_range(
         self, start: Position, end: Position
-    ) -> Iterable[str]:
-        found = set()
-        for name, position, _ in find_names(self.source_ast, self.source):
-            if name in found:
-                continue
+    ) -> Sequence[tuple[str, Position, ast.expr_context]]:
+        names = []
+        for name, position, context in find_names(self.source_ast, self.source):
             if position < start:
                 continue
             if position > end:
                 break
+            names.append((name, position, context))
+
+        return names
+
+    def find_names_defined_before_range(
+        self,
+        names: Sequence[tuple[str, Position, ast.expr_context]],
+        start: Position,
+        end: Position,
+    ) -> Iterable[str]:
+        found = set()
+        for name, position, _ in names:
+            if name in found:
+                continue
             try:
                 occurrences = all_occurrence_positions(position, graph=self.scope_graph)
             except NotFoundError:
@@ -129,44 +151,38 @@ class Refactor:
                 if occurrence >= start:
                     break
 
-    def find_names_used_after_range(
-        self, start: Position, end: Position
-    ) -> Iterable[str]:
-        found = set()
-        for name, position, _ in find_names(self.source_ast, self.source):
-            if name in found:
-                continue
-            if position < start:
-                continue
-            if position > end:
-                break
+    def find_names_used_after_position(
+        self,
+        names: Sequence[tuple[str, Position]],
+        cutoff: Position,
+    ) -> Iterable[tuple[str, Position]]:
+        for name, position in names:
             try:
                 occurrences = all_occurrence_positions(position, graph=self.scope_graph)
             except NotFoundError:
                 continue
             for occurrence in occurrences:
-                if occurrence > end:
-                    found.add(name)
-                    yield name
+                if occurrence > cutoff:
+                    yield name, occurrence
                     break
 
-    def find_modified_names(self, start: Position, end: Position) -> list[str]:
-        modified = []
-        for name, position, ctx in find_names(self.source_ast, self.source):
-            if position > end:
-                break
-            if position < start:
-                continue
-            if isinstance(ctx, ast.Store):
-                modified.append(name)
-
-        return modified
-
     def find_slide_target(self, first: Line, last: Line) -> Position | None:
-        names_defined_in_statements = self.find_modified_names(first.start, last.end)
-        target = self.find_first_usage(set(names_defined_in_statements), after=last)
-        if not target:
+        names_in_range = self.get_names_in_range(first.start, last.end)
+        names_defined_in_statements = [
+            (name, position)
+            for name, position, ctx in names_in_range
+            if isinstance(ctx, ast.Store)
+        ]
+        names_used_after_range = sorted(
+            p
+            for _, p in self.find_names_used_after_position(
+                names_defined_in_statements, last.end
+            )
+        )
+        if not names_used_after_range:
             return None
+
+        target = names_used_after_range[0]
 
         lines = self.source.lines[first.row : last.row + 1]
         original_indentation = min(get_indentation(at=line.start) for line in lines)
