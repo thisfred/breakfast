@@ -138,13 +138,6 @@ def generic_visit(
 def visit(
     node: ast.AST, source: Source, graph: ScopeGraph, state: State
 ) -> Iterator[Fragment]:
-    logger.debug(
-        "visiting %s, %s:%s:%s",
-        repr(node),
-        source.path,
-        getattr(node, "lineno", "??"),
-        getattr(node, "col_offset", "??"),
-    )
     yield from generic_visit(node, source, graph, state)
 
 
