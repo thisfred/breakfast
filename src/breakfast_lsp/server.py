@@ -269,31 +269,33 @@ async def code_action(
         )
         refactor = Refactor(text_range=TextRange(start, end))
 
-        extract_edit = await _extract_variable(
-            refactor, document_uri=document_uri, version=version
-        )
-        actions.append(
-            CodeAction(
-                title="breakfast: extract variable",
-                kind=CodeActionKind.RefactorExtract,
-                data=params.text_document.uri,
-                edit=extract_edit,
-                diagnostics=[],
-            ),
-        )
+        if start < end:
+            extract_edit = await _extract_variable(
+                refactor, document_uri=document_uri, version=version
+            )
+            actions.append(
+                CodeAction(
+                    title="breakfast: extract variable",
+                    kind=CodeActionKind.RefactorExtract,
+                    data=params.text_document.uri,
+                    edit=extract_edit,
+                    diagnostics=[],
+                ),
+            )
 
-        extract_edit = await _extract_function(
-            refactor, document_uri=document_uri, version=version
-        )
-        actions.append(
-            CodeAction(
-                title="breakfast: extract function",
-                kind=CodeActionKind.RefactorExtract,
-                data=params.text_document.uri,
-                edit=extract_edit,
-                diagnostics=[],
-            ),
-        )
+            extract_edit = await _extract_function(
+                refactor, document_uri=document_uri, version=version
+            )
+            actions.append(
+                CodeAction(
+                    title="breakfast: extract function",
+                    kind=CodeActionKind.RefactorExtract,
+                    data=params.text_document.uri,
+                    edit=extract_edit,
+                    diagnostics=[],
+                ),
+            )
+
         slide_statements_edit = await _slide_statements(
             refactor,
             document_uri=document_uri,
@@ -310,6 +312,13 @@ async def code_action(
         )
 
     return actions
+
+
+# TODO: figure out why this gets looked up in Ruff's lsp server...
+
+# @LSP_SERVER.command("breakfast.slideStatements")
+# async def slide_statements(arguments):
+#     logger.info(repr(arguments))
 
 
 async def _extract_function(

@@ -10,6 +10,9 @@
   * extract method
 * add go to definition
 * add Undo
+* extract function to top level scope
+* figure out how to call LSP breakfast commands directly without having
+  to go through the code actions menu.
 
 ### Refactoring
 
@@ -22,3 +25,5 @@
   versions locally as well as in github actions.
 
 ### Bugs:
+
+* slide statements inserts empty lines
