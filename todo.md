@@ -25,5 +25,3 @@
   versions locally as well as in github actions.
 
 ### Bugs:
-
-* slide statements inserts empty lines

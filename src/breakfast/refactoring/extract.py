@@ -113,7 +113,9 @@ class Refactor:
         insert = Edit(
             start=target, end=target, text=first.start.through(last.end).text + "\n"
         )
-        delete = Edit(start=first.start, end=last.end, text="")
+        delete = Edit(
+            start=first.start, end=last.next.start if last.next else last.end, text=""
+        )
         return (insert, delete)
 
     def get_names_in_range(
