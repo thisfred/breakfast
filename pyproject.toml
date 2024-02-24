@@ -20,14 +20,14 @@ classifiers = [
 [project.optional-dependencies]
 test = [
     "coverage",
-    "pytest"]
+    "pytest",
+    "pytest-lsp"]
 dev = [
     "astpretty",
     "black",
     "mypy",
     "ruff",
     "pre-commit",
-    "pytest-lsp",
     "lsp-devtools"]
 lsp = [
     "lsprotocol",
