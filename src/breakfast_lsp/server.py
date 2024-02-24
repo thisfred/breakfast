@@ -1,9 +1,10 @@
 import logging
 import os
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
 from itertools import groupby
 from pathlib import Path
 from time import time
+from typing import Any
 
 import breakfast
 from breakfast.refactoring.extract import (
@@ -47,17 +48,11 @@ if BREAKFAST_DEBUG:
     logging.basicConfig(filename=log_file, filemode="w", level=logging.INFO)
 
 MAX_WORKERS = 2
-
 LSP_SERVER = LanguageServer(
     name="breakfast",
     version=__version__,
     max_workers=MAX_WORKERS,
 )
-
-
-CLIENT_CAPABILITIES: dict[str, bool] = {
-    TEXT_DOCUMENT_RENAME: True,
-}
 
 
 def timestamp() -> str:
@@ -246,10 +241,10 @@ async def code_action(
 ) -> list[CodeAction] | None:
     actions: list[CodeAction] = []
     if params.range:
-        document = server.workspace.get_text_document(params.text_document.uri)
+        document_uri = params.text_document.uri
+        document = server.workspace.get_text_document(document_uri)
         source_lines = tuple(document.source.split("\n"))
         project_root = server.workspace.root_uri[len("file://") :]
-        document_uri = params.text_document.uri
         client_documents = server.workspace.text_documents
         version = (
             versioned.version
@@ -314,11 +309,29 @@ async def code_action(
     return actions
 
 
-# TODO: figure out why this gets looked up in Ruff's lsp server...
+@LSP_SERVER.command("breakfast.slideStatements")
+async def slide_statements(
+    server: LanguageServer, arguments: Sequence[Mapping[str, Any]]
+) -> None:
+    document_uri = arguments[0]["uri"]
+    line = arguments[0]["line"] - 1
+    document = server.workspace.get_text_document(document_uri)
 
-# @LSP_SERVER.command("breakfast.slideStatements")
-# async def slide_statements(arguments):
-#     logger.info(repr(arguments))
+    source_lines = tuple(document.source.split("\n"))
+    project_root = server.workspace.root_uri[len("file://") :]
+    source = get_source(uri=document_uri, project_root=project_root, lines=source_lines)
+    start = source.position(row=line, column=0)
+    end = source.position(row=line, column=0)
+    refactor = Refactor(text_range=TextRange(start, end))
+
+    client_documents = server.workspace.text_documents
+    version = (
+        versioned.version if (versioned := client_documents.get(document_uri)) else None
+    )
+    workspace_edit = await _slide_statements(refactor, document_uri, version)
+    if workspace_edit is None:
+        return
+    server.apply_edit(workspace_edit, "breakfast: slide statement")
 
 
 async def _extract_function(

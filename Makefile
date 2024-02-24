@@ -1,14 +1,12 @@
-.PHONY: test install lint dist-clean
+.PHONY: test install install-dev lint dist-clean
 
-test: .venv/installed
+test: .venv/installed-dev
 	.venv/bin/coverage run .venv/bin/pytest
 	.venv/bin/coverage report -m
 
-
 install: .venv/installed
 
-install-dev: .venv/installed
-	.venv/bin/pip install -e .[dev,lsp]
+install-dev: .venv/installed-dev
 
 lint: .venv/installed
 	.venv/bin/pre-commit run --all-files
@@ -22,4 +20,8 @@ dist-clean:
 
 .venv/installed: .venv pyproject.toml
 	.venv/bin/pip install -e .[test]
+	touch $@
+
+.venv/installed-dev: .venv pyproject.toml
+	.venv/bin/pip install -e .[dev,lsp]
 	touch $@
