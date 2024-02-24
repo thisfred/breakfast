@@ -1,4 +1,4 @@
-from breakfast.refactoring.extract import Edit, Refactor
+from breakfast.refactoring import Edit, Refactor
 from breakfast.source import Source, TextRange
 
 from tests import dedent, make_source

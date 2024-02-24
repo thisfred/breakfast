@@ -7,9 +7,7 @@ from time import time
 from typing import Any
 
 import breakfast
-from breakfast.refactoring.extract import (
-    Refactor,
-)
+from breakfast.refactoring import Refactor
 from breakfast.source import TextRange
 from breakfast.types import Edit
 from lsprotocol.types import (
