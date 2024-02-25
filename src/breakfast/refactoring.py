@@ -59,11 +59,7 @@ class Refactor:
         return (insert, *edits)
 
     def extract_method(self, name: str) -> tuple[Edit, ...]:
-        start = self.text_range.start
-        end = self.text_range.end
-        if start.row < end.row:
-            start = start.start_of_line
-            end = end.line.next.start if end.line.next else end
+        start, end = self.extended_range
 
         names_in_range = self.get_names_in_range(start, end)
         return_values = self.get_return_values(names_in_range=names_in_range, end=end)
@@ -73,15 +69,13 @@ class Refactor:
         text = start.through(end).text
         extracted = "\n".join(
             [
-                f"{original_indentation}{FOUR_SPACES}{line}".rstrip()
+                f"{original_indentation}{line}".rstrip()
                 for line in dedent(text).split("\n")
             ]
         )
         if return_values:
             return_values_as_string = f'{", ".join(return_values)}'
-            extracted += (
-                f"\n{original_indentation}{FOUR_SPACES}return {return_values_as_string}"
-            )
+            extracted += f"\n{original_indentation}return {return_values_as_string}"
             assignment = f"{return_values_as_string} = "
         else:
             assignment = ""
@@ -116,11 +110,7 @@ class Refactor:
         return (insert, replace)
 
     def extract_function(self, name: str) -> tuple[Edit, ...]:
-        start = self.text_range.start
-        end = self.text_range.end
-        if start.row < end.row:
-            start = start.start_of_line
-            end = end.line.next.start if end.line.next else end
+        start, end = self.extended_range
 
         names_in_range = self.get_names_in_range(start, end)
         return_values = self.get_return_values(names_in_range=names_in_range, end=end)
@@ -174,6 +164,16 @@ class Refactor:
         )
         return (insert, delete)
 
+    @property
+    def extended_range(self) -> tuple[Position, Position]:
+        start = self.text_range.start
+        end = self.text_range.end
+        if start.row < end.row:
+            start = start.start_of_line
+            end = end.line.next.start if end.line.next else end
+
+        return start, end
+
     def get_return_values(
         self,
         names_in_range: Sequence[tuple[str, Position, ast.expr_context]],
@@ -188,7 +188,12 @@ class Refactor:
                 [(n, p) for n, p, _ in names_in_range], end
             )
         }
-        return_values = [n for n in names_modified_in_body if n in names_used_after]
+        seen = set()
+        return_values = []
+        for name in names_modified_in_body:
+            if name in names_used_after and name not in seen:
+                seen.add(name)
+                return_values.append(name)
 
         return return_values
 

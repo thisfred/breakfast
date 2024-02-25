@@ -470,6 +470,29 @@ def test_extract_method_should_extract_after_current_method():
     assert insert.start.row == 6
 
 
+def test_extract_method_should_not_repeat_return_variables():
+    source = make_source(
+        """
+        class A:
+            def extract_method(self, name: str) -> tuple[Edit, ...]:
+                start = self.text_range.start
+                end = self.text_range.end
+                if start.row < end.row:
+                    start = start.start_of_line
+                    end = end.line.next.start if end.line.next else end
+
+                print(start, end)
+        """
+    )
+    start = source.position(3, 0)
+    end = source.position(8, 0)
+
+    refactor = Refactor(TextRange(start, end))
+    _insert, replace = refactor.extract_method(name="method")
+
+    assert replace.text.startswith("        start, end =")
+
+
 def test_slide_statements_should_not_slide_beyond_first_usage():
     source = make_source(
         """
