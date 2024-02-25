@@ -289,6 +289,19 @@ async def code_action(
                 ),
             )
 
+            extract_edit = await _extract_method(
+                refactor, document_uri=document_uri, version=version
+            )
+            actions.append(
+                CodeAction(
+                    title="breakfast: extract method",
+                    kind=CodeActionKind.RefactorExtract,
+                    data=params.text_document.uri,
+                    edit=extract_edit,
+                    diagnostics=[],
+                ),
+            )
+
         slide_statements_edit = await _slide_statements(
             refactor,
             document_uri=document_uri,
@@ -338,6 +351,25 @@ async def _extract_function(
     version: None,
 ) -> WorkspaceEdit:
     edits = refactor.extract_function(name=f"extracted_function_{timestamp()}")
+
+    text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
+    document_changes: list[TextDocumentEdit | CreateFile | RenameFile | DeleteFile] = [
+        TextDocumentEdit(
+            text_document=OptionalVersionedTextDocumentIdentifier(
+                uri=document_uri, version=version
+            ),
+            edits=text_edits,
+        )
+    ]
+    return WorkspaceEdit(document_changes=document_changes)
+
+
+async def _extract_method(
+    refactor: Refactor,
+    document_uri: str,
+    version: None,
+) -> WorkspaceEdit:
+    edits = refactor.extract_method(name=f"extracted_method_{timestamp()}")
 
     text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
     document_changes: list[TextDocumentEdit | CreateFile | RenameFile | DeleteFile] = [

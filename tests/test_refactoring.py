@@ -430,6 +430,46 @@ def f(a):
     assert "b = function(a=a)" in replace.text
 
 
+def test_extract_method_should_replace_extracted_code_with_method_call():
+    source = make_source(
+        """
+        class A:
+            def f(self):
+                a = 1
+                self.b = a + 2
+                print(b)
+        """
+    )
+    start = source.position(4, 8)
+    end = source.position(4, 21)
+
+    refactor = Refactor(TextRange(start, end))
+    _insert, replace = refactor.extract_method(name="method")
+
+    assert replace.text == "        self.method(a=a)\n"
+    assert replace.start == source.position(4, 8)
+    assert replace.end == source.position(4, 21)
+
+
+def test_extract_method_should_extract_after_current_method():
+    source = make_source(
+        """
+        class A:
+            def f(self):
+                a = 1
+                self.b = a + 2
+                print(b)
+        """
+    )
+    start = source.position(4, 8)
+    end = source.position(4, 21)
+
+    refactor = Refactor(TextRange(start, end))
+    insert, _replace = refactor.extract_method(name="method")
+
+    assert insert.start.row == 6
+
+
 def test_slide_statements_should_not_slide_beyond_first_usage():
     source = make_source(
         """

@@ -58,6 +58,63 @@ class Refactor:
         insert = Edit(start=insert_point, end=insert_point, text=definition)
         return (insert, *edits)
 
+    def extract_method(self, name: str) -> tuple[Edit, ...]:
+        start = self.text_range.start
+        end = self.text_range.end
+        if start.row < end.row:
+            start = start.start_of_line
+            end = end.line.next.start if end.line.next else end
+
+        names_in_range = self.get_names_in_range(start, end)
+        return_values = self.get_return_values(names_in_range=names_in_range, end=end)
+
+        original_indentation = get_indentation(at=start)
+
+        text = start.through(end).text
+        extracted = "\n".join(
+            [
+                f"{original_indentation}{FOUR_SPACES}{line}".rstrip()
+                for line in dedent(text).split("\n")
+            ]
+        )
+        if return_values:
+            return_values_as_string = f'{", ".join(return_values)}'
+            extracted += (
+                f"\n{original_indentation}{FOUR_SPACES}return {return_values_as_string}"
+            )
+            assignment = f"{return_values_as_string} = "
+        else:
+            assignment = ""
+
+        self_name = "self"
+
+        local_names = [
+            name
+            for name in self.find_names_defined_before_range(names_in_range, start, end)
+            if name != self_name
+        ]
+        params = ", ".join((self_name, *local_names))
+
+        insert_point = start
+        current_indentation = get_indentation(at=insert_point)
+        while (
+            get_indentation(at=insert_point) >= current_indentation
+            or insert_point.line.text == ""
+        ) and insert_point.line.next:
+            insert_point = insert_point.line.next.start
+
+        insert = Edit(
+            start=insert_point,
+            end=insert_point,
+            text=f"\n{original_indentation[:-4]}def {name}({params}):\n{extracted}\n",
+        )
+        args = ", ".join(f"{n}={n}" for n in local_names if n != self_name)
+        call = f"self.{name}({args})"
+        replace = Edit(
+            start=start, end=end, text=f"{original_indentation}{assignment}{call}\n"
+        )
+        return (insert, replace)
+
     def extract_function(self, name: str) -> tuple[Edit, ...]:
         start = self.text_range.start
         end = self.text_range.end
@@ -66,16 +123,7 @@ class Refactor:
             end = end.line.next.start if end.line.next else end
 
         names_in_range = self.get_names_in_range(start, end)
-        names_modified_in_body = [
-            name for name, _, ctx in names_in_range if isinstance(ctx, ast.Store)
-        ]
-        names_used_after = {
-            n
-            for n, _ in self.find_names_used_after_position(
-                [(n, p) for n, p, _ in names_in_range], end
-            )
-        }
-        return_values = [n for n in names_modified_in_body if n in names_used_after]
+        return_values = self.get_return_values(names_in_range=names_in_range, end=end)
 
         original_indentation = get_indentation(at=start)
 
@@ -96,7 +144,9 @@ class Refactor:
         params = ", ".join(local_names)
 
         insert_point = start
-        while get_indentation(at=insert_point) and insert_point.line.previous:
+        while (
+            get_indentation(at=insert_point) or insert_point.line.text == ""
+        ) and insert_point.line.previous:
             insert_point = insert_point.line.previous.start
 
         insert = Edit(
@@ -123,6 +173,24 @@ class Refactor:
             start=first.start, end=last.next.start if last.next else last.end, text=""
         )
         return (insert, delete)
+
+    def get_return_values(
+        self,
+        names_in_range: Sequence[tuple[str, Position, ast.expr_context]],
+        end: Position,
+    ) -> list[str]:
+        names_modified_in_body = [
+            name for name, _, ctx in names_in_range if isinstance(ctx, ast.Store)
+        ]
+        names_used_after = {
+            n
+            for n, _ in self.find_names_used_after_position(
+                [(n, p) for n, p, _ in names_in_range], end
+            )
+        }
+        return_values = [n for n in names_modified_in_body if n in names_used_after]
+
+        return return_values
 
     def get_names_in_range(
         self, start: Position, end: Position
