@@ -3,16 +3,14 @@
 ### Features:
 
 * cache scope graphs (and/or partial paths?)
+* add go to definition
+* add Undo
 * add other refactorings
   * inline function
   * inline method
   * inline variable
-  * extract method
-* add go to definition
-* add Undo
+* extract method
 * extract function to top level scope
-* figure out how to call LSP breakfast commands directly without having
-  to go through the code actions menu.
 
 ### Refactoring
 

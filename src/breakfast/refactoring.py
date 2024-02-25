@@ -3,6 +3,7 @@ import logging
 import re
 from collections.abc import Iterable, Iterator, Sequence
 from functools import singledispatch
+from textwrap import dedent
 from typing import Any
 
 from breakfast.names import all_occurrence_positions, build_graph
@@ -77,14 +78,14 @@ class Refactor:
         return_values = [n for n in names_modified_in_body if n in names_used_after]
 
         original_indentation = get_indentation(at=start)
-        new_indentation = original_indentation + FOUR_SPACES
+
         text = start.through(end).text
         extracted = "\n".join(
-            [f"{FOUR_SPACES}{line}".rstrip() for line in text.split("\n")]
+            [f"{FOUR_SPACES}{line}".rstrip() for line in dedent(text).split("\n")]
         )
         if return_values:
             return_values_as_string = f'{", ".join(return_values)}'
-            extracted += f"\n{new_indentation}return {return_values_as_string}"
+            extracted += f"\n{FOUR_SPACES}return {return_values_as_string}"
             assignment = f"{return_values_as_string} = "
         else:
             assignment = ""
@@ -93,10 +94,15 @@ class Refactor:
             self.find_names_defined_before_range(names_in_range, start, end)
         )
         params = ", ".join(local_names)
+
+        insert_point = start
+        while get_indentation(at=insert_point) and insert_point.line.previous:
+            insert_point = insert_point.line.previous.start
+
         insert = Edit(
-            start=start,
-            end=start,
-            text=f"\n{original_indentation}def {name}({params}):\n{extracted}\n",
+            start=insert_point,
+            end=insert_point,
+            text=f"\ndef {name}({params}):\n{extracted}\n",
         )
         args = ", ".join(f"{n}={n}" for n in local_names)
         call = f"{name}({args})"

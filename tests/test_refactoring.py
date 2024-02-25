@@ -310,7 +310,7 @@ def test_extract_function_should_return_modified_variable_used_after_call():
     assert insert.text.rstrip() == result.rstrip()
 
 
-def test_extract_function_should_respect_indentation():
+def test_extract_function_should_extract_to_global_scope():
     source = make_source(
         """
         def f():
@@ -325,12 +325,29 @@ def test_extract_function_should_respect_indentation():
     insert, *_edits = refactor.extract_function(name="function")
 
     result = """
-    def function(a):
-        b = a + 2
-        return b
+def function(a):
+    b = a + 2
+    return b
 """
 
     assert insert.text.rstrip() == result.rstrip()
+
+
+def test_extract_function_should_extract_before_current_scope():
+    source = make_source(
+        """
+        def f():
+            a = 1
+            b = a + 2
+            print(b)
+        """
+    )
+    start = source.position(3, 0)
+    end = source.position(3, 12)
+    refactor = Refactor(TextRange(start, end))
+    insert, *_edits = refactor.extract_function(name="function")
+
+    assert insert.start == source.position(1, 0)
 
 
 def test_extract_function_should_only_consider_variables_in_scope():
