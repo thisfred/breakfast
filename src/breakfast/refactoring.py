@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 INDENTATION = re.compile(r"^(\s+)")
 FOUR_SPACES = "    "
+NEWLINE = "\n"
 
 
 class Refactor:
@@ -54,7 +55,7 @@ class Refactor:
 
         insert_point = statement_start or first_edit_position.start_of_line
         indentation = " " * insert_point.column
-        definition = f"{name} = {extracted}\n{indentation}"
+        definition = f"{name} = {extracted}{NEWLINE}{indentation}"
         insert = Edit(start=insert_point, end=insert_point, text=definition)
         return (insert, *edits)
 
@@ -67,15 +68,17 @@ class Refactor:
         original_indentation = get_indentation(at=start)
 
         text = start.through(end).text
-        extracted = "\n".join(
+        extracted = NEWLINE.join(
             [
                 f"{original_indentation}{line}".rstrip()
-                for line in dedent(text).split("\n")
+                for line in dedent(text).split(NEWLINE)
             ]
         )
         if return_values:
             return_values_as_string = f'{", ".join(return_values)}'
-            extracted += f"\n{original_indentation}return {return_values_as_string}"
+            extracted += (
+                f"{NEWLINE}{original_indentation}return {return_values_as_string}"
+            )
             assignment = f"{return_values_as_string} = "
         else:
             assignment = ""
@@ -100,12 +103,14 @@ class Refactor:
         insert = Edit(
             start=insert_point,
             end=insert_point,
-            text=f"\n{original_indentation[:-4]}def {name}({params}):\n{extracted}\n",
+            text=f"{NEWLINE}{original_indentation[:-4]}def {name}({params}):{NEWLINE}{extracted}{NEWLINE}",
         )
         args = ", ".join(f"{n}={n}" for n in local_names if n != self_name)
         call = f"self.{name}({args})"
         replace = Edit(
-            start=start, end=end, text=f"{original_indentation}{assignment}{call}\n"
+            start=start,
+            end=end,
+            text=f"{original_indentation}{assignment}{call}{NEWLINE}",
         )
         return (insert, replace)
 
@@ -115,15 +120,13 @@ class Refactor:
         names_in_range = self.get_names_in_range(start, end)
         return_values = self.get_return_values(names_in_range=names_in_range, end=end)
 
-        original_indentation = get_indentation(at=start)
-
         text = start.through(end).text
-        extracted = "\n".join(
-            [f"{FOUR_SPACES}{line}".rstrip() for line in dedent(text).split("\n")]
+        body = NEWLINE.join(
+            [f"{FOUR_SPACES}{line}".rstrip() for line in dedent(text).split(NEWLINE)]
         )
         if return_values:
             return_values_as_string = f'{", ".join(return_values)}'
-            extracted += f"\n{FOUR_SPACES}return {return_values_as_string}"
+            body += f"{NEWLINE}{FOUR_SPACES}return {return_values_as_string}"
             assignment = f"{return_values_as_string} = "
         else:
             assignment = ""
@@ -142,12 +145,15 @@ class Refactor:
         insert = Edit(
             start=insert_point,
             end=insert_point,
-            text=f"\ndef {name}({params}):\n{extracted}\n",
+            text=f"{NEWLINE}def {name}({params}):{NEWLINE}{body}{NEWLINE}",
         )
         args = ", ".join(f"{n}={n}" for n in local_names)
         call = f"{name}({args})"
+        original_indentation = get_indentation(at=start)
         replace = Edit(
-            start=start, end=end, text=f"{original_indentation}{assignment}{call}\n"
+            start=start,
+            end=end,
+            text=f"{original_indentation}{assignment}{call}{NEWLINE}",
         )
         return (insert, replace)
 
@@ -157,7 +163,9 @@ class Refactor:
         if target is None:
             return ()
         insert = Edit(
-            start=target, end=target, text=first.start.through(last.end).text + "\n"
+            start=target,
+            end=target,
+            text=first.start.through(last.end).text + NEWLINE,
         )
         delete = Edit(
             start=first.start, end=last.next.start if last.next else last.end, text=""
