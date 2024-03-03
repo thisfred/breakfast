@@ -12,6 +12,8 @@ from functools import singledispatch
 
 from breakfast.scope_graph import (
     Fragment,
+    Gadget,
+    IncompleteFragment,
     NodeType,
     NotFoundError,
     Path,
@@ -202,7 +204,7 @@ def visit_module(
 
     graph.add_edge(module_root, current)
 
-    yield Fragment(graph.root, graph.root)
+    yield Gadget(graph.root, graph.root)
 
 
 @visit.register
@@ -236,8 +238,27 @@ def visit_name(
         ]
 
     for scope in scopes:
-        fragment = Fragment(scope, scope, is_statement=False)
-        yield fragment
+        yield IncompleteFragment(scope, scope)
+
+
+def build_target_fragments(
+    node: ast.Assign,
+    source: Source,
+    graph: ScopeGraph,
+    state: State,
+    current_scope: ScopeNode,
+    current_parent: ScopeNode,
+) -> list[Fragment]:
+    target_fragments = []
+    for node_target in node.targets:
+        for fragment in visit(node_target, source, graph, state):
+            if isinstance(fragment.entry.action, Pop):
+                graph.add_edge(current_scope, fragment.entry, same_rank=True)
+                target_fragments.append(fragment)
+            elif isinstance(fragment.exit.action, Push):
+                graph.add_edge(fragment.exit, current_parent, same_rank=True)
+
+    return target_fragments
 
 
 @visit.register
@@ -249,15 +270,21 @@ def visit_assign(
     exit_scope = graph.add_scope()
     current_parent = exit_scope
     current_scope = graph.add_scope(link_to=current_parent)
-    target_fragments = []
-    for node_target in node.targets:
-        for fragment in visit(node_target, source, graph, state):
-            if isinstance(fragment.entry.action, Pop):
-                graph.add_edge(current_scope, fragment.entry, same_rank=True)
-                target_fragments.append(fragment)
-            elif isinstance(fragment.exit.action, Push):
-                graph.add_edge(fragment.exit, current_parent, same_rank=True)
-    value_fragments = list(visit(node.value, source, graph, state))
+    target_fragments = build_target_fragments(
+        node=node,
+        source=source,
+        graph=graph,
+        state=state,
+        current_scope=current_scope,
+        current_parent=current_parent,
+    )
+    value_fragments = []
+    for fragment in visit(node.value, source, graph, state):
+        match fragment:
+            case Gadget():
+                yield fragment
+            case _:
+                value_fragments.append(fragment)
     if len(value_fragments) == len(target_fragments):
         for target_fragment, value_fragment in zip(
             target_fragments, value_fragments, strict=True
@@ -280,7 +307,7 @@ def visit_assign(
                 )
                 graph.add_edge(value_fragment.exit, current_parent)
 
-    yield Fragment(current_scope, exit_scope)
+    yield Gadget(current_scope, exit_scope)
 
 
 @visit.register
@@ -289,10 +316,11 @@ def visit_attribute(
 ) -> Iterator[Fragment]:
     expressions = []
     for fragment in visit(node.value, source, graph, state):
-        if not fragment.is_statement:
-            expressions.append(fragment)
-        else:
-            yield fragment
+        match fragment:
+            case IncompleteFragment():
+                expressions.append(fragment)
+            case _:
+                yield fragment
 
     position = source.node_position(node)
     names = names_from(node.value)
@@ -318,10 +346,9 @@ def visit_attribute(
         graph.add_edge(dot_scope, fragment.entry, same_rank=True)
         final_fragment = fragment
 
-    yield Fragment(
+    yield IncompleteFragment(
         in_scope,
         final_fragment.exit if final_fragment else dot_scope,
-        is_statement=False,
     )
     if not isinstance(node.ctx, ast.Store):
         return
@@ -390,30 +417,20 @@ def add_instance_property(
 def visit_call(
     node: ast.Call, source: Source, graph: ScopeGraph, state: State
 ) -> Iterator[Fragment]:
-    # XXX: a hack to handle super().something. this will break when `super` is
-    # redefined.
-    names = names_from(node.func)
-    if names == ("super",) and state.class_name:
-        top = graph.add_scope()
-        bottom = graph.add_scope()
-        pop = graph.add_scope(link_from=bottom, action=Pop("super"), same_rank=True)
-        for super_class_fragment in state.inheritance_hierarchy:
-            copied = graph.copy(super_class_fragment)
-            graph.connect(pop, copied, same_rank=True)
-            graph.connect(copied, top)
-        graph.add_edge(bottom, top)
-        yield Fragment(bottom, top)
-
-    yield from visit_all(node.args, source, graph, state)
+    for fragment in visit_all(node.args, source, graph, state):
+        scope = graph.add_scope()
+        graph.connect(fragment, scope, same_rank=True)
+        yield Gadget(scope, scope)
 
     in_scope = graph.add_scope(action=Push("()"))
 
     expressions = []
     for fragment in visit(node.func, source, graph, state):
-        if not fragment.is_statement:
-            expressions.append(fragment)
-        else:
-            yield fragment
+        match fragment:
+            case IncompleteFragment():
+                expressions.append(fragment)
+            case _:
+                yield fragment
 
     for fragment in expressions:
         graph.add_edge(in_scope, fragment.entry, same_rank=True)
@@ -433,7 +450,7 @@ def visit_call(
                 same_rank=True,
             )
 
-        yield Fragment(in_scope, fragment.exit, is_statement=False)
+        yield IncompleteFragment(in_scope, fragment.exit)
 
 
 @visit.register
@@ -450,10 +467,43 @@ def visit_for_loop(
         elif isinstance(fragment.exit.action, Push):
             graph.add_edge(fragment.exit, current_parent, same_rank=True)
 
-    yield Fragment(current_scope, exit_scope)
+    yield Gadget(current_scope, exit_scope)
     yield from visit(node.iter, source, graph, state)
     yield from visit_all(node.body, source, graph, state)
     yield from visit_all(node.orelse, source, graph, state)
+
+
+def add_super_gadgets(
+    state: State, current_scope: ScopeNode, graph: ScopeGraph
+) -> ScopeNode:
+    for base in state.inheritance_hierarchy:
+        parent = current_scope
+        current_scope = graph.add_scope(link_to=current_scope)
+        previous = graph.add_scope(
+            link_from=current_scope,
+            name="super",
+            action=Pop("super"),
+            is_definition=True,
+            same_rank=True,
+        )
+        for i, name in enumerate(base):
+            previous = graph.add_scope(
+                link_from=previous,
+                name=name,
+                action=Push(name),
+                same_rank=True,
+            )
+            if i < len(base) - 1:
+                previous = graph.add_scope(
+                    link_from=previous,
+                    name=".",
+                    action=Push("."),
+                    same_rank=True,
+                )
+
+        graph.add_edge(previous, parent)
+
+    return current_scope
 
 
 @visit.register
@@ -485,11 +535,6 @@ def visit_function_definition(
     )
     parent_scope = current_scope
 
-    is_method = (
-        state.instance_scope
-        and not is_static_method(node)
-        and not is_class_method(node)
-    )
     if type_params := getattr(node, "type_params", None):
         yield from visit_all(type_params, source, graph, state)
     yield from visit_all(node.args.defaults, source, graph, state)
@@ -501,6 +546,17 @@ def visit_function_definition(
             graph.add_edge(function_definition.exit, fragment.entry, same_rank=True)
 
         yield fragment
+
+    is_method = (
+        state.instance_scope
+        and not is_static_method(node)
+        and not is_class_method(node)
+    )
+
+    if is_method:
+        current_scope = add_super_gadgets(
+            state=state, current_scope=current_scope, graph=graph
+        )
 
     self_name = None
     for i, arg in enumerate(node.args.args):
@@ -544,7 +600,7 @@ def visit_function_definition(
         with state.scope(function_bottom):
             current_scope = process_body(node.body, source, graph, state, current_scope)
     graph.add_edge(function_bottom, current_scope)
-    yield Fragment(in_scope, out_scope)
+    yield Gadget(in_scope, out_scope)
 
 
 def visit_type_annotation(
@@ -581,21 +637,21 @@ def process_body(
     for statement in body:
         for fragment in visit(statement, source, graph, state):
             match fragment:
-                case Fragment(entry_point, exit_point, is_statement=True):
+                case Gadget(entry_point, exit_point):
                     graph.connect(fragment, current_scope)
                     current_scope = (
                         entry_point
                         if isinstance(entry_point, ScopeNode)
                         else entry_point.entry
                     )
-                case Fragment(
+                case IncompleteFragment(
                     entry_point, exit_point
                 ) if entry_point is exit_point and isinstance(
                     entry_point, ScopeNode
                 ) and entry_point.node_type is NodeType.DEFINITION:
                     current_scope = graph.add_scope(link_to=current_scope)
                     graph.connect(current_scope, fragment)
-                case Fragment(_, exit_point, is_statement=False):
+                case IncompleteFragment(_, exit_point):
                     current_scope = graph.add_scope(link_to=current_scope)
                     graph.connect(exit_point, current_scope, same_rank=True)
                 case _:
@@ -643,6 +699,7 @@ def visit_class_definition(
         same_rank=True,
     )
     base_fragments = []
+    base_names = []
     for base in node.bases:
         base_fragment = None
         for fragment in visit(base, source, graph, state):
@@ -655,13 +712,14 @@ def visit_class_definition(
             if state.scope_hierarchy:
                 graph.add_edge(base_fragment.exit, state.scope_hierarchy[-1])
             base_fragments.append(base_fragment)
+        base_names.append(names_from(base))
 
     if type_params := getattr(node, "type_params", None):
         yield from visit_all(type_params, source, graph, state)
     class_top_scope = graph.add_scope(link_to=original_scope)
     current_class_scope: ScopeNode = class_top_scope
     with state.instance(instance_scope=i_scope, class_name=name):
-        with state.base_classes(base_fragments):
+        with state.base_classes(base_names):
             current_class_scope = process_body(
                 node.body, source, graph, state, current_class_scope
             )
@@ -679,7 +737,7 @@ def visit_class_definition(
     graph.add_edge(current_scope, i_scope)
     graph.add_edge(parent, current_scope)
 
-    yield Fragment(original_scope, original_scope)
+    yield Gadget(original_scope, original_scope)
 
 
 def _get_relative_module_path(node: ast.ImportFrom, state: State) -> Iterable[str]:
@@ -737,7 +795,7 @@ def visit_import_from(
                 )
 
             graph.add_edge(parent, graph.root)
-    yield Fragment(current_scope, current_scope)
+    yield Gadget(current_scope, current_scope)
 
 
 @visit.register
@@ -766,7 +824,7 @@ def visit_import(
             same_rank=True,
         )
         graph.add_edge(remote, graph.root)
-    yield Fragment(current_scope, current_scope)
+    yield Gadget(current_scope, current_scope)
 
 
 @visit.register
@@ -795,7 +853,7 @@ def visit_global(
         )
         graph.add_edge(parent, graph.module_roots[source.module_name])
 
-    yield Fragment(current_scope, current_scope)
+    yield Gadget(current_scope, current_scope)
 
 
 @visit.register
@@ -826,7 +884,7 @@ def visit_nonlocal(
             parent, state.scope_hierarchy[-2] or graph.module_roots[source.module_name]
         )
 
-    yield Fragment(current_scope, current_scope)
+    yield Gadget(current_scope, current_scope)
 
 
 @visit.register
@@ -887,7 +945,7 @@ def visit_comprehension(
         for fragment in visit(sub_node, source, graph, state):
             graph.add_edge(fragment.exit, current_scope)
 
-    yield Fragment(current_scope, top_scope)
+    yield IncompleteFragment(current_scope, top_scope)
 
 
 @visit.register
@@ -910,7 +968,7 @@ def visit_match_as(
     if node.pattern:
         yield from visit(node.pattern, source, graph, state)
 
-    yield Fragment(current_scope, current_scope)
+    yield Gadget(current_scope, current_scope)
 
 
 @visit.register
@@ -927,7 +985,7 @@ def visit_type_var(
     )
     if node.bound:
         yield from visit(node.bound, source, graph, state)
-    yield Fragment(scope, scope, is_statement=False)
+    yield IncompleteFragment(scope, scope)
 
 
 @dataclass(frozen=True)

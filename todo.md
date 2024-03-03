@@ -23,3 +23,5 @@
   versions locally as well as in github actions.
 
 ### Bugs:
+
+* newline literals in source code seem to break Source.get_ast

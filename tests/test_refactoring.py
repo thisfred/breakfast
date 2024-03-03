@@ -493,6 +493,25 @@ def test_extract_method_should_not_repeat_return_variables():
     assert replace.text.startswith("        start, end =")
 
 
+def test_extract_method_should_pass_on_arguments():
+    source = make_source(
+        """
+        class C:
+            def m(self):
+                start, end = self.extended_range
+                text = start.through(end).text
+        """
+    )
+
+    start = source.position(4, 0)
+    end = source.position(5, 0)
+
+    refactor = Refactor(TextRange(start, end))
+    insert, _replace = refactor.extract_method(name="method")
+
+    assert "def method(self, start, end):" in insert.text
+
+
 def test_slide_statements_should_not_slide_beyond_first_usage():
     source = make_source(
         """

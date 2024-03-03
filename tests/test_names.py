@@ -1174,3 +1174,37 @@ def test_should_find_decorators():
         (1, 4),
         (4, 1),
     ]
+
+
+def test_should_find_multiple_assignment():
+    source = make_source(
+        """
+        class C:
+            def m(self):
+                start, end = self.extended_range
+                text = start.through(end).text
+        """
+    )
+
+    position = source.position(4, 29)
+
+    assert all_occurrence_position_tuples(position, sources=[source]) == [
+        (3, 15),
+        (4, 29),
+    ]
+
+
+def test_should_find_arguments_in_chained_calls():
+    source = make_source(
+        """
+        a = 1
+        b = c.d(a).e
+        """
+    )
+
+    position = source.position(2, 8)
+
+    assert all_occurrence_position_tuples(position, sources=[source]) == [
+        (1, 0),
+        (2, 8),
+    ]

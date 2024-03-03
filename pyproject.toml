@@ -25,10 +25,11 @@ test = [
 dev = [
     "astpretty",
     "black",
+    "graphviz",
+    "lsp-devtools",
     "mypy",
-    "ruff",
     "pre-commit",
-    "lsp-devtools"]
+    "ruff"]
 lsp = [
     "lsprotocol",
     "pygls"]

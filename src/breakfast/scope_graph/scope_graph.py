@@ -71,7 +71,37 @@ class ScopeNode:
 
 
 @dataclass
-class Fragment:
+class Fragment(Protocol):
+    _entry: "ScopeNode | Fragment"
+    _exit: "ScopeNode | Fragment"
+    is_statement: bool = True
+
+    @property
+    def entry(self) -> ScopeNode:
+        ...
+
+    @property
+    def exit(self) -> ScopeNode:
+        ...
+
+
+@dataclass
+class IncompleteFragment:
+    _entry: "ScopeNode | Fragment"
+    _exit: "ScopeNode | Fragment"
+    is_statement: bool = False
+
+    @property
+    def entry(self) -> ScopeNode:
+        return self._entry.entry
+
+    @property
+    def exit(self) -> ScopeNode:
+        return self._exit.exit
+
+
+@dataclass
+class Gadget:
     _entry: "ScopeNode | Fragment"
     _exit: "ScopeNode | Fragment"
     is_statement: bool = True
@@ -225,11 +255,13 @@ class ScopeGraph:
         self.add_edge(
             fragment_or_scope_1.exit, fragment_or_scope_2.entry, same_rank=same_rank
         )
-        return Fragment(fragment_or_scope_1, fragment_or_scope_2)
+        return IncompleteFragment(fragment_or_scope_1, fragment_or_scope_2)
 
     def unpack(self, fragment_or_scope_node: Fragment | ScopeNode) -> list[ScopeNode]:
         match fragment_or_scope_node:
-            case Fragment(entry_point, exit_point):
+            case Gadget(entry_point, exit_point):
+                return self.unpack(entry_point) + self.unpack(exit_point)
+            case IncompleteFragment(entry_point, exit_point):
                 return self.unpack(entry_point) + self.unpack(exit_point)
             case ScopeNode(_):
                 return [fragment_or_scope_node]
@@ -267,7 +299,7 @@ class ScopeGraph:
 
         if not (entry_point and exit_point):
             raise RuntimeError(f"Attempted to copy invalid fragment `{fragment!r}`")
-        return Fragment(entry_point, exit_point)
+        return IncompleteFragment(entry_point, exit_point)
 
     def group_by_rank(self) -> Iterable[set[int]]:
         edges_to: dict[int, set[tuple[Edge, int]]] = defaultdict(set)
@@ -375,7 +407,7 @@ class ScopeGraph:
 @dataclass
 class State:
     scope_hierarchy: list[ScopeNode]
-    inheritance_hierarchy: list[Fragment]
+    inheritance_hierarchy: list[tuple[str, ...]]
     class_name: str | None = None
     instance_scope: ScopeNode | None = None
     self: str | None = None
@@ -398,9 +430,9 @@ class State:
             self.class_name = old_class_name
 
     @contextmanager
-    def base_classes(self, fragments: list[Fragment]) -> Iterator["State"]:
+    def base_classes(self, names: list[tuple[str, ...]]) -> Iterator["State"]:
         old_hierarchy = self.inheritance_hierarchy
-        self.inheritance_hierarchy = fragments
+        self.inheritance_hierarchy = names
         yield self
         self.inheritance_hierarchy = old_hierarchy
 
