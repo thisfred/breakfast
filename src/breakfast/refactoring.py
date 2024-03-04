@@ -61,103 +61,135 @@ class Refactor:
 
     def extract_method(self, name: str) -> tuple[Edit, ...]:
         start, end = self.extended_range
-
-        names_in_range = self.get_names_in_range(start, end)
-        return_values = self.get_return_values(names_in_range=names_in_range, end=end)
-
         original_indentation = get_indentation(at=start)
 
+        self_name = "self"
+        self_prefix = f"{self_name}."
+        new_indentation = original_indentation
+        definition_indentation = original_indentation[:-4]
+        return self.extract_callable(
+            name=name,
+            start=start,
+            end=end,
+            new_indentation=new_indentation,
+            original_indentation=original_indentation,
+            definition_indentation=definition_indentation,
+            self_name=self_name,
+            self_prefix=self_prefix,
+        )
+
+    def extract_callable(
+        self,
+        name: str,
+        start: Position,
+        end: Position,
+        new_indentation: str,
+        original_indentation: str,
+        definition_indentation: str,
+        self_name: str | None = None,
+        self_prefix: str = "",
+    ) -> tuple[Edit, ...]:
+        names_in_range = self.get_names_in_range(start, end)
+
+        return_values = self.get_return_values(names_in_range=names_in_range, end=end)
+
+        extracted, assignment = self.extract_text(
+            start=start,
+            end=end,
+            return_values=return_values,
+            new_indentation=new_indentation,
+        )
+
+        start_of_current_scope = find_start_of_scope(
+            start=start,
+            current_indentation=original_indentation,
+        )
+
+        parameter_names = self.get_parameter_names(
+            names_in_range=names_in_range,
+            start=start,
+            end=end,
+            start_of_current_scope=start_of_current_scope,
+            self_name=self_name,
+        )
+        if self_name is None:
+            parameters_with_self = parameter_names
+        else:
+            parameters_with_self = [self_name, *parameter_names]
+        parameters = ", ".join(parameters_with_self)
+
+        insert = Edit(
+            start=start_of_current_scope,
+            end=start_of_current_scope,
+            text=f"{NEWLINE}{definition_indentation}def {name}({parameters}):{NEWLINE}{extracted}{NEWLINE}",
+        )
+
+        arguments = ", ".join(f"{n}={n}" for n in parameter_names)
+        call = f"{self_prefix}{name}({arguments})"
+        replace = Edit(
+            start=start,
+            end=end,
+            text=f"{original_indentation}{assignment}{call}{NEWLINE}",
+        )
+        return (insert, replace)
+
+    def get_parameter_names(
+        self,
+        names_in_range: Sequence[tuple[str, Position, ast.expr_context]],
+        start: Position,
+        end: Position,
+        start_of_current_scope: Position,
+        self_name: str | None = None,
+    ) -> list[str]:
+        parameter_names = [
+            name
+            for position, name in self.find_names_defined_before_range(
+                names_in_range, start, end
+            )
+            if position >= start_of_current_scope
+            and (self_name is None or name != self_name)
+        ]
+
+        return parameter_names
+
+    def extract_text(
+        self,
+        start: Position,
+        end: Position,
+        return_values: Sequence[str],
+        new_indentation: str,
+    ) -> tuple[str, str]:
         text = start.through(end).text
         extracted = NEWLINE.join(
             [
-                f"{original_indentation}{line}".rstrip()
+                f"{new_indentation}{line}".rstrip()
                 for line in dedent(text).split(NEWLINE)
             ]
         )
         if return_values:
             return_values_as_string = f'{", ".join(return_values)}'
-            extracted += (
-                f"{NEWLINE}{original_indentation}return {return_values_as_string}"
-            )
+            extracted += f"{NEWLINE}{new_indentation}return {return_values_as_string}"
             assignment = f"{return_values_as_string} = "
         else:
             assignment = ""
 
-        self_name = "self"
-
-        local_names = [
-            name
-            for name in self.find_names_defined_before_range(names_in_range, start, end)
-            if name != self_name
-        ]
-        params = ", ".join((self_name, *local_names))
-
-        insert_point = start
-        current_indentation = get_indentation(at=insert_point)
-        while (
-            get_indentation(at=insert_point) >= current_indentation
-            or insert_point.line.text == ""
-        ) and insert_point.line.next:
-            insert_point = insert_point.line.next.start
-
-        insert = Edit(
-            start=insert_point,
-            end=insert_point,
-            text=f"{NEWLINE}{original_indentation[:-4]}def {name}({params}):{NEWLINE}{extracted}{NEWLINE}",
-        )
-        args = ", ".join(f"{n}={n}" for n in local_names if n != self_name)
-        call = f"self.{name}({args})"
-        replace = Edit(
-            start=start,
-            end=end,
-            text=f"{original_indentation}{assignment}{call}{NEWLINE}",
-        )
-        return (insert, replace)
+        return extracted, assignment
 
     def extract_function(self, name: str) -> tuple[Edit, ...]:
         start, end = self.extended_range
-
-        names_in_range = self.get_names_in_range(start, end)
-        return_values = self.get_return_values(names_in_range=names_in_range, end=end)
-
-        text = start.through(end).text
-        body = NEWLINE.join(
-            [f"{FOUR_SPACES}{line}".rstrip() for line in dedent(text).split(NEWLINE)]
-        )
-        if return_values:
-            return_values_as_string = f'{", ".join(return_values)}'
-            body += f"{NEWLINE}{FOUR_SPACES}return {return_values_as_string}"
-            assignment = f"{return_values_as_string} = "
-        else:
-            assignment = ""
-
-        local_names = list(
-            self.find_names_defined_before_range(names_in_range, start, end)
-        )
-        params = ", ".join(local_names)
-
-        insert_point = start
-        while (
-            get_indentation(at=insert_point)
-            or insert_point.line.text == ""
-            or insert_point.line.text.lstrip().startswith(")")
-        ) and insert_point.line.previous:
-            insert_point = insert_point.line.previous.start
-
-        insert = Edit(
-            start=insert_point,
-            end=insert_point,
-            text=f"{NEWLINE}def {name}({params}):{NEWLINE}{body}{NEWLINE}",
-        )
-        args = ", ".join(f"{n}={n}" for n in local_names)
-        call = f"{name}({args})"
         original_indentation = get_indentation(at=start)
-        replace = Edit(
+
+        new_indentation = FOUR_SPACES
+        definition_indentation = ""
+
+        return self.extract_callable(
+            name=name,
             start=start,
             end=end,
-            text=f"{original_indentation}{assignment}{call}{NEWLINE}",
+            new_indentation=new_indentation,
+            original_indentation=original_indentation,
+            definition_indentation=definition_indentation,
         )
-        return (insert, replace)
 
     def slide_statements(self) -> tuple[Edit, ...]:
         first, last = self.text_range.start.line, self.text_range.end.line
@@ -225,7 +257,7 @@ class Refactor:
         names: Sequence[tuple[str, Position, ast.expr_context]],
         start: Position,
         end: Position,
-    ) -> Iterable[str]:
+    ) -> Iterable[tuple[Position, str]]:
         found = set()
         for name, position, _ in names:
             if name in found:
@@ -237,9 +269,9 @@ class Refactor:
             for occurrence in occurrences:
                 if occurrence < start:
                     found.add(name)
-                    yield name
+                    yield occurrence, name
                     break
-                if occurrence >= start:
+                else:
                     break
 
     def find_names_used_after_position(
@@ -291,6 +323,18 @@ class Refactor:
             return target.start_of_line
 
         return None
+
+
+def find_start_of_scope(start: Position, current_indentation: str) -> Position:
+    start_of_current_scope = start
+    while (
+        get_indentation(at=start_of_current_scope) >= current_indentation
+        or start_of_current_scope.line.text == ""
+        or start_of_current_scope.line.text.lstrip().startswith(")")
+    ) and start_of_current_scope.line.previous:
+        start_of_current_scope = start_of_current_scope.line.previous.start
+
+    return start_of_current_scope
 
 
 def get_indentation(at: Position) -> str:

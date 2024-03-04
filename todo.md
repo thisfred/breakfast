@@ -25,4 +25,3 @@
 ### Bugs:
 
 * newline literals in source code seem to break Source.get_ast
-* extract function will pass global names like classes and functions
