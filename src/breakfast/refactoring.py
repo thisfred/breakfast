@@ -138,7 +138,9 @@ class Refactor:
 
         insert_point = start
         while (
-            get_indentation(at=insert_point) or insert_point.line.text == ""
+            get_indentation(at=insert_point)
+            or insert_point.line.text == ""
+            or insert_point.line.text.lstrip().startswith(")")
         ) and insert_point.line.previous:
             insert_point = insert_point.line.previous.start
 

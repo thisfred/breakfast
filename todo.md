@@ -25,6 +25,4 @@
 ### Bugs:
 
 * newline literals in source code seem to break Source.get_ast
-* extract function will put definition inside argument list
-* extract function will return loop variables
 * extract function will pass global names like classes and functions

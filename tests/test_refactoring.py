@@ -350,6 +350,26 @@ def test_extract_function_should_extract_before_current_scope():
     assert insert.start == source.position(1, 0)
 
 
+def test_extract_function_should_handle_indented_arguments_of_enclosing_scope():
+    source = make_source(
+        """
+        def f(
+            i,
+            j,
+        ):
+            a = 1
+            b = a + 2
+            print(b)
+        """
+    )
+    start = source.position(6, 0)
+    end = source.position(6, 12)
+    refactor = Refactor(TextRange(start, end))
+    insert, *_edits = refactor.extract_function(name="function")
+
+    assert insert.start == source.position(1, 0)
+
+
 def test_extract_function_should_only_consider_variables_in_scope():
     source = make_source(
         """
