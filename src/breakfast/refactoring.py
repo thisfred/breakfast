@@ -60,51 +60,34 @@ class Refactor:
         return (insert, *edits)
 
     def extract_method(self, name: str) -> tuple[Edit, ...]:
-        start, end = self.extended_range
-        original_indentation = get_indentation(at=start)
-
         self_name = "self"
         self_prefix = f"{self_name}."
-        new_indentation = original_indentation
-        definition_indentation = original_indentation[:-4]
         return self.extract_callable(
             name=name,
-            start=start,
-            end=end,
-            new_indentation=new_indentation,
-            original_indentation=original_indentation,
-            definition_indentation=definition_indentation,
+            indent_definition=True,
             self_name=self_name,
             self_prefix=self_prefix,
         )
 
     def extract_function(self, name: str) -> tuple[Edit, ...]:
-        start, end = self.extended_range
-        original_indentation = get_indentation(at=start)
-
-        new_indentation = FOUR_SPACES
-        definition_indentation = ""
-
         return self.extract_callable(
             name=name,
-            start=start,
-            end=end,
-            new_indentation=new_indentation,
-            original_indentation=original_indentation,
-            definition_indentation=definition_indentation,
+            new_indentation=FOUR_SPACES,
         )
 
     def extract_callable(
         self,
         name: str,
-        start: Position,
-        end: Position,
-        new_indentation: str,
-        original_indentation: str,
-        definition_indentation: str,
+        indent_definition: bool = False,
+        new_indentation: str | None = None,
         self_name: str | None = None,
         self_prefix: str = "",
     ) -> tuple[Edit, ...]:
+        start, end = self.extended_range
+        original_indentation = get_indentation(at=start)
+        if new_indentation is None:
+            new_indentation = original_indentation
+
         names_in_range = self.get_names_in_range(start, end)
 
         return_values = self.get_return_values(names_in_range=names_in_range, end=end)
@@ -134,6 +117,7 @@ class Refactor:
             parameters_with_self = [self_name, *parameter_names]
         parameters = ", ".join(parameters_with_self)
 
+        definition_indentation = original_indentation[:-4] if indent_definition else ""
         insert = Edit(
             start=start_of_current_scope,
             end=start_of_current_scope,
