@@ -78,6 +78,22 @@ class Refactor:
             self_prefix=self_prefix,
         )
 
+    def extract_function(self, name: str) -> tuple[Edit, ...]:
+        start, end = self.extended_range
+        original_indentation = get_indentation(at=start)
+
+        new_indentation = FOUR_SPACES
+        definition_indentation = ""
+
+        return self.extract_callable(
+            name=name,
+            start=start,
+            end=end,
+            new_indentation=new_indentation,
+            original_indentation=original_indentation,
+            definition_indentation=definition_indentation,
+        )
+
     def extract_callable(
         self,
         name: str,
@@ -174,22 +190,6 @@ class Refactor:
             assignment = ""
 
         return extracted, assignment
-
-    def extract_function(self, name: str) -> tuple[Edit, ...]:
-        start, end = self.extended_range
-        original_indentation = get_indentation(at=start)
-
-        new_indentation = FOUR_SPACES
-        definition_indentation = ""
-
-        return self.extract_callable(
-            name=name,
-            start=start,
-            end=end,
-            new_indentation=new_indentation,
-            original_indentation=original_indentation,
-            definition_indentation=definition_indentation,
-        )
 
     def slide_statements(self) -> tuple[Edit, ...]:
         first, last = self.text_range.start.line, self.text_range.end.line
