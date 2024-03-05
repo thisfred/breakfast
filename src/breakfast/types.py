@@ -111,6 +111,13 @@ class Source(Protocol):  # pragma: nocover
 
 @dataclass(order=True, frozen=True)
 class Edit:
-    start: Position
-    end: Position
+    text_range: TextRange
     text: str
+
+    @property
+    def start(self) -> Position:
+        return self.text_range.start
+
+    @property
+    def end(self) -> Position:
+        return self.text_range.end

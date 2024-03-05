@@ -6,8 +6,10 @@ from functools import singledispatch
 from textwrap import dedent
 from typing import Any
 
+from breakfast import types
 from breakfast.names import all_occurrence_positions, build_graph
-from breakfast.types import Edit, Line, NotFoundError, Position, Source, TextRange
+from breakfast.source import TextRange
+from breakfast.types import Edit, Line, NotFoundError, Position, Source
 from breakfast.visitor import generic_visit
 
 logger = logging.getLogger(__name__)
@@ -18,7 +20,7 @@ NEWLINE = "\n"
 
 
 class Refactor:
-    def __init__(self, text_range: TextRange):
+    def __init__(self, text_range: types.TextRange):
         self.text_range = text_range
         self.source = self.text_range.start.source
         self.source_ast = self.source.get_ast()
@@ -40,7 +42,7 @@ class Refactor:
         ]
         edits = sorted(
             [
-                Edit(start=self.text_range.start, end=self.text_range.end, text=name),
+                Edit(text_range=self.text_range, text=name),
                 *other_edits,
             ]
         )
@@ -56,7 +58,7 @@ class Refactor:
         insert_point = statement_start or first_edit_position.start_of_line
         indentation = " " * insert_point.column
         definition = f"{name} = {extracted}{NEWLINE}{indentation}"
-        insert = Edit(start=insert_point, end=insert_point, text=definition)
+        insert = make_insert(at=insert_point, text=definition)
         return (insert, *edits)
 
     def extract_method(self, name: str) -> tuple[Edit, ...]:
@@ -83,7 +85,7 @@ class Refactor:
         self_name: str | None = None,
         self_prefix: str = "",
     ) -> tuple[Edit, ...]:
-        start, end = self.extended_range
+        start, end = self.extended_range.start, self.extended_range.end
         original_indentation = get_indentation(at=start)
         if new_indentation is None:
             new_indentation = original_indentation
@@ -93,8 +95,7 @@ class Refactor:
         return_values = self.get_return_values(names_in_range=names_in_range, end=end)
 
         extracted, assignment = self.extract_text(
-            start=start,
-            end=end,
+            text_range=self.extended_range,
             return_values=return_values,
             new_indentation=new_indentation,
         )
@@ -106,8 +107,7 @@ class Refactor:
 
         parameter_names = self.get_parameter_names(
             names_in_range=names_in_range,
-            start=start,
-            end=end,
+            text_range=self.extended_range,
             start_of_current_scope=start_of_current_scope,
             self_name=self_name,
         )
@@ -119,16 +119,14 @@ class Refactor:
 
         definition_indentation = original_indentation[:-4] if indent_definition else ""
         insert = Edit(
-            start=start_of_current_scope,
-            end=start_of_current_scope,
+            TextRange(start=start_of_current_scope, end=start_of_current_scope),
             text=f"{NEWLINE}{definition_indentation}def {name}({parameters}):{NEWLINE}{extracted}{NEWLINE}",
         )
 
         arguments = ", ".join(f"{n}={n}" for n in parameter_names)
         call = f"{self_prefix}{name}({arguments})"
         replace = Edit(
-            start=start,
-            end=end,
+            TextRange(start=start, end=end),
             text=f"{original_indentation}{assignment}{call}{NEWLINE}",
         )
         return (insert, replace)
@@ -136,15 +134,14 @@ class Refactor:
     def get_parameter_names(
         self,
         names_in_range: Sequence[tuple[str, Position, ast.expr_context]],
-        start: Position,
-        end: Position,
+        text_range: types.TextRange,
         start_of_current_scope: Position,
         self_name: str | None = None,
     ) -> list[str]:
         parameter_names = [
             name
             for position, name in self.find_names_defined_before_range(
-                names_in_range, start, end
+                names_in_range, text_range
             )
             if position >= start_of_current_scope
             and (self_name is None or name != self_name)
@@ -154,12 +151,11 @@ class Refactor:
 
     def extract_text(
         self,
-        start: Position,
-        end: Position,
+        text_range: types.TextRange,
         return_values: Sequence[str],
         new_indentation: str,
     ) -> tuple[str, str]:
-        text = start.through(end).text
+        text = text_range.text
         extracted = NEWLINE.join(
             [
                 f"{new_indentation}{line}".rstrip()
@@ -180,25 +176,23 @@ class Refactor:
         target = self.find_slide_target(first, last)
         if target is None:
             return ()
-        insert = Edit(
-            start=target,
-            end=target,
-            text=first.start.through(last.end).text + NEWLINE,
+        insert = make_insert(
+            at=target, text=first.start.through(last.end).text + NEWLINE
         )
-        delete = Edit(
-            start=first.start, end=last.next.start if last.next else last.end, text=""
+        delete = make_delete(
+            start=first.start, end=last.next.start if last.next else last.end
         )
         return (insert, delete)
 
     @property
-    def extended_range(self) -> tuple[Position, Position]:
+    def extended_range(self) -> types.TextRange:
         start = self.text_range.start
         end = self.text_range.end
         if start.row < end.row:
             start = start.start_of_line
             end = end.line.next.start if end.line.next else end
 
-        return start, end
+        return TextRange(start, end)
 
     def get_return_values(
         self,
@@ -239,8 +233,7 @@ class Refactor:
     def find_names_defined_before_range(
         self,
         names: Sequence[tuple[str, Position, ast.expr_context]],
-        start: Position,
-        end: Position,
+        text_range: types.TextRange,
     ) -> Iterable[tuple[Position, str]]:
         found = set()
         for name, position, _ in names:
@@ -251,12 +244,10 @@ class Refactor:
             except NotFoundError:
                 continue
             for occurrence in occurrences:
-                if occurrence < start:
+                if occurrence < text_range.start:
                     found.add(name)
                     yield occurrence, name
-                    break
-                else:
-                    break
+                break
 
     def find_names_used_after_position(
         self,
@@ -429,7 +420,15 @@ def is_structurally_identical(node: ast.AST, other_node: Any) -> bool:
 
 def make_edit(source: Source, node: ast.AST, length: int, new_text: str) -> Edit:
     start = source.node_position(node)
-    return Edit(start=start, end=start + (length - 1), text=new_text)
+    return Edit(TextRange(start=start, end=start + (length - 1)), text=new_text)
+
+
+def make_insert(at: Position, text: str) -> Edit:
+    return Edit(TextRange(start=at, end=at), text=text)
+
+
+def make_delete(start: Position, end: Position) -> Edit:
+    return Edit(TextRange(start=start, end=end), text="")
 
 
 @singledispatch

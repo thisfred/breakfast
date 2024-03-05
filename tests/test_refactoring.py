@@ -29,7 +29,9 @@ def test_extract_variable_should_replace_extracted_test_with_new_name():
 
     refactor = Refactor(TextRange(extraction_start, extraction_end))
     _, replace = refactor.extract_variable(name="b")
-    assert replace == Edit(start=extraction_start, end=extraction_end, text="b")
+    assert replace == Edit(
+        TextRange(start=extraction_start, end=extraction_end), text="b"
+    )
 
 
 def test_extract_variable_should_insert_name_definition_before_extraction_point():
@@ -61,11 +63,10 @@ def test_extract_variable_should_replace_code_with_variable():
 
     assert edits == (
         Edit(
-            source.position(1, 0),
-            source.position(1, 0),
+            TextRange(source.position(1, 0), source.position(1, 0)),
             "result = some_calculation()\n",
         ),
-        Edit(extraction_start, extraction_end, "result"),
+        Edit(TextRange(extraction_start, extraction_end), "result"),
     )
 
 
