@@ -565,7 +565,7 @@ def test_slide_statements_should_not_slide_beyond_first_usage():
     last = source.lines[1]
 
     refactor = Refactor(TextRange(first.start, last.end))
-    edits = refactor.slide_statements()
+    edits = refactor.slide_statements_down()
 
     assert not edits
 
@@ -583,7 +583,7 @@ def test_slide_statements_should_not_slide_into_nested_scopes():
     last = source.lines[1]
 
     refactor = Refactor(TextRange(first.start, last.end))
-    edits = refactor.slide_statements()
+    edits = refactor.slide_statements_down()
     assert not edits
 
 
@@ -600,7 +600,7 @@ def test_slide_statements_should_slide_past_irrelevant_statements():
     last = source.lines[1]
 
     refactor = Refactor(TextRange(first.start, last.end))
-    insert, delete = refactor.slide_statements()
+    insert, delete = refactor.slide_statements_down()
 
     assert insert.start.row == 3
     assert delete.start.row == 1
@@ -621,7 +621,7 @@ def test_slide_statements_should_slide_multiple_lines():
     last = source.lines[2]
 
     refactor = Refactor(TextRange(first.start, last.end))
-    insert, delete = refactor.slide_statements()
+    insert, delete = refactor.slide_statements_down()
 
     assert insert.start.row == 5
     assert insert.text == dedent(
@@ -630,3 +630,22 @@ def test_slide_statements_should_slide_multiple_lines():
         other_value = 3
         """
     )
+
+
+def test_slide_statements_up_should_slide_past_irrelevant_statements():
+    source = make_source(
+        """
+        value = 0
+        other_value = 3
+        print(value + 20)
+        """
+    )
+
+    first = source.lines[3]
+    last = source.lines[3]
+
+    refactor = Refactor(TextRange(first.start, last.end))
+    insert, delete = refactor.slide_statements_up()
+
+    assert insert.start.row == 2
+    assert delete.start.row == 3

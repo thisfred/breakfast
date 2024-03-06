@@ -11,11 +11,10 @@
   * inline variable
 * extract method
 * extract function to top level scope
+* slide up to top of current scope
 
 ### Refactoring
 
-* refactor State into the graph where possible
-* refactor rename to use Edit
 
 ### Chores
 
@@ -25,3 +24,4 @@
 ### Bugs:
 
 * newline literals in source code seem to break Source.get_ast
+* rename async / awaited functions

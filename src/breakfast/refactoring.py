@@ -90,7 +90,7 @@ class Refactor:
         if new_indentation is None:
             new_indentation = original_indentation
 
-        names_in_range = self.get_names_in_range(start, end)
+        names_in_range = self.get_names_in_range(self.extended_range)
 
         return_values = self.get_return_values(names_in_range=names_in_range, end=end)
 
@@ -171,9 +171,22 @@ class Refactor:
 
         return extracted, assignment
 
-    def slide_statements(self) -> tuple[Edit, ...]:
+    def slide_statements_down(self) -> tuple[Edit, ...]:
         first, last = self.text_range.start.line, self.text_range.end.line
-        target = self.find_slide_target(first, last)
+        target = self.find_slide_target_after(first, last)
+        if target is None:
+            return ()
+        insert = make_insert(
+            at=target, text=first.start.through(last.end).text + NEWLINE
+        )
+        delete = make_delete(
+            start=first.start, end=last.next.start if last.next else last.end
+        )
+        return (insert, delete)
+
+    def slide_statements_up(self) -> tuple[Edit, ...]:
+        first, last = self.text_range.start.line, self.text_range.end.line
+        target = self.find_slide_target_before(first, last)
         if target is None:
             return ()
         insert = make_insert(
@@ -193,6 +206,62 @@ class Refactor:
             end = end.line.next.start if end.line.next else end
 
         return TextRange(start, end)
+
+    def find_slide_target_after(self, first: Line, last: Line) -> Position | None:
+        text_range = TextRange(first.start, last.end)
+        names_defined_in_range = self.get_names_defined_in_range(text_range)
+        first_usage_after_range = next(
+            p
+            for _, p in self.find_names_used_after_position(
+                names_defined_in_range, last.end
+            )
+        )
+        if not first_usage_after_range:
+            return None
+
+        original_indentation = get_indentation(at=first.start)
+
+        while (
+            first_usage_after_range.row > last.row + 1
+            and get_indentation(at=first_usage_after_range) != original_indentation
+        ):
+            previous = first_usage_after_range.line.previous
+            if not previous:
+                break
+            first_usage_after_range = previous.start
+
+        if first_usage_after_range and first_usage_after_range.row > last.row + 1:
+            return first_usage_after_range.start_of_line
+
+        return None
+
+    def find_slide_target_before(self, first: Line, last: Line) -> Position | None:
+        original_indentation = get_indentation(at=first.start)
+        line = first
+        while (
+            line.previous
+            and get_indentation(at=line.previous.start) >= original_indentation
+        ):
+            line = line.previous
+        if line == first:
+            return None
+
+        scope_before = TextRange(
+            line.start, first.previous.end if first.previous else first.start
+        )
+
+        text_range = TextRange(first.start, last.end)
+        names_in_range = {n for n, _, _ in self.get_names_in_range(text_range)}
+        target = max(
+            line.start,
+            *(
+                position.line.next.start if position.line.next else position.line.end
+                for name, position, _ in self.get_names_in_range(scope_before)
+                if name in names_in_range
+            ),
+        )
+
+        return target
 
     def get_return_values(
         self,
@@ -218,13 +287,13 @@ class Refactor:
         return return_values
 
     def get_names_in_range(
-        self, start: Position, end: Position
+        self, text_range: types.TextRange
     ) -> Sequence[tuple[str, Position, ast.expr_context]]:
         names = []
         for name, position, context in find_names(self.source_ast, self.source):
-            if position < start:
+            if position < text_range.start:
                 continue
-            if position > end:
+            if position > text_range.end:
                 break
             names.append((name, position, context))
 
@@ -264,40 +333,16 @@ class Refactor:
                     yield name, occurrence
                     break
 
-    def find_slide_target(self, first: Line, last: Line) -> Position | None:
-        names_in_range = self.get_names_in_range(first.start, last.end)
-        names_defined_in_statements = [
+    def get_names_defined_in_range(
+        self, text_range: TextRange
+    ) -> list[tuple[str, Position]]:
+        names_defined_in_range = [
             (name, position)
-            for name, position, ctx in names_in_range
+            for name, position, ctx in self.get_names_in_range(text_range)
             if isinstance(ctx, ast.Store)
         ]
-        names_used_after_range = sorted(
-            p
-            for _, p in self.find_names_used_after_position(
-                names_defined_in_statements, last.end
-            )
-        )
-        if not names_used_after_range:
-            return None
 
-        target = names_used_after_range[0]
-
-        lines = self.source.lines[first.row : last.row + 1]
-        original_indentation = min(get_indentation(at=line.start) for line in lines)
-
-        while (
-            target.row > last.row + 1
-            and get_indentation(at=target) != original_indentation
-        ):
-            previous = target.line.previous
-            if not previous:
-                break
-            target = previous.start
-
-        if target and target.row > last.row + 1:
-            return target.start_of_line
-
-        return None
+        return names_defined_in_range
 
 
 def find_start_of_scope(start: Position, current_indentation: str) -> Position:

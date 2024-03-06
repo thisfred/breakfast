@@ -302,17 +302,31 @@ async def code_action(
                 ),
             )
 
-        slide_statements_edit = await _slide_statements(
+        slide_statements_down_edit = await _slide_statements_down(
             refactor,
             document_uri=document_uri,
             version=version,
         )
         actions.append(
             CodeAction(
-                title="breakfast: slide statements",
+                title="breakfast: slide statements down",
                 kind=CodeActionKind.Refactor,
                 data=params.text_document.uri,
-                edit=slide_statements_edit,
+                edit=slide_statements_down_edit,
+                diagnostics=[],
+            ),
+        )
+        slide_statements_up_edit = await _slide_statements_up(
+            refactor,
+            document_uri=document_uri,
+            version=version,
+        )
+        actions.append(
+            CodeAction(
+                title="breakfast: slide statements up",
+                kind=CodeActionKind.Refactor,
+                data=params.text_document.uri,
+                edit=slide_statements_up_edit,
                 diagnostics=[],
             ),
         )
@@ -320,8 +334,8 @@ async def code_action(
     return actions
 
 
-@LSP_SERVER.command("breakfast.slideStatements")
-async def slide_statements(
+@LSP_SERVER.command("breakfast.slideStatementsDown")
+async def slide_statements_down(
     server: LanguageServer, arguments: Sequence[Mapping[str, Any]]
 ) -> None:
     document_uri = arguments[0]["uri"]
@@ -339,7 +353,32 @@ async def slide_statements(
     version = (
         versioned.version if (versioned := client_documents.get(document_uri)) else None
     )
-    workspace_edit = await _slide_statements(refactor, document_uri, version)
+    workspace_edit = await _slide_statements_down(refactor, document_uri, version)
+    if workspace_edit is None:
+        return
+    server.apply_edit(workspace_edit, "breakfast: slide statement")
+
+
+@LSP_SERVER.command("breakfast.slideStatementsUp")
+async def slide_statements_up(
+    server: LanguageServer, arguments: Sequence[Mapping[str, Any]]
+) -> None:
+    document_uri = arguments[0]["uri"]
+    line = arguments[0]["line"] - 1
+    document = server.workspace.get_text_document(document_uri)
+
+    source_lines = tuple(document.source.split("\n"))
+    project_root = server.workspace.root_uri[len("file://") :]
+    source = get_source(uri=document_uri, project_root=project_root, lines=source_lines)
+    start = source.position(row=line, column=0)
+    end = source.position(row=line, column=0)
+    refactor = Refactor(text_range=TextRange(start, end))
+
+    client_documents = server.workspace.text_documents
+    version = (
+        versioned.version if (versioned := client_documents.get(document_uri)) else None
+    )
+    workspace_edit = await _slide_statements_up(refactor, document_uri, version)
     if workspace_edit is None:
         return
     server.apply_edit(workspace_edit, "breakfast: slide statement")
@@ -404,12 +443,30 @@ async def _extract_variable(
     return WorkspaceEdit(document_changes=document_changes)
 
 
-async def _slide_statements(
+async def _slide_statements_down(
     refactor: Refactor,
     document_uri: str,
     version: None,
 ) -> WorkspaceEdit:
-    edits = refactor.slide_statements()
+    edits = refactor.slide_statements_down()
+    text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
+    document_changes: list[TextDocumentEdit | CreateFile | RenameFile | DeleteFile] = [
+        TextDocumentEdit(
+            text_document=OptionalVersionedTextDocumentIdentifier(
+                uri=document_uri, version=version
+            ),
+            edits=text_edits,
+        )
+    ]
+    return WorkspaceEdit(document_changes=document_changes)
+
+
+async def _slide_statements_up(
+    refactor: Refactor,
+    document_uri: str,
+    version: None,
+) -> WorkspaceEdit:
+    edits = refactor.slide_statements_up()
     text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
     document_changes: list[TextDocumentEdit | CreateFile | RenameFile | DeleteFile] = [
         TextDocumentEdit(
