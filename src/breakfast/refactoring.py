@@ -109,21 +109,33 @@ class Refactor:
             names_in_range=names_in_range,
             text_range=self.extended_range,
             start_of_current_scope=start_of_current_scope,
-            self_name=self_name,
         )
         if self_name is None:
             parameters_with_self = parameter_names
         else:
-            parameters_with_self = [self_name, *parameter_names]
-        parameters = ", ".join(parameters_with_self)
+            parameters_with_self = [
+                self_name,
+                *(n for n in parameter_names if n != self_name),
+            ]
 
         definition_indentation = original_indentation[:-4] if indent_definition else ""
+        if self_name:
+            if self_name in parameter_names:
+                static_method = ""
+                parameters = ", ".join(parameters_with_self)
+            else:
+                static_method = f"{definition_indentation}@staticmethod{NEWLINE}"
+                parameters = ", ".join(parameter_names)
+        else:
+            static_method = ""
+            parameters = ", ".join(parameter_names)
+
         insert = Edit(
             TextRange(start=insert_position, end=insert_position),
-            text=f"{NEWLINE}{definition_indentation}def {name}({parameters}):{NEWLINE}{extracted}{NEWLINE}",
+            text=f"{NEWLINE}{static_method}{definition_indentation}def {name}({parameters}):{NEWLINE}{extracted}{NEWLINE}",
         )
 
-        arguments = ", ".join(f"{n}={n}" for n in parameter_names)
+        arguments = ", ".join(f"{n}={n}" for n in parameter_names if n != self_name)
         call = f"{self_prefix}{name}({arguments})"
         replace = Edit(
             TextRange(start=start, end=end),
@@ -136,7 +148,6 @@ class Refactor:
         names_in_range: Sequence[tuple[str, Position, ast.expr_context]],
         text_range: types.TextRange,
         start_of_current_scope: Position,
-        self_name: str | None = None,
     ) -> list[str]:
         parameter_names = [
             name
@@ -144,7 +155,6 @@ class Refactor:
                 names_in_range, text_range
             )
             if position >= start_of_current_scope
-            and (self_name is None or name != self_name)
         ]
 
         return parameter_names
@@ -388,6 +398,13 @@ def find_names_in_function(
     for arg in node.args.args:
         yield arg.arg, source.position(arg.lineno - 1, arg.col_offset), ast.Store()
     yield from generic_visit(find_names, node, source)
+
+
+@find_names.register
+def find_names_in_attribute(
+    node: ast.Attribute, source: Source
+) -> Iterator[tuple[str, Position, ast.expr_context]]:
+    yield from find_names(node.value, source)
 
 
 def get_single_expression_value(text: str) -> ast.AST | None:

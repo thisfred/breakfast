@@ -9,7 +9,6 @@
   * inline function
   * inline method
   * inline variable
-* extract static method when self is not used
 
 ### Refactoring
 

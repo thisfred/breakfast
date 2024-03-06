@@ -534,7 +534,7 @@ def test_extract_method_should_not_repeat_return_variables():
     assert replace.text.startswith("        start, end =")
 
 
-def test_extract_method_should_pass_on_arguments():
+def test_extract_method_should_extract_static_method_when_self_not_used():
     source = make_source(
         """
         class C:
@@ -550,7 +550,7 @@ def test_extract_method_should_pass_on_arguments():
     refactor = Refactor(TextRange(start, end))
     insert, _replace = refactor.extract_method(name="method")
 
-    assert "def method(self, start, end):" in insert.text
+    assert "    @staticmethod\n    def method(start, end):" in insert.text
 
 
 def test_slide_statements_should_not_slide_beyond_first_usage():
