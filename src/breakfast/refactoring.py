@@ -100,9 +100,9 @@ class Refactor:
             new_indentation=new_indentation,
         )
 
+        insert_position = find_start_of_scope(start=start, indentation=new_indentation)
         start_of_current_scope = find_start_of_scope(
-            start=start,
-            current_indentation=original_indentation,
+            start=start, indentation=original_indentation
         )
 
         parameter_names = self.get_parameter_names(
@@ -119,7 +119,7 @@ class Refactor:
 
         definition_indentation = original_indentation[:-4] if indent_definition else ""
         insert = Edit(
-            TextRange(start=start_of_current_scope, end=start_of_current_scope),
+            TextRange(start=insert_position, end=insert_position),
             text=f"{NEWLINE}{definition_indentation}def {name}({parameters}):{NEWLINE}{extracted}{NEWLINE}",
         )
 
@@ -345,10 +345,10 @@ class Refactor:
         return names_defined_in_range
 
 
-def find_start_of_scope(start: Position, current_indentation: str) -> Position:
+def find_start_of_scope(start: Position, indentation: str) -> Position:
     start_of_current_scope = start
     while (
-        get_indentation(at=start_of_current_scope) >= current_indentation
+        get_indentation(at=start_of_current_scope) >= indentation
         or start_of_current_scope.line.text == ""
         or start_of_current_scope.line.text.lstrip().startswith(")")
     ) and start_of_current_scope.line.previous:

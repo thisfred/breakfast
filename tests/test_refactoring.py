@@ -311,7 +311,7 @@ def test_extract_function_should_return_modified_variable_used_after_call():
     assert insert.text.rstrip() == result.rstrip()
 
 
-def test_extract_function_should_extract_to_global_scope():
+def test_extract_function_should_extract_outside_function():
     source = make_source(
         """
         def f():
@@ -649,3 +649,22 @@ def test_slide_statements_up_should_slide_past_irrelevant_statements():
 
     assert insert.start.row == 2
     assert delete.start.row == 3
+
+
+def test_extract_function_should_extract_to_global_scope():
+    source = make_source(
+        """
+        class C:
+            def m():
+                a = 1
+                a += 1
+                return a
+        """
+    )
+
+    start = source.position(4, 0)
+    end = source.position(4, 13)
+    refactor = Refactor(TextRange(start, end))
+    insert, *_edits = refactor.extract_function(name="function")
+
+    assert insert.start.row == 1
