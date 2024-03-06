@@ -9,9 +9,8 @@
   * inline function
   * inline method
   * inline variable
-* extract method
+* extract static method when self is not used
 * extract function to top level scope
-* slide up to top of current scope
 
 ### Refactoring
 
