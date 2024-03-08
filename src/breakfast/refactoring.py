@@ -85,38 +85,49 @@ class Refactor:
         self_name: str | None = None,
         self_prefix: str = "",
     ) -> tuple[Edit, ...]:
-        start, end = self.extended_range.start, self.extended_range.end
+        start, end = self.text_range.start, self.text_range.end
         original_indentation = get_indentation(at=start)
         if new_indentation is None:
             new_indentation = original_indentation
 
         names_in_range = self.get_names_in_range(self.extended_range)
-
-        return_values = self.get_return_values(names_in_range=names_in_range, end=end)
-
-        extracted, assignment = self.extract_text(
-            text_range=self.extended_range,
-            return_values=return_values,
-            new_indentation=new_indentation,
-        )
-
-        insert_position = find_start_of_scope(start=start, indentation=new_indentation)
+        extracting_partial_line = start.row == end.row and start.column != 0
         start_of_current_scope = find_start_of_scope(
             start=start, indentation=original_indentation
         )
-
+        if extracting_partial_line:
+            extracted, assignment = self.extract_expression(
+                text_range=self.text_range,
+                names_in_range=names_in_range,
+                new_indentation=new_indentation,
+            )
+        else:
+            extracted, assignment = self.extract_statements(
+                text_range=self.extended_range,
+                names_in_range=names_in_range,
+                new_indentation=new_indentation,
+            )
         parameter_names = self.get_parameter_names(
             names_in_range=names_in_range,
             text_range=self.extended_range,
             start_of_current_scope=start_of_current_scope,
         )
-        if self_name is None:
-            parameters_with_self = parameter_names
-        else:
-            parameters_with_self = [
+        arguments = ", ".join(f"{n}={n}" for n in parameter_names if n != self_name)
+        call = f"{self_prefix}{name}({arguments})"
+        replace_text = (
+            call
+            if extracting_partial_line
+            else f"{original_indentation}{assignment}{call}{NEWLINE}"
+        )
+
+        parameters_with_self = (
+            parameter_names
+            if self_name is None
+            else [
                 self_name,
                 *(n for n in parameter_names if n != self_name),
             ]
+        )
 
         definition_indentation = original_indentation[:-4] if indent_definition else ""
         if self_name:
@@ -130,17 +141,13 @@ class Refactor:
             static_method = ""
             parameters = ", ".join(parameter_names)
 
+        insert_position = find_start_of_scope(start=start, indentation=new_indentation)
         insert = Edit(
             TextRange(start=insert_position, end=insert_position),
             text=f"{NEWLINE}{static_method}{definition_indentation}def {name}({parameters}):{NEWLINE}{extracted}{NEWLINE}",
         )
 
-        arguments = ", ".join(f"{n}={n}" for n in parameter_names if n != self_name)
-        call = f"{self_prefix}{name}({arguments})"
-        replace = Edit(
-            TextRange(start=start, end=end),
-            text=f"{original_indentation}{assignment}{call}{NEWLINE}",
-        )
+        replace = Edit(TextRange(start=start, end=end), text=replace_text)
         return (insert, replace)
 
     def get_parameter_names(
@@ -159,17 +166,31 @@ class Refactor:
 
         return parameter_names
 
-    def extract_text(
+    def extract_expression(
         self,
         text_range: types.TextRange,
-        return_values: Sequence[str],
+        names_in_range: Sequence[tuple[str, Position, ast.expr_context]],
         new_indentation: str,
     ) -> tuple[str, str]:
-        text = text_range.text
+        extracted = text_range.text.strip()
+        extracted = f"{new_indentation}return {extracted}"
+        assignment = ""
+
+        return extracted, assignment
+
+    def extract_statements(
+        self,
+        text_range: types.TextRange,
+        names_in_range: Sequence[tuple[str, Position, ast.expr_context]],
+        new_indentation: str,
+    ) -> tuple[str, str]:
+        return_values = self.get_return_values(
+            names_in_range=names_in_range, end=text_range.end
+        )
         extracted = NEWLINE.join(
             [
                 f"{new_indentation}{line}".rstrip()
-                for line in dedent(text).split(NEWLINE)
+                for line in dedent(text_range.text).split(NEWLINE)
             ]
         )
         if return_values:

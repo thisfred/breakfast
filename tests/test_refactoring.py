@@ -218,7 +218,7 @@ def test_extract_function_should_insert_function_definition():
     source = make_source(
         """
         value = 0
-        something = print(value + 8)
+        something = abs(value + 8)
         """
     )
     extraction_start = source.position(2, 12)
@@ -230,7 +230,7 @@ def test_extract_function_should_insert_function_definition():
     assert insert.text == dedent(
         """
         def function(value):
-            print(value + 8)
+            return abs(value + 8)
         """
     )
 
@@ -487,7 +487,7 @@ def test_extract_method_should_replace_extracted_code_with_method_call():
     refactor = Refactor(TextRange(start, end))
     _insert, replace = refactor.extract_method(name="method")
 
-    assert replace.text == "        self.method(a=a)\n"
+    assert replace.text == "self.method(a=a)"
     assert replace.start == source.position(4, 8)
     assert replace.end == source.position(4, 21)
 
@@ -665,6 +665,31 @@ def test_extract_function_should_extract_to_global_scope():
     start = source.position(4, 0)
     end = source.position(4, 13)
     refactor = Refactor(TextRange(start, end))
-    insert, *_edits = refactor.extract_function(name="function")
+    insert, _ = refactor.extract_function(name="function")
 
     assert insert.start.row == 1
+
+
+def test_extract_method_should_extract_part_of_a_line():
+    ...
+    source = make_source(
+        """
+        def inline_call(self) -> tuple[Edit, ...]:
+            range_end = self.text_range.start + 2
+        """
+    )
+
+    start = source.position(2, 16)
+    end = source.position(2, 49)
+
+    refactor = Refactor(TextRange(start, end))
+    insert, edit = refactor.extract_method("f")
+
+    assert dedent(
+        """
+        def f(self):
+            return self.text_range.start + 2
+        """
+    ) == dedent(insert.text)
+
+    assert edit.text == "self.f()"
