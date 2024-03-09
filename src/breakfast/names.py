@@ -45,6 +45,19 @@ def all_occurrence_positions(
 
         view_graph(graph)
 
+    found_definition, definitions = find_definitions(graph=graph, position=position)
+
+    if not found_definition.position:
+        raise AssertionError("Should have found at least the original position.")
+
+    return sorted(
+        consolidate_definitions(definitions, found_definition), reverse=in_reverse_order
+    )
+
+
+def find_definitions(
+    graph: ScopeGraph, position: Position
+) -> tuple[ScopeNode, dict[ScopeNode, set[ScopeNode]]]:
     scopes_for_position = graph.positions.get(position)
     if not scopes_for_position:
         raise NotFoundError
@@ -56,21 +69,6 @@ def all_occurrence_positions(
     else:
         raise NotFoundError
 
-    found_definition, definitions = find_definition(
-        graph, position, possible_occurrences
-    )
-
-    if not found_definition.position:
-        raise AssertionError("Should have found at least the original position.")
-
-    return sorted(
-        consolidate_definitions(definitions, found_definition), reverse=in_reverse_order
-    )
-
-
-def find_definition(
-    graph: ScopeGraph, position: Position, possible_occurrences: Iterable[ScopeNode]
-) -> tuple[ScopeNode, dict[ScopeNode, set[ScopeNode]]]:
     definitions: dict[ScopeNode, set[ScopeNode]] = defaultdict(set)
     found_definition = None
     for occurrence in possible_occurrences:
@@ -93,6 +91,10 @@ def find_definition(
         raise NotFoundError
 
     return found_definition, definitions
+
+
+def find_definition(graph: ScopeGraph, position: Position) -> ScopeNode:
+    return find_definitions(graph, position)[0]
 
 
 def consolidate_definitions(

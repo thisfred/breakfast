@@ -263,7 +263,7 @@ async def code_action(
         refactor = Refactor(text_range=TextRange(start, end))
 
         if start < end:
-            extract_edit = await _extract_variable(
+            extract_variable_edit = await _extract_variable(
                 refactor, document_uri=document_uri, version=version
             )
             actions.append(
@@ -271,12 +271,12 @@ async def code_action(
                     title="breakfast: extract variable",
                     kind=CodeActionKind.RefactorExtract,
                     data=params.text_document.uri,
-                    edit=extract_edit,
+                    edit=extract_variable_edit,
                     diagnostics=[],
                 ),
             )
 
-            extract_edit = await _extract_function(
+            extract_function_edit = await _extract_function(
                 refactor, document_uri=document_uri, version=version
             )
             actions.append(
@@ -284,12 +284,12 @@ async def code_action(
                     title="breakfast: extract function",
                     kind=CodeActionKind.RefactorExtract,
                     data=params.text_document.uri,
-                    edit=extract_edit,
+                    edit=extract_function_edit,
                     diagnostics=[],
                 ),
             )
 
-            extract_edit = await _extract_method(
+            extract_method_edit = await _extract_method(
                 refactor, document_uri=document_uri, version=version
             )
             actions.append(
@@ -297,7 +297,7 @@ async def code_action(
                     title="breakfast: extract method",
                     kind=CodeActionKind.RefactorExtract,
                     data=params.text_document.uri,
-                    edit=extract_edit,
+                    edit=extract_method_edit,
                     diagnostics=[],
                 ),
             )

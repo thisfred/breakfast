@@ -7,7 +7,7 @@ from textwrap import dedent
 from typing import Any
 
 from breakfast import types
-from breakfast.names import all_occurrence_positions, build_graph
+from breakfast.names import all_occurrence_positions, build_graph, find_definition
 from breakfast.source import TextRange
 from breakfast.types import Edit, Line, NotFoundError, Position, Source
 from breakfast.visitor import generic_visit
@@ -77,6 +77,38 @@ class Refactor:
             new_indentation=FOUR_SPACES,
         )
 
+    def inline_call(self, name: str) -> tuple[Edit, ...]:
+        range_end = self.text_range.start + 2
+        text_range = TextRange(self.text_range.start, range_end)
+
+        insert_range = TextRange(
+            text_range.start.line.start, text_range.start.line.start
+        )
+
+        definition = find_definition(self.scope_graph, self.text_range.start)
+        if definition.position is None:
+            return ()
+
+        lines = get_body_for_callable(at=definition.position)
+        text = lines[-1].text.strip()
+        if not text.startswith("return"):
+            return ()
+
+        return_value = text[len("return ") :]
+        body = (
+            NEWLINE.join(f"{line.text}" for line in lines[:-1])
+            + NEWLINE
+            + f"{name} = {return_value}"
+        )
+
+        return (
+            Edit(
+                insert_range,
+                text=f"{body}",
+            ),
+            Edit(text_range, text=name),
+        )
+
     def extract_callable(
         self,
         name: str,
@@ -92,9 +124,6 @@ class Refactor:
 
         names_in_range = self.get_names_in_range(self.extended_range)
         extracting_partial_line = start.row == end.row and start.column != 0
-        start_of_current_scope = find_start_of_scope(
-            start=start, indentation=original_indentation
-        )
         if extracting_partial_line:
             extracted, assignment = self.extract_expression(
                 text_range=self.text_range,
@@ -107,6 +136,9 @@ class Refactor:
                 names_in_range=names_in_range,
                 new_indentation=new_indentation,
             )
+        start_of_current_scope = find_start_of_scope(
+            start=start, indentation=original_indentation
+        )
         parameter_names = self.get_parameter_names(
             names_in_range=names_in_range,
             text_range=self.extended_range,
@@ -242,10 +274,13 @@ class Refactor:
         text_range = TextRange(first.start, last.end)
         names_defined_in_range = self.get_names_defined_in_range(text_range)
         first_usage_after_range = next(
-            p
-            for _, p in self.find_names_used_after_position(
-                names_defined_in_range, last.end
-            )
+            (
+                p
+                for _, p in self.find_names_used_after_position(
+                    names_defined_in_range, last.end
+                )
+            ),
+            None,
         )
         if not first_usage_after_range:
             return None
@@ -379,7 +414,11 @@ class Refactor:
 def find_start_of_scope(start: Position, indentation: str) -> Position:
     start_of_current_scope = start
     while (
-        get_indentation(at=start_of_current_scope) >= indentation
+        (
+            "def " not in start_of_current_scope.line.text
+            and "class " not in start_of_current_scope.line.text
+        )
+        or get_indentation(at=start_of_current_scope) >= indentation
         or start_of_current_scope.line.text == ""
         or start_of_current_scope.line.text.lstrip().startswith(")")
     ) and start_of_current_scope.line.previous:
@@ -531,3 +570,25 @@ def find_statements_in_node_with_body(
     for child in node.body:
         yield child
         yield from find_statements(child)
+
+
+def get_body_for_callable(at: Position) -> Sequence[Line]:
+    next_line: Line | None = at.line
+
+    while next_line:
+        if next_line.text.endswith(":"):
+            next_line = next_line.next
+            break
+        next_line = next_line.next
+
+    if not next_line:
+        return []
+
+    lines = []
+    while next_line:
+        lines.append(next_line)
+        if "return " in next_line.text:
+            break
+        next_line = next_line.next
+
+    return lines

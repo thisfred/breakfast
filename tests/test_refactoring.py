@@ -1,4 +1,4 @@
-from breakfast.refactoring import Edit, Refactor
+from breakfast.refactoring import Edit, Refactor, get_body_for_callable
 from breakfast.source import Source, TextRange
 
 from tests import dedent, make_source
@@ -663,15 +663,32 @@ def test_extract_function_should_extract_to_global_scope():
     )
 
     start = source.position(4, 0)
-    end = source.position(4, 13)
+    end = source.position(5, 0)
     refactor = Refactor(TextRange(start, end))
     insert, _ = refactor.extract_function(name="function")
 
     assert insert.start.row == 1
 
 
+def test_extract_function_should_consider_function_scope():
+    source = make_source(
+        """
+        def f(p):
+            if True:
+                d = c(p)
+                return d
+        """
+    )
+
+    start = source.position(3, 0)
+    end = source.position(4, 0)
+    refactor = Refactor(TextRange(start, end))
+    insert, _ = refactor.extract_function(name="g")
+
+    assert "def g(p):" in insert.text
+
+
 def test_extract_method_should_extract_part_of_a_line():
-    ...
     source = make_source(
         """
         def inline_call(self) -> tuple[Edit, ...]:
@@ -693,3 +710,54 @@ def test_extract_method_should_extract_part_of_a_line():
     ) == dedent(insert.text)
 
     assert edit.text == "self.f()"
+
+
+def test_inline_call_should_replace_call_with_function_return_value():
+    source = make_source(
+        """
+        def f():
+            return 2
+
+        b = f()
+        """
+    )
+
+    start = source.position(4, 4)
+    end = source.position(4, 4)
+    refactor = Refactor(TextRange(start, end))
+    insert, edit = refactor.inline_call(name="result")
+
+    assert "result = 2" in insert.text
+    assert "result" == edit.text
+    assert edit.start == start
+    assert edit.end == source.position(4, 6)
+
+
+def test_get_body_for_should_recognize_indented_parameter_list():
+    source = make_source(
+        """
+        def f(
+            a: list[int]
+        ) -> tuple[str, ...]:
+            return max([a])
+        """
+    )
+
+    position = source.position(1, 4)
+
+    assert get_body_for_callable(position) == [source.lines[4]]
+
+
+def test_get_body_for_should_return_method_body():
+    source = make_source(
+        """
+        class C:
+            def f(self, a: list[int]) -> tuple[str, ...]:
+                a += 1
+                return max([a])
+        """
+    )
+
+    position = source.position(2, 8)
+
+    assert get_body_for_callable(position) == list(source.lines[3:5])
