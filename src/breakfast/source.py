@@ -2,10 +2,11 @@ import logging
 import os
 import re
 import sys
-from ast import AST, parse
+from ast import AST, Module, parse
 from dataclasses import InitVar, dataclass, replace
 
 from breakfast import types
+from breakfast.search import find_functions
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,9 @@ class TextRange:
     @property
     def text(self) -> str:
         return self.start.source.get_text(start=self.start, end=self.end)
+
+    def encloses(self, position: types.Position) -> bool:
+        return self.start <= position and self.end >= position
 
 
 @dataclass(order=True, frozen=True)
@@ -192,6 +196,8 @@ class Source:
 
         (Note that ast.AST's col_offset is in *bytes*)
         """
+        if isinstance(node, Module):
+            return self.position(0, 0)
         row = node.lineno - 1
         line = self.text[row]
         if line.isascii():
@@ -201,6 +207,46 @@ class Source:
             column_offset = len(byte_prefix.decode("utf-8"))
 
         return self.position(row=row, column=column_offset)
+
+    def node_end_position(self, node: AST) -> types.Position | None:
+        """
+        Return the start position of the node in unicode characters.
+
+        (Note that ast.AST's col_offset is in *bytes*)
+        """
+        if node.end_lineno is None or node.end_col_offset is None:
+            return None
+
+        row = node.end_lineno - 1
+        line = self.text[row]
+        if line.isascii():
+            column_offset = node.end_col_offset
+        else:
+            byte_prefix = line.encode("utf-8")[: node.end_col_offset]
+            column_offset = len(byte_prefix.decode("utf-8"))
+
+        return self.position(row=row, column=column_offset)
+
+    def node_range(self, node: AST) -> types.TextRange | None:
+        end = self.node_end_position(node)
+        if not end:
+            return None
+        start = self.node_position(node)
+        return TextRange(start, end)
+
+    def get_enclosing_function_range(
+        self, position: types.Position
+    ) -> types.TextRange | None:
+        ast = self.get_ast()
+        enclosing_ranges = [
+            text_range
+            for f in find_functions(ast, up_to=position)
+            if (text_range := self.node_range(f)) and text_range.encloses(position)
+        ]
+        if enclosing_ranges:
+            return enclosing_ranges[-1]
+
+        return None
 
 
 class SubSource:
@@ -279,3 +325,8 @@ class SubSource:
             column_offset = len(byte_prefix.decode("utf-8"))
 
         return self.parent_start_position + column_offset
+
+    def get_enclosing_function_range(
+        self, position: types.Position
+    ) -> types.TextRange | None:
+        return self.parent_source.get_enclosing_function_range(position)

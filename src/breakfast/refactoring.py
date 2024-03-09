@@ -4,10 +4,10 @@ import re
 from collections.abc import Iterable, Iterator, Sequence
 from functools import singledispatch
 from textwrap import dedent
-from typing import Any
 
 from breakfast import types
 from breakfast.names import all_occurrence_positions, build_graph, find_definition
+from breakfast.search import find_other_occurrences, find_statements
 from breakfast.source import TextRange
 from breakfast.types import Edit, Line, NotFoundError, Position, Source
 from breakfast.visitor import generic_visit
@@ -479,67 +479,6 @@ def get_single_expression_value(text: str) -> ast.AST | None:
     return parsed.body[0].value
 
 
-def find_other_occurrences(
-    *, source_ast: ast.AST, node: ast.AST, position: Position
-) -> list[ast.AST]:
-    results = []
-    original_scope: tuple[str, ...] = ()
-    for scope, similar in find_similar_nodes(source_ast, node, scope=()):
-        if position.source.node_position(similar) == position:
-            original_scope = scope
-            continue
-        else:
-            results.append((scope, similar))
-
-    return [
-        similar
-        for scope, similar in results
-        if is_compatible_with(scope, original_scope)
-    ]
-
-
-def is_compatible_with(scope: tuple[str, ...], original_scope: tuple[str, ...]) -> bool:
-    return all(scope[i] == s for i, s in enumerate(original_scope))
-
-
-@singledispatch
-def find_similar_nodes(
-    source_ast: ast.AST, node: ast.AST, scope: tuple[str, ...]
-) -> Iterator[tuple[tuple[str, ...], ast.AST]]:
-    if is_structurally_identical(node, source_ast):
-        yield scope, source_ast
-    else:
-        yield from generic_visit(find_similar_nodes, source_ast, node, scope)
-
-
-@find_similar_nodes.register
-def find_similar_nodes_in_subscope(
-    source_ast: ast.FunctionDef | ast.ClassDef, node: ast.AST, scope: tuple[str, ...]
-) -> Iterator[tuple[tuple[str, ...], ast.AST]]:
-    if is_structurally_identical(node, source_ast):
-        yield scope, source_ast
-    else:
-        yield from generic_visit(
-            find_similar_nodes, source_ast, node, (*scope, source_ast.name)
-        )
-
-
-def is_structurally_identical(node: ast.AST, other_node: Any) -> bool:
-    if type(node) != type(other_node):
-        return False
-
-    for name, value in ast.iter_fields(node):
-        other_value = getattr(other_node, name, None)
-        if isinstance(value, ast.AST):
-            if not is_structurally_identical(value, other_value):
-                return False
-
-        elif value != other_value:
-            return False
-
-    return True
-
-
 def make_edit(source: Source, node: ast.AST, length: int, new_text: str) -> Edit:
     start = source.node_position(node)
     return Edit(TextRange(start=start, end=start + (length - 1)), text=new_text)
@@ -551,25 +490,6 @@ def make_insert(at: Position, text: str) -> Edit:
 
 def make_delete(start: Position, end: Position) -> Edit:
     return Edit(TextRange(start=start, end=end), text="")
-
-
-@singledispatch
-def find_statements(node: ast.AST) -> Iterator[ast.AST]:
-    yield from generic_visit(find_statements, node)
-
-
-@find_statements.register
-def find_statements_in_expression(node: ast.Expr) -> Iterator[ast.AST]:
-    yield from ()
-
-
-@find_statements.register
-def find_statements_in_node_with_body(
-    node: ast.Module | ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
-) -> Iterator[ast.AST]:
-    for child in node.body:
-        yield child
-        yield from find_statements(child)
 
 
 def get_body_for_callable(at: Position) -> Sequence[Line]:

@@ -46,6 +46,9 @@ class TextRange(Protocol):
     def text(self) -> str:
         ...
 
+    def encloses(self, position: Position) -> bool:
+        ...
+
 
 @dataclass(order=True, frozen=True)  # pragma: nocover
 class Line(Protocol):
@@ -106,6 +109,9 @@ class Source(Protocol):  # pragma: nocover
         ...
 
     def node_position(self, node: AST) -> Position:
+        ...
+
+    def get_enclosing_function_range(self, position: Position) -> TextRange | None:
         ...
 
 
