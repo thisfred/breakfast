@@ -7,6 +7,7 @@ from textwrap import dedent
 from breakfast import types
 from breakfast.names import all_occurrence_positions, build_graph, find_definition
 from breakfast.search import (
+    find_arguments_passed_in_range,
     find_functions,
     find_names,
     find_other_occurrences,
@@ -186,6 +187,7 @@ class Refactor:
                 names_in_range, text_range
             )
             if position >= start_of_current_scope
+            or passed_as_argument_within(name, text_range)
         ]
 
         return parameter_names
@@ -419,7 +421,8 @@ def find_callable_insert_point(start: Position, is_global: bool = False) -> Posi
     )
 
     if enclosing is None:
-        return start.source.position(0, 0)
+        return start.source.position(start.row, 0)
+
     return start.source.position(enclosing.end.row + 1, 0)
 
 
@@ -427,6 +430,7 @@ def get_indentation(at: Position) -> str:
     text = at.source.lines[at.row].text
     if not (indentation_match := INDENTATION.match(text)):
         return ""
+
     if not (groups := indentation_match.groups()):
         return ""
 
@@ -475,3 +479,12 @@ def get_body_for_callable(at: Position) -> Sequence[Line]:
         last_row = first_row
 
     return source.lines[first_row : last_row + 1]
+
+
+def passed_as_argument_within(name: str, text_range: types.TextRange) -> bool:
+    for n in find_arguments_passed_in_range(
+        text_range.start.source.get_ast(), text_range
+    ):
+        if n == name:
+            return True
+    return False

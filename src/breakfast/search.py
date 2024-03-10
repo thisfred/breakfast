@@ -3,7 +3,7 @@ from collections.abc import Iterator
 from functools import singledispatch
 from typing import Any
 
-from breakfast.types import Position, Source
+from breakfast.types import Position, Source, TextRange
 from breakfast.visitor import generic_visit
 
 
@@ -153,3 +153,26 @@ def find_names_in_attribute(
     node: ast.Attribute, source: Source
 ) -> Iterator[tuple[str, Position, ast.expr_context]]:
     yield from find_names(node.value, source)
+
+
+@singledispatch
+def find_arguments_passed_in_range(
+    node: ast.AST, text_range: TextRange
+) -> Iterator[str]:
+    end = text_range.end
+    if hasattr(node, "lineno"):
+        position = end.source.node_position(node)
+        if position > end:
+            return
+    yield from generic_visit(find_arguments_passed_in_range, node, text_range)
+
+
+@find_arguments_passed_in_range.register
+def find_arguments_in_call(node: ast.Call, text_range: TextRange) -> Iterator[str]:
+    for argument in node.args:
+        if isinstance(argument, ast.Name):
+            yield argument.id
+    for keyword_argument in node.keywords:
+        if isinstance(keyword_argument.value, ast.Name):
+            yield keyword_argument.value.id
+    yield from ()

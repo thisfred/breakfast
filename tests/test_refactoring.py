@@ -761,3 +761,27 @@ def test_get_body_for_should_return_method_body():
     position = source.position(2, 8)
 
     assert get_body_for_callable(position) == source.lines[3:5]
+
+
+def test_extract_function_should_pass_on_arguments():
+    # If we are extracting code that passes a name as an argument to a another function,
+    # it is very likely that we want to receive that as an argument as well.
+
+    source = make_source(
+        """
+        def f():
+            return 2
+
+        def g(f):
+            return abs(f())
+
+        def h():
+            return g(f=f)
+        """
+    )
+
+    start = source.position(8, 0)
+    end = source.position(9, 0)
+    refactor = Refactor(TextRange(start, end))
+    insert, _ = refactor.extract_function(name="function")
+    assert "def function(f):" in insert.text
