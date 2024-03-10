@@ -3,7 +3,7 @@ from collections.abc import Iterator
 from functools import singledispatch
 from typing import Any
 
-from breakfast.types import Position
+from breakfast.types import Position, Source
 from breakfast.visitor import generic_visit
 
 
@@ -119,3 +119,33 @@ def is_structurally_identical(node: ast.AST, other_node: Any) -> bool:
             return False
 
     return True
+
+
+@singledispatch
+def find_names(
+    node: ast.AST, source: Source
+) -> Iterator[tuple[str, Position, ast.expr_context]]:
+    yield from generic_visit(find_names, node, source)
+
+
+@find_names.register
+def find_names_in_name(
+    node: ast.Name, source: Source
+) -> Iterator[tuple[str, Position, ast.expr_context]]:
+    yield node.id, source.node_position(node), node.ctx
+
+
+@find_names.register
+def find_names_in_function(
+    node: ast.FunctionDef, source: Source
+) -> Iterator[tuple[str, Position, ast.expr_context]]:
+    for arg in node.args.args:
+        yield arg.arg, source.position(arg.lineno - 1, arg.col_offset), ast.Store()
+    yield from generic_visit(find_names, node, source)
+
+
+@find_names.register
+def find_names_in_attribute(
+    node: ast.Attribute, source: Source
+) -> Iterator[tuple[str, Position, ast.expr_context]]:
+    yield from find_names(node.value, source)

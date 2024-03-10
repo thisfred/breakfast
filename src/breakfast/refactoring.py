@@ -1,16 +1,14 @@
 import ast
 import logging
 import re
-from collections.abc import Iterable, Iterator, Sequence
-from functools import singledispatch
+from collections.abc import Iterable, Sequence
 from textwrap import dedent
 
 from breakfast import types
 from breakfast.names import all_occurrence_positions, build_graph, find_definition
-from breakfast.search import find_other_occurrences, find_statements
+from breakfast.search import find_names, find_other_occurrences, find_statements
 from breakfast.source import TextRange
 from breakfast.types import Edit, Line, NotFoundError, Position, Source
-from breakfast.visitor import generic_visit
 
 logger = logging.getLogger(__name__)
 
@@ -62,20 +60,10 @@ class Refactor:
         return (insert, *edits)
 
     def extract_method(self, name: str) -> tuple[Edit, ...]:
-        self_name = "self"
-        self_prefix = f"{self_name}."
-        return self.extract_callable(
-            name=name,
-            indent_definition=True,
-            self_name=self_name,
-            self_prefix=self_prefix,
-        )
+        return self.extract_callable(name=name, is_method=True)
 
     def extract_function(self, name: str) -> tuple[Edit, ...]:
-        return self.extract_callable(
-            name=name,
-            new_indentation=FOUR_SPACES,
-        )
+        return self.extract_callable(name=name)
 
     def inline_call(self, name: str) -> tuple[Edit, ...]:
         range_end = self.text_range.start + 2
@@ -112,15 +100,11 @@ class Refactor:
     def extract_callable(
         self,
         name: str,
-        indent_definition: bool = False,
-        new_indentation: str | None = None,
-        self_name: str | None = None,
-        self_prefix: str = "",
+        is_method: bool = False,
     ) -> tuple[Edit, ...]:
         start, end = self.text_range.start, self.text_range.end
         original_indentation = get_indentation(at=start)
-        if new_indentation is None:
-            new_indentation = original_indentation
+        new_indentation = original_indentation if is_method else FOUR_SPACES
 
         names_in_range = self.get_names_in_range(self.extended_range)
         extracting_partial_line = start.row == end.row and start.column != 0
@@ -136,33 +120,32 @@ class Refactor:
                 names_in_range=names_in_range,
                 new_indentation=new_indentation,
             )
-        start_of_current_scope = find_start_of_scope(
-            start=start, is_global=original_indentation == FOUR_SPACES
-        )
-        parameter_names = self.get_parameter_names(
+        start_of_current_scope = find_start_of_scope(start=start)
+        parameter_names: Sequence[str] = self.get_parameter_names(
             names_in_range=names_in_range,
             text_range=self.extended_range,
             start_of_current_scope=start_of_current_scope,
         )
+        self_name = "self" if is_method else None
         arguments = ", ".join(f"{n}={n}" for n in parameter_names if n != self_name)
+        self_prefix = (self_name + ".") if self_name else ""
         call = f"{self_prefix}{name}({arguments})"
         replace_text = (
             call
             if extracting_partial_line
             else f"{original_indentation}{assignment}{call}{NEWLINE}"
         )
-
         parameters_with_self = (
-            parameter_names
-            if self_name is None
-            else [
+            [
                 self_name,
                 *(n for n in parameter_names if n != self_name),
             ]
+            if self_name
+            else parameter_names
         )
 
-        definition_indentation = original_indentation[:-4] if indent_definition else ""
-        if self_name:
+        definition_indentation = original_indentation[:-4] if is_method else ""
+        if is_method:
             if self_name in parameter_names:
                 static_method = ""
                 parameters = ", ".join(parameters_with_self)
@@ -173,9 +156,7 @@ class Refactor:
             static_method = ""
             parameters = ", ".join(parameter_names)
 
-        insert_position = find_start_of_scope(
-            start=start, is_global=new_indentation == FOUR_SPACES
-        )
+        insert_position = find_start_of_scope(start=start, is_global=not is_method)
         insert = Edit(
             TextRange(start=insert_position, end=insert_position),
             text=f"{NEWLINE}{static_method}{definition_indentation}def {name}({parameters}):{NEWLINE}{extracted}{NEWLINE}",
@@ -413,7 +394,7 @@ class Refactor:
         return names_defined_in_range
 
 
-def find_start_of_scope(start: Position, is_global: bool) -> Position:
+def find_start_of_scope(start: Position, is_global: bool = False) -> Position:
     enclosing = (
         start.source.get_largest_enclosing_scope_range(start)
         if is_global
@@ -433,36 +414,6 @@ def get_indentation(at: Position) -> str:
         return ""
 
     return groups[0]
-
-
-@singledispatch
-def find_names(
-    node: ast.AST, source: Source
-) -> Iterator[tuple[str, Position, ast.expr_context]]:
-    yield from generic_visit(find_names, node, source)
-
-
-@find_names.register
-def find_names_in_name(
-    node: ast.Name, source: Source
-) -> Iterator[tuple[str, Position, ast.expr_context]]:
-    yield node.id, source.node_position(node), node.ctx
-
-
-@find_names.register
-def find_names_in_function(
-    node: ast.FunctionDef, source: Source
-) -> Iterator[tuple[str, Position, ast.expr_context]]:
-    for arg in node.args.args:
-        yield arg.arg, source.position(arg.lineno - 1, arg.col_offset), ast.Store()
-    yield from generic_visit(find_names, node, source)
-
-
-@find_names.register
-def find_names_in_attribute(
-    node: ast.Attribute, source: Source
-) -> Iterator[tuple[str, Position, ast.expr_context]]:
-    yield from find_names(node.value, source)
 
 
 def get_single_expression_value(text: str) -> ast.AST | None:
