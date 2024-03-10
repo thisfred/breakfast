@@ -8,7 +8,9 @@ from breakfast.visitor import generic_visit
 
 
 @singledispatch
-def find_functions(node: ast.AST, up_to: Position | None) -> Iterator[ast.FunctionDef]:
+def find_functions(
+    node: ast.AST, up_to: Position | None
+) -> Iterator[ast.FunctionDef | ast.AsyncFunctionDef]:
     if up_to and hasattr(node, "lineno") and up_to.source.node_position(node) > up_to:
         return
     yield from generic_visit(find_functions, node, up_to)
@@ -16,8 +18,8 @@ def find_functions(node: ast.AST, up_to: Position | None) -> Iterator[ast.Functi
 
 @find_functions.register
 def find_function_in_function(
-    node: ast.FunctionDef, up_to: Position | None
-) -> Iterator[ast.FunctionDef]:
+    node: ast.FunctionDef | ast.AsyncFunctionDef, up_to: Position | None
+) -> Iterator[ast.FunctionDef | ast.AsyncFunctionDef]:
     yield node
     for child in node.body:
         yield from find_functions(child, up_to=up_to)
@@ -26,7 +28,7 @@ def find_function_in_function(
 @singledispatch
 def find_scopes(
     node: ast.AST, up_to: Position | None
-) -> Iterator[ast.FunctionDef | ast.ClassDef]:
+) -> Iterator[ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef]:
     if up_to and hasattr(node, "lineno") and up_to.source.node_position(node) > up_to:
         return
     yield from generic_visit(find_scopes, node, up_to)
@@ -34,8 +36,8 @@ def find_scopes(
 
 @find_scopes.register
 def find_scope_in_function_or_class(
-    node: ast.FunctionDef | ast.ClassDef, up_to: Position | None
-) -> Iterator[ast.FunctionDef | ast.ClassDef]:
+    node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef, up_to: Position | None
+) -> Iterator[ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef]:
     yield node
     for child in node.body:
         yield from find_scopes(child, up_to=up_to)
@@ -95,7 +97,9 @@ def find_similar_nodes(
 
 @find_similar_nodes.register
 def find_similar_nodes_in_subscope(
-    source_ast: ast.FunctionDef | ast.ClassDef, node: ast.AST, scope: tuple[str, ...]
+    source_ast: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
+    node: ast.AST,
+    scope: tuple[str, ...],
 ) -> Iterator[tuple[tuple[str, ...], ast.AST]]:
     if is_structurally_identical(node, source_ast):
         yield scope, source_ast
@@ -137,7 +141,7 @@ def find_names_in_name(
 
 @find_names.register
 def find_names_in_function(
-    node: ast.FunctionDef, source: Source
+    node: ast.FunctionDef | ast.AsyncFunctionDef, source: Source
 ) -> Iterator[tuple[str, Position, ast.expr_context]]:
     for arg in node.args.args:
         yield arg.arg, source.position(arg.lineno - 1, arg.col_offset), ast.Store()

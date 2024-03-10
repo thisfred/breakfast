@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 CLASS_OFFSET = 6  # len('class ')
 DEF_OFFSET = 4  # len('def ')
+ASYNC_DEF_OFFSET = 10  # len('async def ')
 
 
 def all_occurrence_positions(
@@ -510,11 +511,15 @@ def add_super_gadgets(
 
 @visit.register
 def visit_function_definition(
-    node: ast.FunctionDef, source: Source, graph: ScopeGraph, state: State
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    source: Source,
+    graph: ScopeGraph,
+    state: State,
 ) -> Iterator[Fragment]:
     yield from visit_all(node.decorator_list, source, graph, state)
     name = node.name
-    position = source.node_position(node) + DEF_OFFSET
+    offset = ASYNC_DEF_OFFSET if isinstance(node, ast.AsyncFunctionDef) else DEF_OFFSET
+    position = source.node_position(node) + offset
     in_scope = out_scope = graph.add_scope()
 
     call_scope = graph.add_scope(
@@ -661,13 +666,13 @@ def process_body(
     return current_scope
 
 
-def is_static_method(node: ast.FunctionDef) -> bool:
+def is_static_method(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     return any(
         n.id == "staticmethod" for n in node.decorator_list if isinstance(n, ast.Name)
     )
 
 
-def is_class_method(node: ast.FunctionDef) -> bool:
+def is_class_method(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     return any(
         n.id == "classmethod" for n in node.decorator_list if isinstance(n, ast.Name)
     )

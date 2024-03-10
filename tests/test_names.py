@@ -1208,3 +1208,19 @@ def test_should_find_arguments_in_chained_calls():
         (1, 0),
         (2, 8),
     ]
+
+
+def test_should_find_async_function_definition():
+    source = make_source(
+        """
+        async def f():
+            ...
+
+        a = await f()
+        """
+    )
+    position = source.position(4, 10)
+    assert all_occurrence_position_tuples(position, sources=[source]) == [
+        (1, 10),
+        (4, 10),
+    ]
