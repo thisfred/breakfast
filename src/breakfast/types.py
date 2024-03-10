@@ -111,6 +111,9 @@ class Source(Protocol):  # pragma: nocover
     def node_position(self, node: AST) -> Position:
         ...
 
+    def node_end_position(self, node: AST) -> Position | None:
+        ...
+
     def get_enclosing_function_range(self, position: Position) -> TextRange | None:
         ...
 

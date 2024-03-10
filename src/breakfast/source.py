@@ -339,6 +339,23 @@ class SubSource:
 
         return self.parent_start_position + column_offset
 
+    def node_end_position(self, node: AST) -> types.Position | None:
+        row = node.lineno - 1
+        assert (  # noqa: S101
+            row == 0
+        ), "Multiline string type annotations are not supported"
+        line = self.text[row]
+        if node.end_col_offset is None:
+            return None
+
+        if line.isascii():
+            column_offset = node.end_col_offset
+        else:
+            byte_prefix = line.encode("utf-8")[: node.end_col_offset]
+            column_offset = len(byte_prefix.decode("utf-8"))
+
+        return self.parent_start_position + column_offset
+
     def get_enclosing_function_range(
         self, position: types.Position
     ) -> types.TextRange | None:

@@ -6,7 +6,12 @@ from textwrap import dedent
 
 from breakfast import types
 from breakfast.names import all_occurrence_positions, build_graph, find_definition
-from breakfast.search import find_names, find_other_occurrences, find_statements
+from breakfast.search import (
+    find_functions,
+    find_names,
+    find_other_occurrences,
+    find_statements,
+)
 from breakfast.source import TextRange
 from breakfast.types import Edit, Line, NotFoundError, Position, Source
 
@@ -77,6 +82,7 @@ class Refactor:
         if definition.position is None:
             return ()
 
+        self.source.lines[definition.position.row]
         lines = get_body_for_callable(at=definition.position)
         text = lines[-1].text.strip()
         if not text.startswith("return"):
@@ -442,22 +448,19 @@ def make_delete(start: Position, end: Position) -> Edit:
 
 
 def get_body_for_callable(at: Position) -> Sequence[Line]:
-    next_line: Line | None = at.line
-
-    while next_line:
-        if next_line.text.endswith(":"):
-            next_line = next_line.next
+    source = at.source
+    for definition in find_functions(source.get_ast(), up_to=at):
+        if source.node_position(definition) == (at - 4):
+            found = definition
             break
-        next_line = next_line.next
-
-    if not next_line:
+    else:
         return []
 
-    lines = []
-    while next_line:
-        lines.append(next_line)
-        if "return " in next_line.text:
-            break
-        next_line = next_line.next
+    children = list(found.body)
+    first_row = source.node_position(children[0]).row
+    if end_position := source.node_end_position(children[-1]):
+        last_row = end_position.row
+    else:
+        last_row = first_row
 
-    return lines
+    return source.lines[first_row : last_row + 1]
