@@ -172,7 +172,10 @@ def find_arguments_in_call(node: ast.Call, text_range: TextRange) -> Iterator[st
     for argument in node.args:
         if isinstance(argument, ast.Name):
             yield argument.id
+        else:
+            yield from find_arguments_passed_in_range(argument, text_range)
     for keyword_argument in node.keywords:
         if isinstance(keyword_argument.value, ast.Name):
             yield keyword_argument.value.id
-    yield from ()
+        else:
+            yield from find_arguments_passed_in_range(keyword_argument, text_range)
