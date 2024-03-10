@@ -114,6 +114,9 @@ class Source(Protocol):  # pragma: nocover
     def get_enclosing_function_range(self, position: Position) -> TextRange | None:
         ...
 
+    def get_largest_enclosing_scope_range(self, position: Position) -> TextRange | None:
+        ...
+
 
 @dataclass(order=True, frozen=True)
 class Edit:

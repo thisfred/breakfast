@@ -9,7 +9,7 @@ from breakfast.visitor import generic_visit
 
 @singledispatch
 def find_functions(node: ast.AST, up_to: Position | None) -> Iterator[ast.FunctionDef]:
-    if up_to and up_to.source.node_position(node) > up_to:
+    if up_to and hasattr(node, "lineno") and up_to.source.node_position(node) > up_to:
         return
     yield from generic_visit(find_functions, node, up_to)
 
@@ -19,6 +19,26 @@ def find_function_in_function(
     node: ast.FunctionDef, up_to: Position | None
 ) -> Iterator[ast.FunctionDef]:
     yield node
+    for child in node.body:
+        yield from find_functions(child, up_to=up_to)
+
+
+@singledispatch
+def find_scopes(
+    node: ast.AST, up_to: Position | None
+) -> Iterator[ast.FunctionDef | ast.ClassDef]:
+    if up_to and hasattr(node, "lineno") and up_to.source.node_position(node) > up_to:
+        return
+    yield from generic_visit(find_scopes, node, up_to)
+
+
+@find_scopes.register
+def find_scope_in_function_or_class(
+    node: ast.FunctionDef | ast.ClassDef, up_to: Position | None
+) -> Iterator[ast.FunctionDef | ast.ClassDef]:
+    yield node
+    for child in node.body:
+        yield from find_scopes(child, up_to=up_to)
 
 
 @singledispatch

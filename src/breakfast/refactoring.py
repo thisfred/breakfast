@@ -137,7 +137,7 @@ class Refactor:
                 new_indentation=new_indentation,
             )
         start_of_current_scope = find_start_of_scope(
-            start=start, indentation=original_indentation
+            start=start, is_global=original_indentation == FOUR_SPACES
         )
         parameter_names = self.get_parameter_names(
             names_in_range=names_in_range,
@@ -173,7 +173,9 @@ class Refactor:
             static_method = ""
             parameters = ", ".join(parameter_names)
 
-        insert_position = find_start_of_scope(start=start, indentation=new_indentation)
+        insert_position = find_start_of_scope(
+            start=start, is_global=new_indentation == FOUR_SPACES
+        )
         insert = Edit(
             TextRange(start=insert_position, end=insert_position),
             text=f"{NEWLINE}{static_method}{definition_indentation}def {name}({parameters}):{NEWLINE}{extracted}{NEWLINE}",
@@ -411,20 +413,16 @@ class Refactor:
         return names_defined_in_range
 
 
-def find_start_of_scope(start: Position, indentation: str) -> Position:
-    start_of_current_scope = start
-    while (
-        (
-            "def " not in start_of_current_scope.line.text
-            and "class " not in start_of_current_scope.line.text
-        )
-        or get_indentation(at=start_of_current_scope) >= indentation
-        or start_of_current_scope.line.text == ""
-        or start_of_current_scope.line.text.lstrip().startswith(")")
-    ) and start_of_current_scope.line.previous:
-        start_of_current_scope = start_of_current_scope.line.previous.start
+def find_start_of_scope(start: Position, is_global: bool) -> Position:
+    enclosing = (
+        start.source.get_largest_enclosing_scope_range(start)
+        if is_global
+        else start.source.get_enclosing_function_range(start)
+    )
 
-    return start_of_current_scope
+    if enclosing is None:
+        return start.source.position(0, 0)
+    return enclosing.start
 
 
 def get_indentation(at: Position) -> str:

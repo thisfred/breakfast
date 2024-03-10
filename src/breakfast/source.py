@@ -6,7 +6,7 @@ from ast import AST, Module, parse
 from dataclasses import InitVar, dataclass, replace
 
 from breakfast import types
-from breakfast.search import find_functions
+from breakfast.search import find_functions, find_scopes
 
 logger = logging.getLogger(__name__)
 
@@ -248,6 +248,19 @@ class Source:
 
         return None
 
+    def get_largest_enclosing_scope_range(
+        self, position: types.Position
+    ) -> types.TextRange | None:
+        ast = self.get_ast()
+        return next(
+            (
+                text_range
+                for f in find_scopes(ast, up_to=position)
+                if (text_range := self.node_range(f)) and text_range.encloses(position)
+            ),
+            None,
+        )
+
 
 class SubSource:
     """Source that parses a single type annotation string.
@@ -330,3 +343,8 @@ class SubSource:
         self, position: types.Position
     ) -> types.TextRange | None:
         return self.parent_source.get_enclosing_function_range(position)
+
+    def get_largest_enclosing_scope_range(
+        self, position: types.Position
+    ) -> types.TextRange | None:
+        return self.parent_source.get_largest_enclosing_scope_range(position)
