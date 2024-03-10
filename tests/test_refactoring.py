@@ -334,7 +334,7 @@ def function(a):
     assert insert.text.rstrip() == result.rstrip()
 
 
-def test_extract_function_should_extract_before_current_scope():
+def test_extract_function_should_extract_after_current_scope():
     source = make_source(
         """
         def f():
@@ -348,7 +348,7 @@ def test_extract_function_should_extract_before_current_scope():
     refactor = Refactor(TextRange(start, end))
     insert, *_edits = refactor.extract_function(name="function")
 
-    assert insert.start == source.position(1, 0)
+    assert insert.start == source.position(5, 0)
 
 
 def test_extract_function_should_handle_indented_arguments_of_enclosing_scope():
@@ -368,7 +368,7 @@ def test_extract_function_should_handle_indented_arguments_of_enclosing_scope():
     refactor = Refactor(TextRange(start, end))
     insert, *_edits = refactor.extract_function(name="function")
 
-    assert insert.start == source.position(1, 0)
+    assert insert.start == source.position(8, 0)
 
 
 def test_extract_function_should_only_consider_variables_in_scope():
@@ -492,7 +492,7 @@ def test_extract_method_should_replace_extracted_code_with_method_call():
     assert replace.end == source.position(4, 21)
 
 
-def test_extract_method_should_extract_before_current_method():
+def test_extract_method_should_extract_after_current_method():
     source = make_source(
         """
         class A:
@@ -508,7 +508,7 @@ def test_extract_method_should_extract_before_current_method():
     refactor = Refactor(TextRange(start, end))
     insert, _replace = refactor.extract_method(name="method")
 
-    assert insert.start.row == 2
+    assert insert.start.row == 6
 
 
 def test_extract_method_should_not_repeat_return_variables():
@@ -667,7 +667,7 @@ def test_extract_function_should_extract_to_global_scope():
     refactor = Refactor(TextRange(start, end))
     insert, _ = refactor.extract_function(name="function")
 
-    assert insert.start.row == 1
+    assert insert.start.row == 6
 
 
 def test_extract_function_should_consider_function_scope():

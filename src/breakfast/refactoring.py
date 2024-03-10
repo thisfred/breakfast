@@ -163,7 +163,9 @@ class Refactor:
             static_method = ""
             parameters = ", ".join(parameter_names)
 
-        insert_position = find_start_of_scope(start=start, is_global=not is_method)
+        insert_position = find_callable_insert_point(
+            start=start, is_global=not is_method
+        )
         insert = Edit(
             TextRange(start=insert_position, end=insert_position),
             text=f"{NEWLINE}{static_method}{definition_indentation}def {name}({parameters}):{NEWLINE}{extracted}{NEWLINE}",
@@ -401,7 +403,15 @@ class Refactor:
         return names_defined_in_range
 
 
-def find_start_of_scope(start: Position, is_global: bool = False) -> Position:
+def find_start_of_scope(start: Position) -> Position:
+    enclosing = start.source.get_largest_enclosing_scope_range(start)
+    if enclosing is None:
+        return start.source.position(0, 0)
+
+    return enclosing.start
+
+
+def find_callable_insert_point(start: Position, is_global: bool = False) -> Position:
     enclosing = (
         start.source.get_largest_enclosing_scope_range(start)
         if is_global
@@ -410,7 +420,7 @@ def find_start_of_scope(start: Position, is_global: bool = False) -> Position:
 
     if enclosing is None:
         return start.source.position(0, 0)
-    return enclosing.start
+    return start.source.position(enclosing.end.row + 1, 0)
 
 
 def get_indentation(at: Position) -> str:
