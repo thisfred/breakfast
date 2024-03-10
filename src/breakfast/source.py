@@ -356,6 +356,13 @@ class SubSource:
 
         return self.parent_start_position + column_offset
 
+    def node_range(self, node: AST) -> TextRange | None:
+        end = self.node_end_position(node)
+        if not end:
+            return None
+        start = self.node_position(node)
+        return TextRange(start, end)
+
     def get_enclosing_function_range(
         self, position: types.Position
     ) -> types.TextRange | None:
@@ -365,3 +372,6 @@ class SubSource:
         self, position: types.Position
     ) -> types.TextRange | None:
         return self.parent_source.get_largest_enclosing_scope_range(position)
+
+    def get_name_at(self, position: types.Position) -> str:
+        return self.parent_source.get_name_at(position)

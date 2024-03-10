@@ -733,6 +733,23 @@ def test_inline_call_should_replace_call_with_function_return_value():
     assert edit.end == source.position(4, 6)
 
 
+def test_inline_variable_should_replace_variable_with_expression():
+    source = make_source(
+        """
+        b = f()
+        print(b)
+        """
+    )
+
+    start = source.position(1, 0)
+    refactor = Refactor(TextRange(start, start))
+    *_, edit = refactor.inline_variable()
+
+    assert "f()" == edit.text
+    assert edit.start == source.position(2, 6)
+    assert edit.end == source.position(2, 7)
+
+
 def test_get_body_for_should_recognize_indented_parameter_list():
     source = make_source(
         """

@@ -108,10 +108,16 @@ class Source(Protocol):  # pragma: nocover
     def get_text(self, *, start: Position, end: Position) -> str:
         ...
 
+    def get_name_at(self, position: Position) -> str:
+        ...
+
     def node_position(self, node: AST) -> Position:
         ...
 
     def node_end_position(self, node: AST) -> Position | None:
+        ...
+
+    def node_range(self, node: AST) -> TextRange | None:
         ...
 
     def get_enclosing_function_range(self, position: Position) -> TextRange | None:

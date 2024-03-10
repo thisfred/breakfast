@@ -12,6 +12,7 @@ from breakfast.search import (
     find_names,
     find_other_occurrences,
     find_statements,
+    get_nodes,
 )
 from breakfast.source import TextRange
 from breakfast.types import Edit, Line, NotFoundError, Position, Source
@@ -70,6 +71,35 @@ class Refactor:
 
     def extract_function(self, name: str) -> tuple[Edit, ...]:
         return self.extract_callable(name=name)
+
+    def inline_variable(self) -> tuple[Edit, ...]:
+        position = self.text_range.start
+        name = self.source.get_name_at(position)
+
+        assignment_value = (
+            value_range.text
+            if (value_range := get_assignment_value_text_range(position))
+            else None
+        )
+        if assignment_value is None:
+            return ()
+
+        try:
+            occurrences = all_occurrence_positions(position, graph=self.scope_graph)
+        except NotFoundError:
+            return ()
+
+        edits = []
+        for occurrence in occurrences:
+            if occurrence != position:
+                edits.append(
+                    Edit(
+                        TextRange(occurrence, occurrence + len(name)),
+                        text=assignment_value,
+                    )
+                )
+
+        return tuple(edits)
 
     def inline_call(self, name: str) -> tuple[Edit, ...]:
         range_end = self.text_range.start + 2
@@ -488,3 +518,23 @@ def passed_as_argument_within(name: str, text_range: types.TextRange) -> bool:
         if n == name:
             return True
     return False
+
+
+def get_assignment_value_text_range(position: Position) -> types.TextRange | None:
+    source = position.source
+
+    def assigment_filter(node: ast.AST) -> bool:
+        return (
+            isinstance(node, ast.Assign)
+            and position.source.node_position(node) == position
+        )
+
+    node = next(
+        get_nodes(source.get_ast(), node_filter=assigment_filter),
+        None,
+    )
+
+    if not isinstance(node, ast.Assign):
+        return None
+
+    return source.node_range(node.value)

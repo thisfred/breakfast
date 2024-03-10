@@ -1,7 +1,7 @@
 import ast
 from collections.abc import Iterator
 from functools import singledispatch
-from typing import Any
+from typing import Any, Protocol, TypeVar
 
 from breakfast.types import Position, Source, TextRange
 from breakfast.visitor import generic_visit
@@ -172,10 +172,26 @@ def find_arguments_in_call(node: ast.Call, text_range: TextRange) -> Iterator[st
     for argument in node.args:
         if isinstance(argument, ast.Name):
             yield argument.id
-        else:
-            yield from find_arguments_passed_in_range(argument, text_range)
+
     for keyword_argument in node.keywords:
         if isinstance(keyword_argument.value, ast.Name):
             yield keyword_argument.value.id
-        else:
-            yield from find_arguments_passed_in_range(keyword_argument, text_range)
+
+    yield from generic_visit(find_arguments_passed_in_range, node, text_range)
+
+
+T = TypeVar("T", bound=ast.AST)
+
+
+class NodeFilter(Protocol):
+    def __call__(self, node: ast.AST) -> bool:
+        ...
+
+
+def get_nodes(node: ast.AST, node_filter: NodeFilter) -> Iterator[ast.AST]:
+    if node_filter(node):
+        yield node
+
+    yield from generic_visit(get_nodes, node, node_filter)
+
+    return None
