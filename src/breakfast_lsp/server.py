@@ -1,6 +1,7 @@
 import logging
 import os
 from collections.abc import Iterable, Mapping, Sequence
+from functools import partial
 from itertools import groupby
 from pathlib import Path
 from time import time
@@ -261,77 +262,42 @@ async def code_action(
             column=max(extraction_range.end.character - 1, 0),
         )
         refactor = Refactor(text_range=TextRange(start, end))
-
+        code_action = partial(
+            make_code_action,
+            refactor=refactor,
+            document_uri=document_uri,
+            version=version,
+        )
+        extract_code_action = partial(code_action, kind=CodeActionKind.RefactorExtract)
+        refactor_code_action = partial(code_action, kind=CodeActionKind.Refactor)
         if start < end:
-            extract_variable_edit = await _extract_variable(
-                refactor, document_uri=document_uri, version=version
-            )
-            actions.append(
-                CodeAction(
-                    title="breakfast: extract variable",
-                    kind=CodeActionKind.RefactorExtract,
-                    data=params.text_document.uri,
-                    edit=extract_variable_edit,
-                    diagnostics=[],
-                ),
-            )
+            extractors = (_extract_variable, _extract_function, _extract_method)
+            for extractor in extractors:
+                actions.append(await extract_code_action(action=extractor))
 
-            extract_function_edit = await _extract_function(
-                refactor, document_uri=document_uri, version=version
-            )
-            actions.append(
-                CodeAction(
-                    title="breakfast: extract function",
-                    kind=CodeActionKind.RefactorExtract,
-                    data=params.text_document.uri,
-                    edit=extract_function_edit,
-                    diagnostics=[],
-                ),
-            )
-
-            extract_method_edit = await _extract_method(
-                refactor, document_uri=document_uri, version=version
-            )
-            actions.append(
-                CodeAction(
-                    title="breakfast: extract method",
-                    kind=CodeActionKind.RefactorExtract,
-                    data=params.text_document.uri,
-                    edit=extract_method_edit,
-                    diagnostics=[],
-                ),
-            )
-
-        slide_statements_down_edit = await _slide_statements_down(
-            refactor,
-            document_uri=document_uri,
-            version=version,
-        )
-        actions.append(
-            CodeAction(
-                title="breakfast: slide statements down",
-                kind=CodeActionKind.Refactor,
-                data=params.text_document.uri,
-                edit=slide_statements_down_edit,
-                diagnostics=[],
-            ),
-        )
-        slide_statements_up_edit = await _slide_statements_up(
-            refactor,
-            document_uri=document_uri,
-            version=version,
-        )
-        actions.append(
-            CodeAction(
-                title="breakfast: slide statements up",
-                kind=CodeActionKind.Refactor,
-                data=params.text_document.uri,
-                edit=slide_statements_up_edit,
-                diagnostics=[],
-            ),
-        )
+        sliders = (_slide_statements_down, _slide_statements_up)
+        for slider in sliders:
+            actions.append(await refactor_code_action(action=slider))
 
     return actions
+
+
+async def make_code_action(
+    *,
+    refactor: Refactor,
+    action: Any,
+    kind: CodeActionKind,
+    document_uri: str,
+    version: None,
+) -> CodeAction:
+    edit = await action(refactor, document_uri=document_uri, version=version)
+    return CodeAction(
+        title=f"breakfast: {action.__doc__}",
+        kind=kind,
+        data=document_uri,
+        edit=edit,
+        diagnostics=[],
+    )
 
 
 @LSP_SERVER.command("breakfast.slideStatementsDown")
@@ -389,6 +355,7 @@ async def _extract_function(
     document_uri: str,
     version: None,
 ) -> WorkspaceEdit:
+    """Extract function."""
     edits = refactor.extract_function(name=f"extracted_function_{timestamp()}")
 
     text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
@@ -408,6 +375,7 @@ async def _extract_method(
     document_uri: str,
     version: None,
 ) -> WorkspaceEdit:
+    """Extract method."""
     edits = refactor.extract_method(name=f"extracted_method_{timestamp()}")
 
     text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
@@ -427,6 +395,7 @@ async def _extract_variable(
     document_uri: str,
     version: None,
 ) -> WorkspaceEdit:
+    """Extract variable."""
     edits = refactor.extract_variable(
         name=f"extracted_variable_{timestamp()}",
     )
@@ -448,6 +417,7 @@ async def _slide_statements_down(
     document_uri: str,
     version: None,
 ) -> WorkspaceEdit:
+    """Slide statements down."""
     edits = refactor.slide_statements_down()
     text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
     document_changes: list[TextDocumentEdit | CreateFile | RenameFile | DeleteFile] = [
@@ -466,6 +436,7 @@ async def _slide_statements_up(
     document_uri: str,
     version: None,
 ) -> WorkspaceEdit:
+    """Slide statements up."""
     edits = refactor.slide_statements_up()
     text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
     document_changes: list[TextDocumentEdit | CreateFile | RenameFile | DeleteFile] = [
