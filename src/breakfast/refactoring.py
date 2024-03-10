@@ -85,10 +85,11 @@ class Refactor:
         self.source.lines[definition.position.row]
         lines = get_body_for_callable(at=definition.position)
         text = lines[-1].text.strip()
-        if not text.startswith("return"):
-            return ()
+        if text.startswith("return"):
+            return_value = text[len("return ") :]
+        else:
+            return_value = None
 
-        return_value = text[len("return ") :]
         body = (
             NEWLINE.join(f"{line.text}" for line in lines[:-1])
             + NEWLINE
