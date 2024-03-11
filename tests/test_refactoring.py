@@ -750,6 +750,23 @@ def test_inline_variable_should_replace_variable_with_expression():
     assert edit.end == source.position(2, 6)
 
 
+def test_inline_variable_should_delete_definition():
+    source = make_source(
+        """
+        b = f()
+        print(b)
+        """
+    )
+
+    start = source.position(1, 0)
+    refactor = Refactor(TextRange(start, start))
+    delete, *_edit = refactor.inline_variable()
+
+    assert "" == delete.text
+    assert delete.start == source.position(1, 0)
+    assert delete.end == source.position(2, 0)
+
+
 def test_get_body_for_should_recognize_indented_parameter_list():
     source = make_source(
         """

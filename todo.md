@@ -8,7 +8,6 @@
 * add other refactorings
   * inline function
   * inline method
-  * inline variable
 
 ### Refactoring
 
