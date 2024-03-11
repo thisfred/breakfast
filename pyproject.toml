@@ -24,7 +24,6 @@ test = [
     "pytest-lsp"]
 dev = [
     "astpretty",
-    "black",
     "graphviz",
     "lsp-devtools",
     "mypy",
