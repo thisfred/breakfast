@@ -753,7 +753,9 @@ def test_inline_variable_should_replace_variable_with_expression():
 def test_inline_variable_should_delete_definition():
     source = make_source(
         """
-        b = f()
+        b = f(
+            2
+        )
         print(b)
         """
     )
@@ -764,7 +766,7 @@ def test_inline_variable_should_delete_definition():
 
     assert "" == delete.text
     assert delete.start == source.position(1, 0)
-    assert delete.end == source.position(2, 0)
+    assert delete.end == source.position(4, 0)
 
 
 def test_get_body_for_should_recognize_indented_parameter_list():

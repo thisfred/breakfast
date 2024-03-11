@@ -86,14 +86,10 @@ class Refactor:
     def inline_variable(self) -> tuple[Edit, ...]:
         position = self.text_range.start
         name = self.source.get_name_at(position)
-
-        assignment_value = (
-            value_range.text
-            if (value_range := get_assignment_value_text_range(position))
-            else None
-        )
-        if assignment_value is None:
+        value_range = get_assignment_value_text_range(position)
+        if value_range is None:
             return ()
+        assignment_value = value_range.text
 
         try:
             occurrences = all_occurrence_positions(position, graph=self.scope_graph)
@@ -111,8 +107,10 @@ class Refactor:
 
         delete = Edit(
             TextRange(
-                position.line.start,
-                position.line.next.start if position.line.next else position.line.end,
+                value_range.start.line.start,
+                value_range.end.line.next.start
+                if value_range.end.line.next
+                else position.line.end,
             ),
             text="",
         )
