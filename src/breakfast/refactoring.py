@@ -100,17 +100,24 @@ class Refactor:
         except NotFoundError:
             return ()
 
-        edits = []
-        for occurrence in occurrences:
-            if occurrence != position:
-                edits.append(
-                    Edit(
-                        TextRange(occurrence, occurrence + len(name)),
-                        text=assignment_value,
-                    )
-                )
+        edits = (
+            Edit(
+                TextRange(occurrence, occurrence + len(name) - 1),
+                text=assignment_value,
+            )
+            for occurrence in occurrences
+            if occurrence != position
+        )
 
-        return tuple(edits)
+        delete = Edit(
+            TextRange(
+                position.line.start,
+                position.line.next.start if position.line.next else position.line.end,
+            ),
+            text="",
+        )
+
+        return (delete, *edits) if edits else ()
 
     def inline_call(self, name: str) -> tuple[Edit, ...]:
         range_end = self.text_range.start + 2

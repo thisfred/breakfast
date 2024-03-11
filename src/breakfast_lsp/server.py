@@ -279,9 +279,9 @@ async def code_action(
                 actions.append(await extract_code_action(action=_extract_method))
 
         refactor_code_action = partial(code_action, kind=CodeActionKind.Refactor)
-        sliders = (_slide_statements_down, _slide_statements_up)
-        for slider in sliders:
-            actions.append(await refactor_code_action(action=slider))
+        refactorings = (_slide_statements_down, _slide_statements_up, _inline_variable)
+        for refactoring in refactorings:
+            actions.append(await refactor_code_action(action=refactoring))
 
     return actions
 
@@ -442,6 +442,25 @@ async def _slide_statements_up(
 ) -> WorkspaceEdit:
     """Slide statements up."""
     edits = refactor.slide_statements_up()
+    text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
+    document_changes: list[TextDocumentEdit | CreateFile | RenameFile | DeleteFile] = [
+        TextDocumentEdit(
+            text_document=OptionalVersionedTextDocumentIdentifier(
+                uri=document_uri, version=version
+            ),
+            edits=text_edits,
+        )
+    ]
+    return WorkspaceEdit(document_changes=document_changes)
+
+
+async def _inline_variable(
+    refactor: Refactor,
+    document_uri: str,
+    version: None,
+) -> WorkspaceEdit:
+    """Inline variable."""
+    edits = refactor.inline_variable()
     text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
     document_changes: list[TextDocumentEdit | CreateFile | RenameFile | DeleteFile] = [
         TextDocumentEdit(
