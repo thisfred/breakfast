@@ -1,4 +1,4 @@
-from breakfast.refactoring import Edit, Refactor, get_body_for_callable
+from breakfast.refactoring import Edit, Refactor
 from breakfast.source import Source, TextRange
 
 from tests import dedent, make_source
@@ -781,7 +781,8 @@ def test_get_body_for_should_recognize_indented_parameter_list():
 
     position = source.position(1, 4)
 
-    assert get_body_for_callable(position) == source.lines[4:5]
+    refactor = Refactor(TextRange(position, position))
+    assert refactor.get_body_for_callable(position) == source.lines[4:5]
 
 
 def test_get_body_for_should_return_method_body():
@@ -796,7 +797,8 @@ def test_get_body_for_should_return_method_body():
 
     position = source.position(2, 8)
 
-    assert get_body_for_callable(position) == source.lines[3:5]
+    refactor = Refactor(TextRange(position, position))
+    assert refactor.get_body_for_callable(position) == source.lines[3:5]
 
 
 def test_extract_function_should_pass_on_arguments():

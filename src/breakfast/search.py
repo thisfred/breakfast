@@ -1,7 +1,7 @@
 import ast
 from collections.abc import Iterator
 from functools import singledispatch
-from typing import Any, Protocol, TypeVar
+from typing import Any, Protocol
 
 from breakfast.types import Position, Source, TextRange
 from breakfast.visitor import generic_visit
@@ -178,9 +178,6 @@ def find_arguments_in_call(node: ast.Call, text_range: TextRange) -> Iterator[st
             yield keyword_argument.value.id
 
     yield from generic_visit(find_arguments_passed_in_range, node, text_range)
-
-
-T = TypeVar("T", bound=ast.AST)
 
 
 class NodeFilter(Protocol):

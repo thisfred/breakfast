@@ -8,7 +8,6 @@ from breakfast import types
 from breakfast.names import all_occurrence_positions, build_graph, find_definition
 from breakfast.search import (
     find_arguments_passed_in_range,
-    find_functions,
     find_names,
     find_other_occurrences,
     find_statements,
@@ -130,7 +129,7 @@ class Refactor:
             return ()
 
         self.source.lines[definition.position.row]
-        lines = get_body_for_callable(at=definition.position)
+        lines = self.get_body_for_callable(at=definition.position)
         text = lines[-1].text.strip()
         if text.startswith("return"):
             return_value = text[len("return ") :]
@@ -450,6 +449,27 @@ class Refactor:
 
         return names_defined_in_range
 
+    def get_body_for_callable(self, at: Position) -> Sequence[Line]:
+        def node_filter(node: ast.AST) -> bool:
+            return (
+                isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+                and self.source.node_position(node).row == at.row
+            )
+
+        found = next(get_nodes(self.source.get_ast(), node_filter), None)
+
+        if not isinstance(found, ast.FunctionDef | ast.AsyncFunctionDef):
+            return []
+
+        children = list(found.body)
+        first_row = self.source.node_position(children[0]).row
+        if end_position := self.source.node_end_position(children[-1]):
+            last_row = end_position.row
+        else:
+            last_row = first_row
+
+        return self.source.lines[first_row : last_row + 1]
+
 
 def find_start_of_scope(start: Position) -> Position:
     enclosing = start.source.get_largest_enclosing_scope_range(start)
@@ -506,25 +526,6 @@ def make_insert(at: Position, text: str) -> Edit:
 
 def make_delete(start: Position, end: Position) -> Edit:
     return Edit(TextRange(start=start, end=end), text="")
-
-
-def get_body_for_callable(at: Position) -> Sequence[Line]:
-    source = at.source
-    for definition in find_functions(source.get_ast(), up_to=at):
-        if source.node_position(definition) == (at - 4):
-            found = definition
-            break
-    else:
-        return []
-
-    children = list(found.body)
-    first_row = source.node_position(children[0]).row
-    if end_position := source.node_end_position(children[-1]):
-        last_row = end_position.row
-    else:
-        last_row = first_row
-
-    return source.lines[first_row : last_row + 1]
 
 
 def passed_as_argument_within(name: str, text_range: types.TextRange) -> bool:
