@@ -66,6 +66,17 @@ class Refactor:
         insert = make_insert(at=insert_point, text=definition)
         return (insert, *edits)
 
+    @property
+    def inside_method(self) -> bool:
+        global_scope_range = self.source.get_largest_enclosing_scope_range(
+            self.text_range.start
+        )
+
+        if not global_scope_range:
+            return False
+
+        return global_scope_range.start.line.text.strip().startswith("class")
+
     def extract_method(self, name: str) -> tuple[Edit, ...]:
         return self.extract_callable(name=name, is_method=True)
 

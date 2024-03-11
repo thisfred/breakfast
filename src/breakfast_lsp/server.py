@@ -268,13 +268,17 @@ async def code_action(
             document_uri=document_uri,
             version=version,
         )
-        extract_code_action = partial(code_action, kind=CodeActionKind.RefactorExtract)
-        refactor_code_action = partial(code_action, kind=CodeActionKind.Refactor)
         if start < end:
-            extractors = (_extract_variable, _extract_function, _extract_method)
+            extract_code_action = partial(
+                code_action, kind=CodeActionKind.RefactorExtract
+            )
+            extractors = (_extract_variable, _extract_function)
             for extractor in extractors:
                 actions.append(await extract_code_action(action=extractor))
+            if refactor.inside_method:
+                actions.append(await extract_code_action(action=_extract_method))
 
+        refactor_code_action = partial(code_action, kind=CodeActionKind.Refactor)
         sliders = (_slide_statements_down, _slide_statements_up)
         for slider in sliders:
             actions.append(await refactor_code_action(action=slider))
@@ -374,7 +378,7 @@ async def _extract_method(
     refactor: Refactor,
     document_uri: str,
     version: None,
-) -> WorkspaceEdit:
+) -> WorkspaceEdit | None:
     """Extract method."""
     edits = refactor.extract_method(name=f"extracted_method_{timestamp()}")
 

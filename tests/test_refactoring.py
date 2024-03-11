@@ -802,3 +802,20 @@ def test_extract_function_should_pass_on_arguments():
     refactor = Refactor(TextRange(start, end))
     insert, _ = refactor.extract_function(name="function")
     assert "def function(f):" in insert.text
+
+
+def test_refactor_inside_method_is_true_for_range_inside_method():
+    source = make_source(
+        """
+        class C:
+            def f(self, a: list[int]) -> tuple[str, ...]:
+                a += 1
+                return max([a])
+        """
+    )
+
+    start = source.position(3, 0)
+    end = source.position(4, 0)
+
+    refactor = Refactor(TextRange(start, end))
+    assert refactor.inside_method
