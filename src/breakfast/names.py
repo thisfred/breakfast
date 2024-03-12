@@ -1043,7 +1043,7 @@ def build_graph(sources: Iterable[Source]) -> ScopeGraph:
     state = State(scope_hierarchy=[], inheritance_hierarchy=[])
 
     for source in sources:
-        for _ in visit(source.get_ast(), source=source, graph=graph, state=state):
+        for _ in visit(source.ast, source=source, graph=graph, state=state):
             pass
 
     return graph

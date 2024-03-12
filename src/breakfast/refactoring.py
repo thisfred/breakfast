@@ -2,6 +2,7 @@ import ast
 import logging
 import re
 from collections.abc import Iterable, Sequence
+from functools import cached_property
 from textwrap import dedent
 
 from breakfast import types
@@ -27,8 +28,12 @@ class Refactor:
     def __init__(self, text_range: types.TextRange):
         self.text_range = text_range
         self.source = self.text_range.start.source
-        self.source_ast = self.source.get_ast()
         self.scope_graph = build_graph([self.source])
+        self._containing_scopes: Sequence[tuple[ast.AST, types.TextRange]] | None = None
+
+    @cached_property
+    def containing_scopes(self) -> Sequence[tuple[ast.AST, types.TextRange]]:
+        return get_containing_scopes(self.text_range)
 
     def extract_variable(self, name: str) -> tuple[Edit, ...]:
         extracted = self.text_range.text
@@ -38,7 +43,7 @@ class Refactor:
             return ()
 
         other_occurrences = find_other_occurrences(
-            source_ast=self.source_ast, node=expression, position=self.text_range.start
+            source_ast=self.source.ast, node=expression, position=self.text_range.start
         )
         other_edits = [
             make_edit(self.source, o, len(extracted), new_text=name)
@@ -53,7 +58,7 @@ class Refactor:
         first_edit_position = edits[0].start
 
         statement_start = None
-        for statement in find_statements(self.source_ast):
+        for statement in find_statements(self.source.ast):
             if (
                 statement_position := self.source.node_position(statement)
             ) < first_edit_position:
@@ -67,9 +72,10 @@ class Refactor:
 
     @property
     def inside_method(self) -> bool:
-        global_scope_range = self.source.get_largest_enclosing_scope_range(
-            self.text_range.start
-        )
+        if self.containing_scopes:
+            _, global_scope_range = self.containing_scopes[0]
+        else:
+            global_scope_range = None
 
         if not global_scope_range:
             return False
@@ -173,7 +179,7 @@ class Refactor:
                 names_in_range=names_in_range,
                 new_indentation=new_indentation,
             )
-        start_of_current_scope = find_start_of_scope(start=start)
+        start_of_current_scope = self.find_start_of_scope(start=start)
         parameter_names: Sequence[str] = self.get_parameter_names(
             names_in_range=names_in_range,
             text_range=self.extended_range,
@@ -212,13 +218,13 @@ class Refactor:
         insert_position = find_callable_insert_point(
             start=start, is_global=not is_method
         )
-        insert = Edit(
-            TextRange(start=insert_position, end=insert_position),
-            text=f"{NEWLINE}{static_method}{definition_indentation}def {name}({parameters}):{NEWLINE}{extracted}{NEWLINE}",
+        return (
+            Edit(
+                TextRange(start=insert_position, end=insert_position),
+                text=f"{NEWLINE}{static_method}{definition_indentation}def {name}({parameters}):{NEWLINE}{extracted}{NEWLINE}",
+            ),
+            Edit(TextRange(start=start, end=end), text=replace_text),
         )
-
-        replace = Edit(TextRange(start=start, end=end), text=replace_text)
-        return (insert, replace)
 
     def get_parameter_names(
         self,
@@ -226,7 +232,7 @@ class Refactor:
         text_range: types.TextRange,
         start_of_current_scope: Position,
     ) -> list[str]:
-        parameter_names = [
+        return [
             name
             for position, name in self.find_names_defined_before_range(
                 names_in_range, text_range
@@ -234,8 +240,6 @@ class Refactor:
             if position >= start_of_current_scope
             or passed_as_argument_within(name, text_range)
         ]
-
-        return parameter_names
 
     def extract_expression(
         self,
@@ -358,12 +362,16 @@ class Refactor:
         text_range = TextRange(first.start, last.end)
         names_in_range = {n for n, _, _ in self.get_names_in_range(text_range)}
         target = max(
-            line.start,
-            *(
-                position.line.next.start if position.line.next else position.line.end
-                for name, position, _ in self.get_names_in_range(scope_before)
-                if name in names_in_range
-            ),
+            [
+                line.start,
+                *(
+                    position.line.next.start
+                    if position.line.next
+                    else position.line.end
+                    for name, position, _ in self.get_names_in_range(scope_before)
+                    if name in names_in_range
+                ),
+            ]
         )
 
         return target
@@ -395,7 +403,7 @@ class Refactor:
         self, text_range: types.TextRange
     ) -> Sequence[tuple[str, Position, ast.expr_context]]:
         names = []
-        for name, position, context in find_names(self.source_ast, self.source):
+        for name, position, context in find_names(self.source.ast, self.source):
             if position < text_range.start:
                 continue
             if position > text_range.end:
@@ -456,7 +464,7 @@ class Refactor:
                 and self.source.node_position(node).row == at.row
             )
 
-        found = next(get_nodes(self.source.get_ast(), node_filter), None)
+        found = next(get_nodes(self.source.ast, node_filter), None)
 
         if not isinstance(found, ast.FunctionDef | ast.AsyncFunctionDef):
             return []
@@ -470,13 +478,16 @@ class Refactor:
 
         return self.source.lines[first_row : last_row + 1]
 
+    def find_start_of_scope(self, start: Position) -> Position:
+        if self.containing_scopes:
+            _, global_scope_range = self.containing_scopes[0]
+        else:
+            global_scope_range = None
 
-def find_start_of_scope(start: Position) -> Position:
-    enclosing = start.source.get_largest_enclosing_scope_range(start)
-    if enclosing is None:
-        return start.source.position(0, 0)
+        if not global_scope_range:
+            return start.source.position(0, 0)
 
-    return enclosing.start
+        return global_scope_range.start
 
 
 def find_callable_insert_point(start: Position, is_global: bool = False) -> Position:
@@ -529,9 +540,7 @@ def make_delete(start: Position, end: Position) -> Edit:
 
 
 def passed_as_argument_within(name: str, text_range: types.TextRange) -> bool:
-    for n in find_arguments_passed_in_range(
-        text_range.start.source.get_ast(), text_range
-    ):
+    for n in find_arguments_passed_in_range(text_range.start.source.ast, text_range):
         if n == name:
             return True
     return False
@@ -547,7 +556,7 @@ def get_assignment_value_text_range(position: Position) -> types.TextRange | Non
         )
 
     node = next(
-        get_nodes(source.get_ast(), node_filter=assigment_filter),
+        get_nodes(source.ast, node_filter=assigment_filter),
         None,
     )
 
@@ -555,3 +564,20 @@ def get_assignment_value_text_range(position: Position) -> types.TextRange | Non
         return None
 
     return source.node_range(node.value)
+
+
+def get_containing_scopes(
+    text_range: types.TextRange,
+) -> list[tuple[ast.AST, types.TextRange]]:
+    def container_scope(node: ast.AST) -> bool:
+        return isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
+
+    source = text_range.start.source
+    scopes = []
+    for node in get_nodes(source.ast, node_filter=container_scope):
+        if source.node_position(node) > text_range.end:
+            break
+        if (node_range := source.node_range(node)) and text_range in node_range:
+            scopes.append((node, node_range))
+
+    return scopes

@@ -1,4 +1,6 @@
-from breakfast.refactoring import Edit, Refactor
+import ast
+
+from breakfast.refactoring import Edit, Refactor, get_containing_scopes
 from breakfast.source import Source, TextRange
 
 from tests import dedent, make_source
@@ -818,8 +820,8 @@ def test_extract_function_should_pass_on_arguments():
         """
     )
 
-    start = source.position(8, 0)
-    end = source.position(9, 0)
+    start = source.position(8, 4)
+    end = source.position(8, 16)
     refactor = Refactor(TextRange(start, end))
     insert, _ = refactor.extract_function(name="function")
     assert "def function(f):" in insert.text
@@ -840,3 +842,22 @@ def test_refactor_inside_method_is_true_for_range_inside_method():
 
     refactor = Refactor(TextRange(start, end))
     assert refactor.inside_method
+
+
+def test_get_containing_scopes_should_show_class_then_method():
+    source = make_source(
+        """
+        class C:
+            def f(self, a: list[int]) -> tuple[str, ...]:
+                a += 1
+                return max([a])
+        """
+    )
+
+    start = source.position(3, 0)
+    end = source.position(4, 0)
+
+    text_range = TextRange(start, end)
+    first, last = get_containing_scopes(text_range)
+    assert isinstance(first[0], ast.ClassDef)
+    assert isinstance(last[0], ast.FunctionDef)

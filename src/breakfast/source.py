@@ -4,6 +4,7 @@ import re
 import sys
 from ast import AST, Module, parse
 from dataclasses import InitVar, dataclass, replace
+from functools import cached_property
 
 from breakfast import types
 from breakfast.search import find_functions, find_scopes
@@ -62,8 +63,14 @@ class TextRange:
     def text(self) -> str:
         return self.start.source.get_text(start=self.start, end=self.end)
 
-    def encloses(self, position: types.Position) -> bool:
-        return self.start <= position and self.end >= position
+    def __contains__(self, position_or_range: types.Position | types.TextRange) -> bool:
+        match position_or_range:
+            case Position() as position:
+                return self.start <= position and self.end >= position
+            case TextRange(start, end):
+                return self.start <= start and self.end >= end
+            case _:
+                return False
 
 
 @dataclass(order=True, frozen=True)
@@ -107,21 +114,24 @@ class Source:
 
     def __post_init__(self, input_lines: tuple[str, ...] | None) -> None:
         self._lines = input_lines
-        self._ast: AST | None = None
 
     def __repr__(self) -> str:
         return f"Source(path={self.path})"
 
-    @property
+    @cached_property
     def text(self) -> tuple[str, ...]:
         if self._lines is None:
             with open(self.path, encoding="utf-8") as source_file:
                 self._lines = tuple(line[:-1] for line in source_file.readlines())
         return self._lines
 
-    @property
+    @cached_property
     def lines(self) -> tuple[types.Line, ...]:
         return tuple(Line(self, i) for i in range(len(self.text)))
+
+    @cached_property
+    def ast(self) -> AST:
+        return parse("\n".join(self.text))
 
     def position(self, row: int, column: int) -> types.Position:
         return Position(source=self, row=row, column=column)
@@ -131,11 +141,6 @@ class Source:
         if not match:
             raise AssertionError("no match found")
         return match.group()
-
-    def get_ast(self) -> AST:
-        if self._ast is None:
-            self._ast = parse("\n".join(self.text))
-        return self._ast
 
     def get_text(self, *, start: types.Position, end: types.Position) -> str:
         assert start.source == end.source  # noqa: S101
@@ -237,11 +242,11 @@ class Source:
     def get_enclosing_function_range(
         self, position: types.Position
     ) -> types.TextRange | None:
-        ast = self.get_ast()
+        ast = self.ast
         enclosing_ranges = [
             text_range
             for f in find_functions(ast, up_to=position)
-            if (text_range := self.node_range(f)) and text_range.encloses(position)
+            if (text_range := self.node_range(f)) and position in text_range
         ]
         if enclosing_ranges:
             return enclosing_ranges[-1]
@@ -251,12 +256,12 @@ class Source:
     def get_largest_enclosing_scope_range(
         self, position: types.Position
     ) -> types.TextRange | None:
-        ast = self.get_ast()
+        ast = self.ast
         return next(
             (
                 text_range
                 for f in find_scopes(ast, up_to=position)
-                if (text_range := self.node_range(f)) and text_range.encloses(position)
+                if (text_range := self.node_range(f)) and position in text_range
             ),
             None,
         )
@@ -289,13 +294,9 @@ class SubSource:
     def path(self) -> str:
         return self.parent_source.path
 
-    def get_string_starting_at(self, position: types.Position) -> str:
-        assert (  # noqa: S101
-            position.row == 0
-        ), "Multiline string type annotations are not supported"
-        return self.parent_source.get_string_starting_at(
-            self.parent_start_position + position.column
-        )
+    @property
+    def ast(self) -> AST:
+        return self.parent_source.ast
 
     @property
     def text(self) -> tuple[str, ...]:
@@ -304,6 +305,14 @@ class SubSource:
     @property
     def lines(self) -> tuple[types.Line, ...]:
         return self.parent_source.lines
+
+    def get_string_starting_at(self, position: types.Position) -> str:
+        assert (  # noqa: S101
+            position.row == 0
+        ), "Multiline string type annotations are not supported"
+        return self.parent_source.get_string_starting_at(
+            self.parent_start_position + position.column
+        )
 
     def position(self, row: int, column: int) -> types.Position:
         assert (  # noqa: S101
@@ -318,9 +327,6 @@ class SubSource:
         return self.parent_source.find_after(
             name, self.parent_start_position + position.column
         )
-
-    def get_ast(self) -> AST:
-        return self.parent_source.get_ast()
 
     def get_text(self, *, start: types.Position, end: types.Position) -> str:
         return self.parent_source.get_text(start=start, end=end)

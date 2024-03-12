@@ -46,7 +46,7 @@ class TextRange(Protocol):
     def text(self) -> str:
         ...
 
-    def encloses(self, position: Position) -> bool:
+    def __contains__(self, position_or_range: "Position | TextRange") -> bool:
         ...
 
 
@@ -93,6 +93,10 @@ class Source(Protocol):  # pragma: nocover
     def module_name(self) -> str:
         ...
 
+    @property
+    def ast(self) -> AST:
+        ...
+
     def position(self, row: int, column: int) -> Position:
         ...
 
@@ -100,9 +104,6 @@ class Source(Protocol):  # pragma: nocover
         ...
 
     def get_string_starting_at(self, position: Position) -> str:
-        ...
-
-    def get_ast(self) -> AST:
         ...
 
     def get_text(self, *, start: Position, end: Position) -> str:
