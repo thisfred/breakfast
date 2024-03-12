@@ -215,7 +215,7 @@ class Refactor:
             static_method = ""
             parameters = ", ".join(parameter_names)
 
-        insert_position = find_callable_insert_point(
+        insert_position = self.find_callable_insert_point(
             start=start, is_global=not is_method
         )
         return (
@@ -479,28 +479,24 @@ class Refactor:
         return self.source.lines[first_row : last_row + 1]
 
     def find_start_of_scope(self, start: Position) -> Position:
-        if self.containing_scopes:
-            _, global_scope_range = self.containing_scopes[0]
-        else:
-            global_scope_range = None
-
-        if not global_scope_range:
+        if not self.containing_scopes:
             return start.source.position(0, 0)
+
+        _, global_scope_range = self.containing_scopes[0]
 
         return global_scope_range.start
 
+    def find_callable_insert_point(
+        self, start: Position, is_global: bool = False
+    ) -> Position:
+        if not self.containing_scopes:
+            return start.source.position(start.row, 0)
 
-def find_callable_insert_point(start: Position, is_global: bool = False) -> Position:
-    enclosing = (
-        start.source.get_largest_enclosing_scope_range(start)
-        if is_global
-        else start.source.get_enclosing_function_range(start)
-    )
+        _, enclosing = (
+            self.containing_scopes[0] if is_global else self.containing_scopes[-1]
+        )
 
-    if enclosing is None:
-        return start.source.position(start.row, 0)
-
-    return start.source.position(enclosing.end.row + 1, 0)
+        return start.source.position(enclosing.end.row + 1, 0)
 
 
 def get_indentation(at: Position) -> str:

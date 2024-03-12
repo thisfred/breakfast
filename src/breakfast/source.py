@@ -7,7 +7,6 @@ from dataclasses import InitVar, dataclass, replace
 from functools import cached_property
 
 from breakfast import types
-from breakfast.search import find_functions, find_scopes
 
 logger = logging.getLogger(__name__)
 
@@ -239,33 +238,6 @@ class Source:
         start = self.node_position(node)
         return TextRange(start, end)
 
-    def get_enclosing_function_range(
-        self, position: types.Position
-    ) -> types.TextRange | None:
-        ast = self.ast
-        enclosing_ranges = [
-            text_range
-            for f in find_functions(ast, up_to=position)
-            if (text_range := self.node_range(f)) and position in text_range
-        ]
-        if enclosing_ranges:
-            return enclosing_ranges[-1]
-
-        return None
-
-    def get_largest_enclosing_scope_range(
-        self, position: types.Position
-    ) -> types.TextRange | None:
-        ast = self.ast
-        return next(
-            (
-                text_range
-                for f in find_scopes(ast, up_to=position)
-                if (text_range := self.node_range(f)) and position in text_range
-            ),
-            None,
-        )
-
 
 class SubSource:
     """Source that parses a single type annotation string.
@@ -368,16 +340,6 @@ class SubSource:
             return None
         start = self.node_position(node)
         return TextRange(start, end)
-
-    def get_enclosing_function_range(
-        self, position: types.Position
-    ) -> types.TextRange | None:
-        return self.parent_source.get_enclosing_function_range(position)
-
-    def get_largest_enclosing_scope_range(
-        self, position: types.Position
-    ) -> types.TextRange | None:
-        return self.parent_source.get_largest_enclosing_scope_range(position)
 
     def get_name_at(self, position: types.Position) -> str:
         return self.parent_source.get_name_at(position)
