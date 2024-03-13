@@ -132,11 +132,8 @@ class Refactor:
         return (delete, *edits) if edits else ()
 
     def inline_call(self, name: str) -> tuple[Edit, ...]:
-        range_end = self.text_range.start + 2
-        text_range = TextRange(self.text_range.start, range_end)
-
         insert_range = TextRange(
-            text_range.start.line.start, text_range.start.line.start
+            self.text_range.start.line.start, self.text_range.start.line.start
         )
 
         definition = find_definition(self.scope_graph, self.text_range.start)
@@ -162,7 +159,7 @@ class Refactor:
                 insert_range,
                 text=f"{body}",
             ),
-            Edit(text_range, text=name),
+            Edit(self.text_range, text=name),
         )
 
     def extract_callable(
@@ -545,10 +542,10 @@ def make_delete(start: Position, end: Position) -> Edit:
 
 
 def passed_as_argument_within(name: str, text_range: types.TextRange) -> bool:
-    for n in find_arguments_passed_in_range(text_range.start.source.ast, text_range):
-        if n == name:
-            return True
-    return False
+    return any(
+        n == name
+        for n in find_arguments_passed_in_range(text_range.start.source.ast, text_range)
+    )
 
 
 def get_assignment_value_text_range(position: Position) -> types.TextRange | None:

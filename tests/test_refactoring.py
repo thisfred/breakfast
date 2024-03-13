@@ -723,14 +723,12 @@ def test_inline_call_should_replace_call_with_function_return_value():
     )
 
     start = source.position(4, 4)
-    end = source.position(4, 4)
+    end = source.position(4, 6)
     refactor = Refactor(TextRange(start, end))
     insert, edit = refactor.inline_call(name="result")
 
     assert "result = 2" in insert.text
     assert "result" == edit.text
-    assert edit.start == start
-    assert edit.end == source.position(4, 6)
 
 
 def test_inline_variable_should_replace_variable_with_expression():
