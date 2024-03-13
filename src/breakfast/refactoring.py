@@ -33,7 +33,15 @@ class Refactor:
 
     @cached_property
     def containing_scopes(self) -> Sequence[tuple[ast.AST, types.TextRange]]:
-        return get_containing_scopes(self.text_range)
+        return [
+            (n, c)
+            for n, c in self.containing_nodes
+            if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
+        ]
+
+    @cached_property
+    def containing_nodes(self) -> Sequence[tuple[ast.AST, types.TextRange]]:
+        return get_containing_nodes(self.text_range)
 
     def extract_variable(self, name: str) -> tuple[Edit, ...]:
         extracted = self.text_range.text
@@ -80,7 +88,8 @@ class Refactor:
         if not global_scope_range:
             return False
 
-        return global_scope_range.start.line.text.strip().startswith("class")
+        in_method = global_scope_range.start.line.text.strip().startswith("class")
+        return in_method
 
     def extract_method(self, name: str) -> tuple[Edit, ...]:
         return self.extract_callable(name=name, is_method=True)
@@ -482,7 +491,7 @@ class Refactor:
         if not self.containing_scopes:
             return start.source.position(0, 0)
 
-        _, global_scope_range = self.containing_scopes[0]
+        node, global_scope_range = self.containing_scopes[0]
 
         return global_scope_range.start
 
@@ -492,7 +501,7 @@ class Refactor:
         if not self.containing_scopes:
             return start.source.position(start.row, 0)
 
-        _, enclosing = (
+        node, enclosing = (
             self.containing_scopes[0] if is_global else self.containing_scopes[-1]
         )
 
@@ -562,18 +571,16 @@ def get_assignment_value_text_range(position: Position) -> types.TextRange | Non
     return source.node_range(node.value)
 
 
-def get_containing_scopes(
+def get_containing_nodes(
     text_range: types.TextRange,
 ) -> list[tuple[ast.AST, types.TextRange]]:
-    def container_scope(node: ast.AST) -> bool:
-        return isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
-
     source = text_range.start.source
     scopes = []
-    for node in get_nodes(source.ast, node_filter=container_scope):
-        if source.node_position(node) > text_range.end:
-            break
-        if (node_range := source.node_range(node)) and text_range in node_range:
-            scopes.append((node, node_range))
+    for node in get_nodes(source.ast):
+        if hasattr(node, "end_lineno"):
+            if source.node_position(node) > text_range.end:
+                break
+            if (node_range := source.node_range(node)) and text_range in node_range:
+                scopes.append((node, node_range))
 
     return scopes

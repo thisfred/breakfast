@@ -185,8 +185,10 @@ class NodeFilter(Protocol):
         ...
 
 
-def get_nodes(node: ast.AST, node_filter: NodeFilter) -> Iterator[ast.AST]:
-    if node_filter(node):
+def get_nodes(
+    node: ast.AST, node_filter: NodeFilter | None = None
+) -> Iterator[ast.AST]:
+    if node_filter is None or node_filter(node):
         yield node
 
     yield from generic_visit(get_nodes, node, node_filter)
