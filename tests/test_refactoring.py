@@ -731,6 +731,45 @@ def test_inline_call_should_replace_call_with_function_return_value():
     assert "result" == edit.text
 
 
+def test_inline_call_should_extract_body_before_assignment():
+    source = make_source(
+        """
+        def f():
+            a = 2
+            return a
+
+        b = f()
+        """
+    )
+
+    start = source.position(5, 4)
+    end = source.position(5, 6)
+    refactor = Refactor(TextRange(start, end))
+    insert, edit = refactor.inline_call(name="result")
+
+    assert "a = 2\nresult = a" in insert.text
+
+
+def test_inline_call_should_indent_in_new_context():
+    source = make_source(
+        """
+        def f():
+            a = 2
+            return a
+
+        def g():
+            b = f()
+        """
+    )
+
+    start = source.position(6, 8)
+    end = source.position(6, 10)
+    refactor = Refactor(TextRange(start, end))
+    insert, edit = refactor.inline_call(name="result")
+
+    assert "    a = 2\n    result = a" in insert.text
+
+
 def test_inline_variable_should_replace_variable_with_expression():
     source = make_source(
         """
@@ -799,10 +838,7 @@ def test_get_body_for_should_return_method_body():
     assert refactor.get_body_for_callable(position) == source.lines[3:5]
 
 
-def test_extract_function_should_pass_on_arguments():
-    # If we are extracting code that passes a name as an argument to a another function,
-    # it is very likely that we want to receive that as an argument as well.
-
+def test_extract_function_should_pass_variables_used_as_arguments_on_as_parameters():
     source = make_source(
         """
         def f():

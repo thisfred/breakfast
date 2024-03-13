@@ -3,7 +3,7 @@ import logging
 import re
 from collections.abc import Iterable, Sequence
 from functools import cached_property
-from textwrap import dedent
+from textwrap import dedent, indent
 
 from breakfast import types
 from breakfast.names import all_occurrence_positions, build_graph, find_definition
@@ -148,10 +148,13 @@ class Refactor:
         else:
             return_value = None
 
+        indentation = get_indentation(at=self.text_range.start)
         body = (
-            NEWLINE.join(f"{line.text}" for line in lines[:-1])
-            + NEWLINE
-            + f"{name} = {return_value}"
+            indent(
+                dedent(NEWLINE.join(f"{line.text}" for line in lines[:-1]) + NEWLINE),
+                indentation,
+            )
+            + f"{indentation}{name} = {return_value}"
         )
 
         return (
@@ -244,6 +247,9 @@ class Refactor:
                 names_in_range, text_range
             )
             if position >= start_of_current_scope
+            # If we are extracting code that passes a name as an argument to a another
+            # function, it is very likely that we want to receive that as an argument as
+            # well, rather than close over it or get it from the global scope:
             or passed_as_argument_within(name, text_range)
         ]
 
