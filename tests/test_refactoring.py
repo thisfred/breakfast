@@ -750,6 +750,26 @@ def test_inline_call_should_extract_body_before_assignment():
     assert "a = 2\nresult = a" in insert.text
 
 
+def test_inline_call_should_substitute_parameters():
+    source = make_source(
+        """
+        def f(c):
+            c += 1
+            return c
+
+        a = 2
+        b = f(a)
+        """
+    )
+
+    start = source.position(6, 4)
+    end = source.position(6, 7)
+    refactor = Refactor(TextRange(start, end))
+    insert, edit = refactor.inline_call(name="result")
+
+    assert "a += 1\nresult = a" in insert.text
+
+
 def test_inline_call_should_indent_in_new_context():
     source = make_source(
         """
@@ -804,38 +824,6 @@ def test_inline_variable_should_delete_definition():
     assert "" == delete.text
     assert delete.start == source.position(1, 0)
     assert delete.end == source.position(4, 0)
-
-
-def test_get_body_for_should_recognize_indented_parameter_list():
-    source = make_source(
-        """
-        def f(
-            a: list[int]
-        ) -> tuple[str, ...]:
-            return max([a])
-        """
-    )
-
-    position = source.position(1, 4)
-
-    refactor = Refactor(TextRange(position, position))
-    assert refactor.get_body_for_callable(position) == source.lines[4:5]
-
-
-def test_get_body_for_should_return_method_body():
-    source = make_source(
-        """
-        class C:
-            def f(self, a: list[int]) -> tuple[str, ...]:
-                a += 1
-                return max([a])
-        """
-    )
-
-    position = source.position(2, 8)
-
-    refactor = Refactor(TextRange(position, position))
-    assert refactor.get_body_for_callable(position) == source.lines[3:5]
 
 
 def test_extract_function_should_pass_variables_used_as_arguments_on_as_parameters():

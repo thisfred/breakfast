@@ -223,21 +223,19 @@ def visit_name(
                 position=position,
                 action=Push(name),
                 rules=(no_lookup_in_enclosing_scope,),
+                ast=node,
             ),
             graph.add_scope(
                 name=name,
                 position=position,
                 action=Pop(name),
                 is_definition=True,
+                ast=node,
             ),
         ]
     else:
         scopes = [
-            graph.add_scope(
-                name=name,
-                position=position,
-                action=Push(name),
-            )
+            graph.add_scope(name=name, position=position, action=Push(name), ast=node)
         ]
 
     for scope in scopes:
@@ -529,6 +527,7 @@ def visit_function_definition(
         action=Pop(name),
         is_definition=True,
         same_rank=True,
+        ast=node,
     )
     function_definition = graph.add_scope(
         link_from=call_scope,
@@ -577,6 +576,7 @@ def visit_function_definition(
             action=Pop(arg.arg),
             is_definition=True,
             same_rank=True,
+            ast=arg,
         )
         found = False
         for fragment in visit_type_annotation(arg.annotation, source, graph, state):
@@ -704,6 +704,7 @@ def visit_class_definition(
         action=Pop(name),
         is_definition=True,
         same_rank=True,
+        ast=node,
     )
     base_fragments = []
     base_names = []
@@ -791,6 +792,7 @@ def visit_import_from(
                 position=position,
                 action=Pop(local_name),
                 same_rank=True,
+                ast=alias,
             )
             for part in (*module_path, name)[::-1]:
                 parent = graph.add_scope(
@@ -822,6 +824,7 @@ def visit_import(
             position=position,
             action=Pop(local_name),
             same_rank=True,
+            ast=alias,
         )
         remote = graph.add_scope(
             link_from=local,
@@ -829,6 +832,7 @@ def visit_import(
             position=position,
             action=Push(name),
             same_rank=True,
+            ast=alias,
         )
         graph.add_edge(remote, graph.root)
     yield Gadget(current_scope, current_scope)
@@ -850,6 +854,7 @@ def visit_global(
             position=position,
             action=Pop(name),
             same_rank=True,
+            ast=node,
         )
         parent = graph.add_scope(
             link_from=parent,
@@ -857,6 +862,7 @@ def visit_global(
             position=position,
             action=Push(name),
             same_rank=True,
+            ast=node,
         )
         graph.add_edge(parent, graph.module_roots[source.module_name])
 
@@ -879,6 +885,7 @@ def visit_nonlocal(
             position=position,
             action=Pop(name),
             same_rank=True,
+            ast=node,
         )
         parent = graph.add_scope(
             link_from=parent,
@@ -886,6 +893,7 @@ def visit_nonlocal(
             position=position,
             action=Push(name),
             same_rank=True,
+            ast=node,
         )
         graph.add_edge(
             parent, state.scope_hierarchy[-2] or graph.module_roots[source.module_name]
@@ -971,6 +979,7 @@ def visit_match_as(
             action=Pop(node.name),
             same_rank=True,
             is_definition=True,
+            ast=node,
         )
     if node.pattern:
         yield from visit(node.pattern, source, graph, state)
@@ -985,10 +994,7 @@ def visit_type_var(
     position = source.node_position(node)
     name = node.name
     scope = graph.add_scope(
-        name=name,
-        position=position,
-        action=Pop(name),
-        is_definition=True,
+        name=name, position=position, action=Pop(name), is_definition=True, ast=node
     )
     if node.bound:
         yield from visit(node.bound, source, graph, state)

@@ -136,13 +136,38 @@ class Refactor:
             self.text_range.start.line.start, self.text_range.start.line.start
         )
 
-        definition = find_definition(self.scope_graph, self.text_range.start)
+        call_and_call_range = get_enclosing_call(self.text_range)
+
+        if not call_and_call_range:
+            return ()
+
+        call, call_range = call_and_call_range
+
+        definition = find_definition(self.scope_graph, call_range.start)
         if definition.position is None:
             return ()
 
-        self.source.lines[definition.position.row]
-        lines = self.get_body_for_callable(at=definition.position)
-        text = lines[-1].text.strip()
+        assert isinstance(definition.ast, ast.FunctionDef)  # noqa: S101
+
+        body_range = self.get_body_range_for_callable(at=definition.position)
+        if not body_range:
+            return ()
+
+        substitutions = []
+
+        for call_arg, def_arg in zip(call.args, definition.ast.args.args, strict=False):
+            arg_position = self.source.node_position(def_arg)
+            for position in all_occurrence_positions(arg_position):
+                if position == arg_position:
+                    continue
+                assert isinstance(call_arg, ast.Name)  # noqa: S101
+                substitutions.append(
+                    (TextRange(position, position + len(def_arg.arg)), call_arg.id)
+                )
+
+        new_lines = rewrite(body_range, substitutions)
+
+        text = new_lines[-1].strip()
         if text.startswith("return"):
             return_value = text[len("return ") :]
         else:
@@ -151,7 +176,7 @@ class Refactor:
         indentation = get_indentation(at=self.text_range.start)
         body = (
             indent(
-                dedent(NEWLINE.join(f"{line.text}" for line in lines[:-1]) + NEWLINE),
+                dedent(NEWLINE.join(line for line in new_lines[:-1]) + NEWLINE),
                 indentation,
             )
             + f"{indentation}{name} = {return_value}"
@@ -469,7 +494,7 @@ class Refactor:
 
         return names_defined_in_range
 
-    def get_body_for_callable(self, at: Position) -> Sequence[Line]:
+    def get_body_range_for_callable(self, at: Position) -> types.TextRange | None:
         def node_filter(node: ast.AST) -> bool:
             return (
                 isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
@@ -479,16 +504,14 @@ class Refactor:
         found = next(get_nodes(self.source.ast, node_filter), None)
 
         if not isinstance(found, ast.FunctionDef | ast.AsyncFunctionDef):
-            return []
+            return None
 
-        children = list(found.body)
-        first_row = self.source.node_position(children[0]).row
-        if end_position := self.source.node_end_position(children[-1]):
-            last_row = end_position.row
-        else:
-            last_row = first_row
-
-        return self.source.lines[first_row : last_row + 1]
+        children = found.body
+        start_position = self.source.node_position(children[0])
+        end_position = (
+            self.source.node_end_position(children[-1]) or start_position.line.end
+        )
+        return TextRange(start_position, end_position)
 
     def find_start_of_scope(self, start: Position) -> Position:
         if not self.containing_scopes:
@@ -587,3 +610,34 @@ def get_containing_nodes(
                 scopes.append((node, node_range))
 
     return scopes
+
+
+def get_enclosing_call(
+    text_range: types.TextRange,
+) -> tuple[ast.Call, types.TextRange] | None:
+    calls = [
+        (n, r) for n, r in get_containing_nodes(text_range) if isinstance(n, ast.Call)
+    ]
+    return calls[-1] if calls else None
+
+
+def rewrite(
+    text_range: types.TextRange,
+    substitutions: Sequence[tuple[types.TextRange, str]],
+) -> Sequence[str]:
+    row_offset = text_range.start.row
+    text = [
+        line.text
+        for line in text_range.start.source.lines[
+            text_range.start.row : text_range.end.row + 1
+        ]
+    ]
+    for substitution_range, new_text in sorted(substitutions, reverse=True):
+        row_index = substitution_range.start.row - row_offset
+        text[row_index] = (
+            text[row_index][: substitution_range.start.column]
+            + new_text
+            + text[row_index][substitution_range.end.column :]
+        )
+
+    return text

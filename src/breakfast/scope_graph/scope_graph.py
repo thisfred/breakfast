@@ -1,4 +1,5 @@
 import logging
+from ast import AST
 from collections import defaultdict, deque
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
@@ -60,6 +61,7 @@ class ScopeNode:
     action: Action | None = field(hash=False, default=None)
     node_type: NodeType = NodeType.SCOPE
     rules: tuple[Rule, ...] = ()
+    ast: AST | None = None
 
     @property
     def entry(self) -> "ScopeNode":
@@ -159,6 +161,7 @@ class ScopeGraph:
         action: Action | None = None,
         is_definition: bool = False,
         rules: tuple[Rule, ...] = (),
+        ast: AST | None = None,
     ) -> ScopeNode:
         if is_definition:
             node_type = NodeType.DEFINITION
@@ -172,6 +175,7 @@ class ScopeGraph:
             action=action,
             node_type=node_type,
             rules=rules,
+            ast=ast,
         )
 
         self._add_node(new_scope)
@@ -190,6 +194,7 @@ class ScopeGraph:
         to_enclosing_scope: bool = False,
         rules: tuple[Rule, ...] = (),
         priority: int = 0,
+        ast: AST | None = None,
     ) -> ScopeNode:
         new_scope = self._add_scope(
             name=name,
@@ -197,6 +202,7 @@ class ScopeGraph:
             action=action,
             is_definition=is_definition,
             rules=rules,
+            ast=ast,
         )
 
         if link_to:

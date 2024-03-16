@@ -279,7 +279,12 @@ async def code_action(
                 actions.append(await extract_code_action(action=_extract_method))
 
         refactor_code_action = partial(code_action, kind=CodeActionKind.Refactor)
-        refactorings = (_slide_statements_down, _slide_statements_up, _inline_variable)
+        refactorings = (
+            _slide_statements_down,
+            _slide_statements_up,
+            _inline_variable,
+            _inline_call,
+        )
         for refactoring in refactorings:
             actions.append(await refactor_code_action(action=refactoring))
 
@@ -461,6 +466,25 @@ async def _inline_variable(
 ) -> WorkspaceEdit:
     """Inline variable."""
     edits = refactor.inline_variable()
+    text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
+    document_changes: list[TextDocumentEdit | CreateFile | RenameFile | DeleteFile] = [
+        TextDocumentEdit(
+            text_document=OptionalVersionedTextDocumentIdentifier(
+                uri=document_uri, version=version
+            ),
+            edits=text_edits,
+        )
+    ]
+    return WorkspaceEdit(document_changes=document_changes)
+
+
+async def _inline_call(
+    refactor: Refactor,
+    document_uri: str,
+    version: None,
+) -> WorkspaceEdit:
+    """Inline function/method call."""
+    edits = refactor.inline_call("result")
     text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
     document_changes: list[TextDocumentEdit | CreateFile | RenameFile | DeleteFile] = [
         TextDocumentEdit(
