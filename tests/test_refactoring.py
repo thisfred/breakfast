@@ -1,3 +1,4 @@
+import pytest
 from breakfast.refactoring import Edit, Refactor
 from breakfast.source import Source, TextRange
 
@@ -904,3 +905,15 @@ def test_refactor_inside_method_is_true_for_range_inside_method():
 
     refactor = Refactor(TextRange(start, end))
     assert refactor.inside_method
+
+
+@pytest.mark.xfail
+def test_extract_variable_should_extract_within_for_loop():
+    raise AssertionError("todo")
+
+    # extract the yield result here:
+    #
+    # for position in all_occurrence_positions(arg_position):
+    #     if position not in body_range:
+    #         continue
+    #     yield TextRange(position, position + len(def_arg.arg)), value

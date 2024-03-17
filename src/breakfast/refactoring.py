@@ -186,7 +186,7 @@ class Refactor:
                 dedent(NEWLINE.join(line for line in new_lines[:-1]) + NEWLINE),
                 indentation,
             )
-            + f"{indentation}{name} = {return_value}"
+            + f"{indentation}{name} = {return_value}{NEWLINE}"
         )
 
         replace = Edit(call_range, text=name)
