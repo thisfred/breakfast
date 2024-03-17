@@ -47,7 +47,7 @@ class Position:
         return self.source.lines[self.row]
 
     def through(self, end: types.Position) -> types.TextRange:
-        return TextRange(self, end)
+        return TextRange(self, end + 1)
 
     def _add_offset(self, offset: int) -> types.Position:
         return replace(self, column=self.column + offset)
@@ -149,7 +149,7 @@ class Source:
             current_row = start.row + i
             if current_row <= end.row:
                 offset = start.column if current_row == start.row else 0
-                cutoff = end.column + 1 if current_row == end.row else None
+                cutoff = end.column if current_row == end.row else None
                 lines.append(line[offset:cutoff])
                 continue
             break

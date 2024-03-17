@@ -1,7 +1,7 @@
 import ast
 import logging
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from functools import cached_property
 from textwrap import dedent, indent
 
@@ -147,23 +147,32 @@ class Refactor:
         if definition.position is None:
             return ()
 
-        assert isinstance(definition.ast, ast.FunctionDef)  # noqa: S101
+        if not isinstance(definition.ast, ast.FunctionDef):
+            return ()
 
         body_range = self.get_body_range_for_callable(at=definition.position)
         if not body_range:
             return ()
 
         substitutions = []
+        seen = set()
 
-        for call_arg, def_arg in zip(call.args, definition.ast.args.args, strict=False):
-            arg_position = self.source.node_position(def_arg)
-            for position in all_occurrence_positions(arg_position):
-                if position == arg_position:
-                    continue
-                assert isinstance(call_arg, ast.Name)  # noqa: S101
-                substitutions.append(
-                    (TextRange(position, position + len(def_arg.arg)), call_arg.id)
-                )
+        for keyword in call.keywords:
+            def_arg: ast.keyword | ast.arg = keyword
+            seen.add(def_arg.arg)
+            call_arg = keyword.value
+            substitutions.extend(
+                list(self.get_substitions(def_arg, call_arg, body_range))
+            )
+
+        for call_arg, def_arg in zip(
+            call.args,
+            (a for a in definition.ast.args.args if a.arg not in seen),
+            strict=True,
+        ):
+            substitutions.extend(
+                list(self.get_substitions(def_arg, call_arg, body_range))
+            )
 
         new_lines = rewrite(body_range, substitutions)
 
@@ -189,6 +198,25 @@ class Refactor:
             ),
             Edit(self.text_range, text=name),
         )
+
+    def get_substitions(
+        self,
+        def_arg: ast.keyword | ast.arg,
+        call_arg: ast.expr,
+        body_range: types.TextRange,
+    ) -> Iterator[tuple[types.TextRange, str]]:
+        assert def_arg.arg is not None  # noqa: S101
+        arg_position = self.source.node_position(def_arg)
+        value = (
+            call_arg_range.text
+            if (call_arg_range := self.source.node_range(call_arg))
+            else ""
+        )
+
+        for position in all_occurrence_positions(arg_position):
+            if position not in body_range:
+                continue
+            yield TextRange(position, position + len(def_arg.arg)), value
 
     def extract_callable(
         self,

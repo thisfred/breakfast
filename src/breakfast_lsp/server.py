@@ -259,7 +259,7 @@ async def code_action(
         )
         end = source.position(
             row=extraction_range.end.line,
-            column=max(extraction_range.end.character - 1, 0),
+            column=max(extraction_range.end.character, 0),
         )
         refactor = Refactor(text_range=TextRange(start, end))
         code_action = partial(

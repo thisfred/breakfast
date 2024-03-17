@@ -11,7 +11,7 @@ def test_extract_variable_should_insert_name_definition():
         """
     )
     extraction_start = source.position(1, 4)
-    extraction_end = source.position(1, 8)
+    extraction_end = source.position(1, 9)
 
     refactor = Refactor(TextRange(extraction_start, extraction_end))
     insert, *_ = refactor.extract_variable(name="b")
@@ -25,7 +25,7 @@ def test_extract_variable_should_replace_extracted_test_with_new_name():
         """
     )
     extraction_start = source.position(1, 4)
-    extraction_end = source.position(1, 8)
+    extraction_end = source.position(1, 9)
 
     refactor = Refactor(TextRange(extraction_start, extraction_end))
     _, replace = refactor.extract_variable(name="b")
@@ -41,7 +41,7 @@ def test_extract_variable_should_insert_name_definition_before_extraction_point(
         """
     )
     extraction_start = source.position(1, 4)
-    extraction_end = source.position(1, 8)
+    extraction_end = source.position(1, 9)
 
     refactor = Refactor(TextRange(extraction_start, extraction_end))
     insert, *_ = refactor.extract_variable(name="b")
@@ -57,7 +57,7 @@ def test_extract_variable_should_replace_code_with_variable():
     )
 
     extraction_start = source.position(1, 4)
-    extraction_end = source.position(1, 21)
+    extraction_end = source.position(1, 22)
     refactor = Refactor(TextRange(extraction_start, extraction_end))
     edits = refactor.extract_variable(name="result")
 
@@ -78,7 +78,7 @@ def test_extract_variable_will_not_extract_partial_expression():
     )
 
     extraction_start = source.position(1, 4)
-    extraction_end = source.position(1, 20)
+    extraction_end = source.position(1, 21)
     refactor = Refactor(TextRange(extraction_start, extraction_end))
     edits = refactor.extract_variable(name="result")
     assert not edits
@@ -95,7 +95,7 @@ def test_extract_variable_should_move_definition_before_current_statement():
         """
     )
     extraction_start = source.position(3, 4)
-    extraction_end = source.position(3, 21)
+    extraction_end = source.position(3, 22)
     refactor = Refactor(TextRange(extraction_start, extraction_end))
     insert, _ = refactor.extract_variable(name="result")
     assert insert.start.row == 1
@@ -109,7 +109,7 @@ def test_extract_variable_should_extract_value_in_index_position():
         """
     )
     extraction_start = source.position(2, 33)
-    extraction_end = source.position(2, 47)
+    extraction_end = source.position(2, 48)
     refactor = Refactor(TextRange(extraction_start, extraction_end))
     insert, _ = refactor.extract_variable(name="result")
     assert insert.start.row == 2
@@ -127,7 +127,7 @@ def test_extract_variable_should_retain_indentation_level():
         """
     )
     extraction_start = source.position(4, 8)
-    extraction_end = source.position(4, 25)
+    extraction_end = source.position(4, 26)
     refactor = Refactor(TextRange(extraction_start, extraction_end))
     insert, *_ = refactor.extract_variable(name="result")
     assert insert.start == source.position(2, 4)
@@ -146,7 +146,7 @@ def test_extract_variable_should_extract_all_identical_nodes_in_the_same_scope()
         """
     )
     extraction_start = source.position(1, 4)
-    extraction_end = source.position(1, 25)
+    extraction_end = source.position(1, 26)
 
     refactor = Refactor(TextRange(extraction_start, extraction_end))
     _, *edits = refactor.extract_variable(name="result")
@@ -167,7 +167,7 @@ def test_extract_variable_should_extract_before_first_occurrence():
         """
     )
     extraction_start = source.position(4, 4)
-    extraction_end = source.position(4, 25)
+    extraction_end = source.position(4, 26)
 
     refactor = Refactor(TextRange(extraction_start, extraction_end))
     insert, *edits = refactor.extract_variable(name="result")
@@ -187,7 +187,7 @@ def test_extract_variable_should_not_extract_occurrences_in_other_function():
         """
     )
     extraction_start = source.position(2, 8)
-    extraction_end = source.position(2, 29)
+    extraction_end = source.position(2, 30)
     refactor = Refactor(TextRange(extraction_start, extraction_end))
     _insert, *edits = refactor.extract_variable(name="result")
 
@@ -207,7 +207,7 @@ def test_extract_variable_should_not_extract_occurrences_in_other_method_of_the_
         """
     )
     extraction_start = source.position(3, 12)
-    extraction_end = source.position(3, 33)
+    extraction_end = source.position(3, 34)
     refactor = Refactor(TextRange(extraction_start, extraction_end))
     _insert, *edits = refactor.extract_variable(name="result")
 
@@ -296,7 +296,7 @@ def test_extract_function_should_return_modified_variable_used_after_call():
         """
     )
     start = source.position(2, 0)
-    end = source.position(2, 8)
+    end = source.position(2, 9)
     refactor = Refactor(TextRange(start, end))
     insert, *_edits = refactor.extract_function(name="function")
 
@@ -321,7 +321,7 @@ def test_extract_function_should_extract_outside_function():
         """
     )
     start = source.position(3, 0)
-    end = source.position(3, 12)
+    end = source.position(3, 13)
     refactor = Refactor(TextRange(start, end))
     insert, *_edits = refactor.extract_function(name="function")
 
@@ -759,6 +759,26 @@ def test_inline_call_should_substitute_parameters():
 
         a = 2
         b = f(a)
+        """
+    )
+
+    start = source.position(6, 4)
+    end = source.position(6, 7)
+    refactor = Refactor(TextRange(start, end))
+    insert, edit = refactor.inline_call(name="result")
+
+    assert "a += 1\nresult = a" in insert.text
+
+
+def test_inline_call_should_substitute_keyword_arguments():
+    source = make_source(
+        """
+        def f(c):
+            c += 1
+            return c
+
+        a = 2
+        b = f(c=a)
         """
     )
 
