@@ -137,16 +137,13 @@ class Refactor:
         )
 
         call_and_call_range = get_enclosing_call(self.text_range)
-
         if not call_and_call_range:
             return ()
 
         call, call_range = call_and_call_range
-
         definition = find_definition(self.scope_graph, call_range.start)
-        if definition.position is None:
+        if definition is None or definition.position is None:
             return ()
-
         if not isinstance(definition.ast, ast.FunctionDef):
             return ()
 
@@ -183,6 +180,7 @@ class Refactor:
             return_value = None
 
         indentation = get_indentation(at=self.text_range.start)
+
         body = (
             indent(
                 dedent(NEWLINE.join(line for line in new_lines[:-1]) + NEWLINE),
@@ -191,12 +189,13 @@ class Refactor:
             + f"{indentation}{name} = {return_value}"
         )
 
+        replace = Edit(call_range, text=name)
         return (
             Edit(
                 insert_range,
                 text=f"{body}",
             ),
-            Edit(self.text_range, text=name),
+            replace,
         )
 
     def get_substitions(

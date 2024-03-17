@@ -214,11 +214,7 @@ def edits_to_text_edits(
         TextEdit(
             range=Range(
                 start=Position(line=edit.start.row, character=edit.start.column),
-                end=Position(
-                    line=edit.end.row,
-                    character=edit.end.column
-                    + (0 if (edit.start == edit.end or edit.end.column == 0) else 1),
-                ),
+                end=Position(line=edit.end.row, character=edit.end.column),
             ),
             new_text=edit.text,
         )

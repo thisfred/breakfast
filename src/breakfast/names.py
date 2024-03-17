@@ -94,8 +94,11 @@ def find_definitions(
     return found_definition, definitions
 
 
-def find_definition(graph: ScopeGraph, position: Position) -> ScopeNode:
-    return find_definitions(graph, position)[0]
+def find_definition(graph: ScopeGraph, position: Position) -> ScopeNode | None:
+    try:
+        return find_definitions(graph, position)[0]
+    except NotFoundError:
+        return None
 
 
 def consolidate_definitions(

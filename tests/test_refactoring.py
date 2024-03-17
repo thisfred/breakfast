@@ -723,12 +723,34 @@ def test_inline_call_should_replace_call_with_function_return_value():
     )
 
     start = source.position(4, 4)
-    end = source.position(4, 6)
+    end = source.position(4, 7)
     refactor = Refactor(TextRange(start, end))
     insert, edit = refactor.inline_call(name="result")
 
     assert "result = 2" in insert.text
     assert "result" == edit.text
+    assert edit.start == start
+    assert edit.end == end
+
+
+def test_inline_call_should_work_when_cursor_is_in_call():
+    source = make_source(
+        """
+        def f():
+            return 2
+
+        b = f()
+        """
+    )
+
+    start = source.position(4, 4)
+    refactor = Refactor(TextRange(start, start))
+    insert, edit = refactor.inline_call(name="result")
+
+    assert "result = 2" in insert.text
+    assert "result" == edit.text
+    assert edit.start == start
+    assert edit.end == start + 3
 
 
 def test_inline_call_should_extract_body_before_assignment():
