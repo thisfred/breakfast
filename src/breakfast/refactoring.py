@@ -212,7 +212,10 @@ class Refactor:
             else ""
         )
 
+        print(f"{value=}")
+        print(f"{body_range=}")
         for position in all_occurrence_positions(arg_position):
+            print(f"{position=}")
             if position not in body_range:
                 continue
             yield TextRange(position, position + len(def_arg.arg)), value

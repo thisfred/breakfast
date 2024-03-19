@@ -793,6 +793,26 @@ def test_inline_call_should_substitute_parameters():
     assert "a += 1\nresult = a" in insert.text
 
 
+def test_inline_call_should_substitute_parameters_in_attribute():
+    source = make_source(
+        """
+        def f(at):
+            text = at.source.lines[at.row].text
+            return text
+
+        a = 2
+        b = f(at=a)
+        """
+    )
+
+    start = source.position(6, 4)
+    end = source.position(6, 7)
+    refactor = Refactor(TextRange(start, end))
+    insert, edit = refactor.inline_call(name="result")
+
+    assert "text = a.source.lines[a.row].text" in insert.text
+
+
 def test_inline_call_should_substitute_keyword_arguments():
     source = make_source(
         """

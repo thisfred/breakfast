@@ -1224,3 +1224,19 @@ def test_should_find_async_function_definition():
         (1, 10),
         (4, 10),
     ]
+
+
+def test_should_find_name_in_index_lookup():
+    source = make_source(
+        """
+        b = 1
+        b.c.d[b.f].e
+        """
+    )
+
+    position = source.position(1, 0)
+    assert all_occurrence_position_tuples(position, sources=[source]) == [
+        (1, 0),
+        (2, 0),
+        (2, 6),
+    ]

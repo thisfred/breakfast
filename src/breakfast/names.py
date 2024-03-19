@@ -315,6 +315,19 @@ def visit_assign(
 
 
 @visit.register
+def visit_subscript(
+    node: ast.Subscript, source: Source, graph: ScopeGraph, state: State
+) -> Iterator[Fragment]:
+    current_scope = graph.add_scope()
+
+    for slice_fragment in visit(node.slice, source, graph, state):
+        graph.add_edge(slice_fragment.exit, current_scope)
+        yield Gadget(current_scope, current_scope)
+
+    yield from visit(node.value, source, graph, state)
+
+
+@visit.register
 def visit_attribute(
     node: ast.Attribute, source: Source, graph: ScopeGraph, state: State
 ) -> Iterator[Fragment]:
