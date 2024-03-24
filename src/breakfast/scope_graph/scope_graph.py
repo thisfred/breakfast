@@ -411,9 +411,15 @@ class ScopeGraph:
 
 
 @dataclass
+class Configuration:
+    follow_redefinitions: bool = True
+
+
+@dataclass
 class State:
     scope_hierarchy: list[ScopeNode]
     inheritance_hierarchy: list[tuple[str, ...]]
+    configuration: Configuration
     class_name: str | None = None
     instance_scope: ScopeNode | None = None
     self: str | None = None

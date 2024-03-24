@@ -28,7 +28,7 @@ class Refactor:
     def __init__(self, text_range: types.TextRange):
         self.text_range = text_range
         self.source = self.text_range.start.source
-        self.scope_graph = build_graph([self.source])
+        self.scope_graph = build_graph([self.source], follow_redefinitions=False)
         self._containing_scopes: Sequence[tuple[ast.AST, types.TextRange]] | None = None
 
     @cached_property

@@ -1176,7 +1176,7 @@ def test_should_find_decorators():
     ]
 
 
-def test_should_find_multiple_assignment():
+def test_should_find_multiple_assignment_in_method():
     source = make_source(
         """
         class C:

@@ -929,11 +929,37 @@ def test_refactor_inside_method_is_true_for_range_inside_method():
 
 @pytest.mark.xfail
 def test_extract_variable_should_extract_within_for_loop():
-    raise AssertionError("todo")
+    source = make_source(
+        """
+        for position in all_occurrence_positions(arg_position):
+            if position not in body_range:
+                continue
+            yield TextRange(position, position + len(def_arg.arg)), value
+        """
+    )
+    extraction_start = source.position(4, 10)
+    extraction_end = source.position(4, 58)
 
-    # extract the yield result here:
-    #
-    # for position in all_occurrence_positions(arg_position):
-    #     if position not in body_range:
-    #         continue
-    #     yield TextRange(position, position + len(def_arg.arg)), value
+    refactor = Refactor(TextRange(extraction_start, extraction_end))
+    insert, *_ = refactor.extract_variable(name="result")
+
+    assert insert.text_range.start.row == 4
+    assert insert.text_range.start.column == 4
+
+
+def test_inline_variable_should_only_inline_after_definition():
+    source = make_source(
+        """
+        extracted = text_range.text.strip()
+        extracted = f"{new_indentation}return {extracted}"
+        assignment = ""
+
+        return extracted, assignment
+        """
+    )
+
+    start = source.position(2, 0)
+    refactor = Refactor(TextRange(start, start))
+    insert, *_edits = refactor.inline_variable()
+    cut_off = source.position(3, 0)
+    assert all(e.text_range.start > cut_off for e in _edits)

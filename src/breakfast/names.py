@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from functools import singledispatch
 
 from breakfast.scope_graph import (
+    Configuration,
     Fragment,
     Gadget,
     IncompleteFragment,
@@ -220,22 +221,34 @@ def visit_name(
     name = node.id
     position = source.node_position(node)
     if isinstance(node.ctx, ast.Store):
-        scopes = [
-            graph.add_scope(
-                name=name,
-                position=position,
-                action=Push(name),
-                rules=(no_lookup_in_enclosing_scope,),
-                ast=node,
-            ),
-            graph.add_scope(
-                name=name,
-                position=position,
-                action=Pop(name),
-                is_definition=True,
-                ast=node,
-            ),
-        ]
+        if state.configuration.follow_redefinitions:
+            scopes = [
+                graph.add_scope(
+                    name=name,
+                    position=position,
+                    action=Push(name),
+                    rules=(no_lookup_in_enclosing_scope,),
+                    ast=node,
+                ),
+                graph.add_scope(
+                    name=name,
+                    position=position,
+                    action=Pop(name),
+                    is_definition=True,
+                    ast=node,
+                ),
+            ]
+        else:
+            scopes = [
+                graph.add_scope(
+                    name=name,
+                    position=position,
+                    action=Pop(name),
+                    is_definition=True,
+                    ast=node,
+                ),
+            ]
+
     else:
         scopes = [
             graph.add_scope(name=name, position=position, action=Push(name), ast=node)
@@ -438,6 +451,8 @@ def visit_call(
         scope = graph.add_scope()
         graph.connect(fragment, scope, same_rank=True)
         yield Gadget(scope, scope)
+
+    yield from visit_all(node.args, source, graph, state)
 
     in_scope = graph.add_scope(action=Push("()"))
 
@@ -1060,9 +1075,14 @@ def call_names(node: ast.Call) -> Path:
     return names
 
 
-def build_graph(sources: Iterable[Source]) -> ScopeGraph:
+def build_graph(
+    sources: Iterable[Source], follow_redefinitions: bool = True
+) -> ScopeGraph:
     graph = ScopeGraph()
-    state = State(scope_hierarchy=[], inheritance_hierarchy=[])
+    configuration = Configuration(follow_redefinitions=follow_redefinitions)
+    state = State(
+        scope_hierarchy=[], inheritance_hierarchy=[], configuration=configuration
+    )
 
     for source in sources:
         for _ in visit(source.ast, source=source, graph=graph, state=state):
