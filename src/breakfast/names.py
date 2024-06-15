@@ -211,7 +211,7 @@ def visit_module(
 
     graph.add_edge(module_root, current)
 
-    yield Gadget(graph.root, graph.root)
+    yield Gadget([graph.root, graph.root])
 
 
 @visit.register
@@ -324,7 +324,7 @@ def visit_assign(
                 )
                 graph.add_edge(value_fragment.exit, current_parent)
 
-    yield Gadget(current_scope, exit_scope)
+    yield Gadget([current_scope, exit_scope])
 
 
 @visit.register
@@ -335,7 +335,7 @@ def visit_subscript(
 
     for slice_fragment in visit(node.slice, source, graph, state):
         graph.add_edge(slice_fragment.exit, current_scope)
-        yield Gadget(current_scope, current_scope)
+        yield Gadget([current_scope, current_scope])
 
     yield from visit(node.value, source, graph, state)
 
@@ -450,7 +450,7 @@ def visit_call(
     for fragment in visit_all(node.args, source, graph, state):
         scope = graph.add_scope()
         graph.connect(fragment, scope, same_rank=True)
-        yield Gadget(scope, scope)
+        yield Gadget([scope, scope])
 
     yield from visit_all(node.args, source, graph, state)
 
@@ -499,7 +499,7 @@ def visit_for_loop(
         elif isinstance(fragment.exit.action, Push):
             graph.add_edge(fragment.exit, current_parent, same_rank=True)
 
-    yield Gadget(current_scope, exit_scope)
+    yield Gadget([current_scope, exit_scope])
     yield from visit(node.iter, source, graph, state)
     yield from visit_all(node.body, source, graph, state)
     yield from visit_all(node.orelse, source, graph, state)
@@ -638,7 +638,7 @@ def visit_function_definition(
         with state.scope(function_bottom):
             current_scope = process_body(node.body, source, graph, state, current_scope)
     graph.add_edge(function_bottom, current_scope)
-    yield Gadget(in_scope, out_scope)
+    yield Gadget([in_scope, out_scope])
 
 
 def visit_type_annotation(
@@ -675,7 +675,7 @@ def process_body(
     for statement in body:
         for fragment in visit(statement, source, graph, state):
             match fragment:
-                case Gadget(entry_point, exit_point):
+                case Gadget([entry_point, exit_point]):
                     graph.connect(fragment, current_scope)
                     current_scope = (
                         entry_point
@@ -776,7 +776,7 @@ def visit_class_definition(
     graph.add_edge(current_scope, i_scope)
     graph.add_edge(parent, current_scope)
 
-    yield Gadget(original_scope, original_scope)
+    yield Gadget([original_scope, original_scope])
 
 
 def _get_relative_module_path(node: ast.ImportFrom, state: State) -> Iterable[str]:
@@ -835,7 +835,7 @@ def visit_import_from(
                 )
 
             graph.add_edge(parent, graph.root)
-    yield Gadget(current_scope, current_scope)
+    yield Gadget([current_scope, current_scope])
 
 
 @visit.register
@@ -866,7 +866,7 @@ def visit_import(
             ast=alias,
         )
         graph.add_edge(remote, graph.root)
-    yield Gadget(current_scope, current_scope)
+    yield Gadget([current_scope, current_scope])
 
 
 @visit.register
@@ -897,7 +897,7 @@ def visit_global(
         )
         graph.add_edge(parent, graph.module_roots[source.module_name])
 
-    yield Gadget(current_scope, current_scope)
+    yield Gadget([current_scope, current_scope])
 
 
 @visit.register
@@ -930,7 +930,7 @@ def visit_nonlocal(
             parent, state.scope_hierarchy[-2] or graph.module_roots[source.module_name]
         )
 
-    yield Gadget(current_scope, current_scope)
+    yield Gadget([current_scope, current_scope])
 
 
 @visit.register
@@ -1015,7 +1015,7 @@ def visit_match_as(
     if node.pattern:
         yield from visit(node.pattern, source, graph, state)
 
-    yield Gadget(current_scope, current_scope)
+    yield Gadget([current_scope, current_scope])
 
 
 @visit.register

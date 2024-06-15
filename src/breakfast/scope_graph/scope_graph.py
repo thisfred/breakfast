@@ -1,7 +1,7 @@
 import logging
 from ast import AST
 from collections import defaultdict, deque
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum, auto
@@ -72,10 +72,7 @@ class ScopeNode:
         return self
 
 
-@dataclass
 class Fragment(Protocol):
-    _entry: "ScopeNode | Fragment"
-    _exit: "ScopeNode | Fragment"
     is_statement: bool = True
 
     @property
@@ -89,8 +86,8 @@ class Fragment(Protocol):
 
 @dataclass
 class IncompleteFragment:
-    _entry: "ScopeNode | Fragment"
-    _exit: "ScopeNode | Fragment"
+    _entry: ScopeNode | Fragment
+    _exit: ScopeNode | Fragment
     is_statement: bool = False
 
     @property
@@ -104,17 +101,16 @@ class IncompleteFragment:
 
 @dataclass
 class Gadget:
-    _entry: "ScopeNode | Fragment"
-    _exit: "ScopeNode | Fragment"
+    nodes: Sequence["ScopeNode"]
     is_statement: bool = True
 
     @property
     def entry(self) -> ScopeNode:
-        return self._entry.entry
+        return self.nodes[0]
 
     @property
     def exit(self) -> ScopeNode:
-        return self._exit.exit
+        return self.nodes[-1]
 
 
 def no_lookup_in_enclosing_scope(edge: Edge) -> bool:
