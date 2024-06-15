@@ -211,7 +211,7 @@ def visit_module(
 
     graph.add_edge(module_root, current)
 
-    yield Gadget([graph.root, graph.root])
+    yield Gadget([graph.root])
 
 
 @visit.register
