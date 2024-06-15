@@ -263,50 +263,6 @@ class ScopeGraph:
         )
         return IncompleteFragment(fragment_or_scope_1, fragment_or_scope_2)
 
-    def unpack(self, fragment_or_scope_node: Fragment | ScopeNode) -> list[ScopeNode]:
-        match fragment_or_scope_node:
-            case Gadget(entry_point, exit_point):
-                return self.unpack(entry_point) + self.unpack(exit_point)
-            case IncompleteFragment(entry_point, exit_point):
-                return self.unpack(entry_point) + self.unpack(exit_point)
-            case ScopeNode(_):
-                return [fragment_or_scope_node]
-            case _:
-                return []
-
-    def copy(self, fragment: Fragment) -> Fragment:
-        nodes = {n.node_id: n for n in self.unpack(fragment)}
-        copies = {}
-        entry_point = exit_point = None
-        edges_to_copy = []
-        for node_id, node in nodes.items():
-            edges_to_copy.extend(
-                [
-                    (node_id, other_id, edge)
-                    for edge, other_id in self.edges.get(node_id, set())
-                    if other_id in nodes
-                ]
-            )
-            copied = self.add_scope(
-                name=node.name, action=node.action, rules=node.rules
-            )
-            if not entry_point:
-                entry_point = copied
-            exit_point = copied
-            copies[node_id] = copied
-
-        for node_id, other_id, edge in edges_to_copy:
-            self.add_edge(
-                copies[node_id],
-                copies[other_id],
-                same_rank=edge.same_rank,
-                to_enclosing_scope=edge.to_enclosing_scope,
-            )
-
-        if not (entry_point and exit_point):
-            raise RuntimeError(f"Attempted to copy invalid fragment `{fragment!r}`")
-        return IncompleteFragment(entry_point, exit_point)
-
     def group_by_rank(self) -> Iterable[set[int]]:
         edges_to: dict[int, set[tuple[Edge, int]]] = defaultdict(set)
         for node_id, to_nodes in self.edges.items():
