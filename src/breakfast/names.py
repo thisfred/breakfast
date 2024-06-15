@@ -675,13 +675,9 @@ def process_body(
     for statement in body:
         for fragment in visit(statement, source, graph, state):
             match fragment:
-                case Gadget([entry_point, exit_point]):
+                case Gadget(nodes):
                     graph.connect(fragment, current_scope)
-                    current_scope = (
-                        entry_point
-                        if isinstance(entry_point, ScopeNode)
-                        else entry_point.entry
-                    )
+                    current_scope = nodes[0]
                 case IncompleteFragment(
                     entry_point, exit_point
                 ) if entry_point is exit_point and isinstance(
