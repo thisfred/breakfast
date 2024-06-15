@@ -286,13 +286,14 @@ def visit_assign(
     # targets.
     exit_scope = graph.add_scope()
     current_parent = exit_scope
-    current_scope = graph.add_scope(link_to=current_parent)
+
+    scopes = [graph.add_scope(link_to=current_parent)]
     target_fragments = build_target_fragments(
         node=node,
         source=source,
         graph=graph,
         state=state,
-        current_scope=current_scope,
+        current_scope=scopes[0],
         current_parent=current_parent,
     )
     value_fragments = []
@@ -324,7 +325,7 @@ def visit_assign(
                 )
                 graph.add_edge(value_fragment.exit, current_parent)
 
-    yield Gadget([current_scope, exit_scope])
+    yield Gadget([*scopes, exit_scope])
 
 
 @visit.register
