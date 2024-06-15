@@ -335,7 +335,7 @@ def visit_subscript(
 
     for slice_fragment in visit(node.slice, source, graph, state):
         graph.add_edge(slice_fragment.exit, current_scope)
-        yield Gadget([current_scope, current_scope])
+        yield Gadget([current_scope])
 
     yield from visit(node.value, source, graph, state)
 
@@ -450,7 +450,7 @@ def visit_call(
     for fragment in visit_all(node.args, source, graph, state):
         scope = graph.add_scope()
         graph.connect(fragment, scope, same_rank=True)
-        yield Gadget([scope, scope])
+        yield Gadget([scope])
 
     yield from visit_all(node.args, source, graph, state)
 
@@ -772,7 +772,7 @@ def visit_class_definition(
     graph.add_edge(current_scope, i_scope)
     graph.add_edge(parent, current_scope)
 
-    yield Gadget([original_scope, original_scope])
+    yield Gadget([original_scope])
 
 
 def _get_relative_module_path(node: ast.ImportFrom, state: State) -> Iterable[str]:
@@ -831,7 +831,7 @@ def visit_import_from(
                 )
 
             graph.add_edge(parent, graph.root)
-    yield Gadget([current_scope, current_scope])
+    yield Gadget([current_scope])
 
 
 @visit.register
@@ -862,7 +862,7 @@ def visit_import(
             ast=alias,
         )
         graph.add_edge(remote, graph.root)
-    yield Gadget([current_scope, current_scope])
+    yield Gadget([current_scope])
 
 
 @visit.register
@@ -893,7 +893,7 @@ def visit_global(
         )
         graph.add_edge(parent, graph.module_roots[source.module_name])
 
-    yield Gadget([current_scope, current_scope])
+    yield Gadget([current_scope])
 
 
 @visit.register
@@ -926,7 +926,7 @@ def visit_nonlocal(
             parent, state.scope_hierarchy[-2] or graph.module_roots[source.module_name]
         )
 
-    yield Gadget([current_scope, current_scope])
+    yield Gadget([current_scope])
 
 
 @visit.register
@@ -1011,7 +1011,7 @@ def visit_match_as(
     if node.pattern:
         yield from visit(node.pattern, source, graph, state)
 
-    yield Gadget([current_scope, current_scope])
+    yield Gadget([current_scope])
 
 
 @visit.register
