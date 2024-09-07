@@ -9,8 +9,8 @@ repos:
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.8.0
     hooks:
-    - id: mypy
-      additional_dependencies: [lsprotocol, pygls]
+      - id: mypy
+        additional_dependencies: [lsprotocol, pygls]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.
@@ -23,8 +23,9 @@ repos:
   - repo: local
     hooks:
       - id: test
+        additional_dependencies: [uv]
         name: run tests
-        language: system
+        language: python
         types: [python]
         pass_filenames: false
         entry: uv run pytest
