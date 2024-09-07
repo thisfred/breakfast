@@ -111,6 +111,25 @@ def test_should_find_occurrences_along_relative_import_paths() -> None:
     ]
 
 
+def test_kwarg_value() -> None:
+    source = make_source(
+        """
+        var = 12
+
+        def fun(b=var):
+            foo = b
+            return foo
+        """
+    )
+
+    position = Position(source, 3, 10)
+
+    assert all_occurrence_positions(position) == [
+        Position(source, 1, 0),
+        Position(source, 3, 10),
+    ]
+
+
 def test_finds_global_variable() -> None:
     source = make_source(
         """
