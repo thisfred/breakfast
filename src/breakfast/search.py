@@ -110,7 +110,7 @@ def find_similar_nodes_in_subscope(
 
 
 def is_structurally_identical(node: ast.AST, other_node: Any) -> bool:
-    if type(node) != type(other_node):
+    if type(node) is not type(other_node):
         return False
 
     for name, value in ast.iter_fields(node):
@@ -181,8 +181,7 @@ def find_arguments_in_call(node: ast.Call, text_range: TextRange) -> Iterator[st
 
 
 class NodeFilter(Protocol):
-    def __call__(self, node: ast.AST) -> bool:
-        ...
+    def __call__(self, node: ast.AST) -> bool: ...
 
 
 def get_nodes(

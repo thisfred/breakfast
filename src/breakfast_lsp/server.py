@@ -7,10 +7,6 @@ from pathlib import Path
 from time import time
 from typing import Any
 
-import breakfast
-from breakfast.refactoring import Refactor
-from breakfast.source import TextRange
-from breakfast.types import Edit
 from lsprotocol.types import (
     INITIALIZE,
     TEXT_DOCUMENT_CODE_ACTION,
@@ -38,6 +34,10 @@ from lsprotocol.types import (
 )
 from pygls.server import LanguageServer
 
+import breakfast
+from breakfast.refactoring import Refactor
+from breakfast.source import TextRange
+from breakfast.types import Edit
 from breakfast_lsp import __version__
 
 logger = logging.getLogger(__name__)
