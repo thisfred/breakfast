@@ -2,9 +2,10 @@ import logging
 import os
 import re
 import sys
-from ast import AST, Module, parse
+from ast import AST, parse
 from dataclasses import InitVar, dataclass, replace
 from functools import cached_property
+from typing import Protocol, TypeGuard
 
 from breakfast import types
 
@@ -15,6 +16,22 @@ WORD = re.compile(r"\w+|\W+")
 
 class IllegalPositionError(Exception):
     pass
+
+
+class PositionalNode(Protocol):
+    lineno: int
+    col_offset: int
+    end_col_offset: int
+    end_lineno: int
+
+
+def has_position(node: AST) -> TypeGuard[PositionalNode]:
+    return (
+        hasattr(node, "lineno")
+        and hasattr(node, "col_offset")
+        and hasattr(node, "end_col_offset")
+        and hasattr(node, "end_lineno")
+    )
 
 
 @dataclass(order=True, frozen=True)
@@ -200,7 +217,7 @@ class Source:
 
         (Note that ast.AST's col_offset is in *bytes*)
         """
-        if isinstance(node, Module):
+        if not has_position(node):
             return self.position(0, 0)
         row = node.lineno - 1
         line = self.text[row]
@@ -218,6 +235,9 @@ class Source:
 
         (Note that ast.AST's col_offset is in *bytes*)
         """
+        if not has_position(node):
+            return None
+
         if node.end_lineno is None or node.end_col_offset is None:
             return None
 
@@ -304,6 +324,8 @@ class SubSource:
         return self.parent_source.get_text(start=start, end=end)
 
     def node_position(self, node: AST) -> types.Position:
+        if not has_position(node):
+            return self.position(0, 0)
         row = node.lineno - 1
         assert (  # noqa: S101
             row == 0
@@ -318,6 +340,9 @@ class SubSource:
         return self.parent_start_position + column_offset
 
     def node_end_position(self, node: AST) -> types.Position | None:
+        if not has_position(node):
+            return None
+
         row = node.lineno - 1
         assert (  # noqa: S101
             row == 0
