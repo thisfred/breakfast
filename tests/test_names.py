@@ -1,9 +1,9 @@
 import sys
 
-from breakfast.names import all_occurrence_positions
-from breakfast.source import Position
 from pytest import mark
 
+from breakfast.names import all_occurrence_positions
+from breakfast.source import Position
 from tests import all_occurrence_position_tuples, make_source
 
 

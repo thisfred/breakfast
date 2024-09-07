@@ -1,6 +1,5 @@
 from breakfast.names import build_graph
 from breakfast.source import Position
-
 from tests import make_source
 
 

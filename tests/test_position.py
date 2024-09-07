@@ -1,4 +1,5 @@
 import pytest
+
 from breakfast.source import IllegalPositionError, Position, Source
 
 
