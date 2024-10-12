@@ -132,19 +132,18 @@ class Refactor:
         return (delete, *edits) if edits else ()
 
     def inline_call(self, name: str) -> tuple[Edit, ...]:
-        insert_range = TextRange(
-            self.text_range.start.line.start, self.text_range.start.line.start
-        )
-
         call_and_call_range = get_enclosing_call(self.text_range)
         if not call_and_call_range:
+            logger.warn("No enclosing call.")
             return ()
 
         call, call_range = call_and_call_range
         definition = find_definition(self.scope_graph, call_range.start)
         if definition is None or definition.position is None:
+            logger.warn("No definition position {definition=}.")
             return ()
         if not isinstance(definition.ast, ast.FunctionDef):
+            logger.warn("Not a function {definition.ast=}.")
             return ()
 
         body_range = self.get_body_range_for_callable(at=definition.position)
@@ -175,28 +174,43 @@ class Refactor:
 
         text = new_lines[-1].strip()
         if text.startswith("return"):
+            insert_range = TextRange(
+                self.text_range.start.line.start, self.text_range.start.line.start
+            )
+            indentation = get_indentation(at=self.text_range.start)
+
             return_value = text[len("return ") :]
+            body = (
+                indent(
+                    dedent(NEWLINE.join(line for line in new_lines[:-1]) + NEWLINE),
+                    indentation,
+                )
+                + f"{indentation}{name} = {return_value}{NEWLINE}"
+            )
+            replace = Edit(call_range, text=name)
+            return (
+                Edit(
+                    insert_range,
+                    text=f"{body}",
+                ),
+                replace,
+            )
+
         else:
-            return_value = None
-
-        indentation = get_indentation(at=self.text_range.start)
-
-        body = (
-            indent(
-                dedent(NEWLINE.join(line for line in new_lines[:-1]) + NEWLINE),
+            indentation = get_indentation(at=self.text_range.start)
+            body = indent(
+                dedent(NEWLINE.join(line for line in new_lines) + NEWLINE),
                 indentation,
             )
-            + f"{indentation}{name} = {return_value}{NEWLINE}"
-        )
-
-        replace = Edit(call_range, text=name)
-        return (
-            Edit(
-                insert_range,
-                text=f"{body}",
-            ),
-            replace,
-        )
+            edit_range = TextRange(
+                self.text_range.start.line.start, self.text_range.end
+            )
+            return (
+                Edit(
+                    edit_range,
+                    text=f"{body}",
+                ),
+            )
 
     def get_substitions(
         self,

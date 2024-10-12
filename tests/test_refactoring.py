@@ -732,6 +732,49 @@ def test_inline_call_should_replace_call_with_function_return_value():
     assert edit.end == end
 
 
+def test_inline_call_should_work_without_return_value():
+    source = make_source(
+        """
+        def f(l):
+            l.append(2)
+
+        b = []
+        f(b)
+        """
+    )
+    start = source.position(5, 0)
+    end = source.position(5, 3)
+    refactor = Refactor(TextRange(start, end))
+    edit, *_ = refactor.inline_call(name="result")
+
+    assert "b.append(2)" in edit.text
+    assert edit.start == start
+    assert edit.end == end
+
+
+def test_inline_call_should_work_inside_branches():
+    source = make_source(
+        """
+        def f(a):
+            if a:
+                print("true")
+            else:
+                print("false")
+
+        if a:
+            f(True)
+        else:
+            f(False)
+        """
+    )
+    start = source.position(8, 4)
+    end = source.position(8, 10)
+    refactor = Refactor(TextRange(start, end))
+    edit, *_ = refactor.inline_call(name="result")
+    assert edit.start == source.position(8, 0)
+    assert edit.end == source.position(8, 10)
+
+
 def test_inline_call_should_work_when_cursor_is_in_call():
     source = make_source(
         """
