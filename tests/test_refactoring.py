@@ -1,5 +1,3 @@
-import pytest
-
 from breakfast.refactoring import Edit, Refactor
 from breakfast.source import Source, TextRange
 from tests import dedent, make_source
@@ -955,7 +953,6 @@ def test_extract_variable_should_include_quotest():
         assert edit.text_range.text == '"foo"'
 
 
-@pytest.mark.xfail
 def test_extract_variable_should_extract_within_for_loop():
     source = make_source(
         """

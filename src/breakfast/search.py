@@ -55,7 +55,7 @@ def find_statements_in_expression(node: ast.Expr) -> Iterator[ast.AST]:
 
 @find_statements.register
 def find_statements_in_node_with_body(
-    node: ast.Module | ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
+    node: ast.Module | ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef | ast.For,
 ) -> Iterator[ast.AST]:
     for child in node.body:
         yield child
