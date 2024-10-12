@@ -172,14 +172,14 @@ class Refactor:
 
         new_lines = rewrite(body_range, substitutions)
 
-        text = new_lines[-1].strip()
-        if text.startswith("return"):
+        last_line = new_lines[-1].strip()
+        if last_line.startswith("return"):
             insert_range = TextRange(
                 self.text_range.start.line.start, self.text_range.start.line.start
             )
             indentation = get_indentation(at=self.text_range.start)
 
-            return_value = text[len("return ") :]
+            return_value = last_line[len("return ") :]
             body = (
                 indent(
                     dedent(NEWLINE.join(line for line in new_lines[:-1]) + NEWLINE),
@@ -195,7 +195,6 @@ class Refactor:
                 ),
                 replace,
             )
-
         else:
             indentation = get_indentation(at=self.text_range.start)
             body = indent(
