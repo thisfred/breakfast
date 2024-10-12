@@ -35,10 +35,10 @@ from lsprotocol.types import (
 from pygls.server import LanguageServer
 
 import breakfast
+from breakfast import __version__
 from breakfast.refactoring import Refactor
 from breakfast.source import TextRange
 from breakfast.types import Edit
-from breakfast_lsp import __version__
 
 logger = logging.getLogger(__name__)
 BREAKFAST_DEBUG = bool(os.environ.get("BREAKFAST_DEBUG", False))

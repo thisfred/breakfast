@@ -1,4 +1,4 @@
-from breakfast_lsp import server
+from breakfast.breakfast_lsp import server
 
 
 def main() -> None:
