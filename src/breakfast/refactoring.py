@@ -589,7 +589,7 @@ def get_single_expression_value(text: str) -> ast.AST | None:
 
 def make_edit(source: Source, node: ast.AST, length: int, new_text: str) -> Edit:
     start = source.node_position(node)
-    return Edit(TextRange(start=start, end=start + (length - 1)), text=new_text)
+    return Edit(TextRange(start=start, end=start + length), text=new_text)
 
 
 def make_insert(at: Position, text: str) -> Edit:

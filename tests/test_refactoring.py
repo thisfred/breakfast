@@ -927,6 +927,34 @@ def test_refactor_inside_method_is_true_for_range_inside_method():
     assert refactor.inside_method
 
 
+def test_extract_variable_should_include_quotest():
+    source = make_source(
+        """
+        item = 'wat'
+        if (
+            item.name != AGED_BRIE
+            and item.name != "foo"
+        ):
+            if item.quality > 0:
+                if item.name != "Sulfuras, Hand of Ragnaros":
+                    item.quality = item.quality - 1
+        else:
+            if item.quality < 50:
+                item.quality = item.quality + 1
+                if item.name == "foo":
+                    ...
+        """
+    )
+
+    start = source.position(4, 21)
+    end = source.position(4, 26)
+
+    refactor = Refactor(TextRange(start, end))
+    edits = refactor.extract_variable(name="result")
+    for edit in edits[1:]:
+        assert edit.text_range.text == '"foo"'
+
+
 @pytest.mark.xfail
 def test_extract_variable_should_extract_within_for_loop():
     source = make_source(
