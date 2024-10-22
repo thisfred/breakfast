@@ -48,6 +48,7 @@ class Refactor:
         logger.info(f"{extracted=}")
 
         if not (expression := get_single_expression_value(extracted)):
+            logger.warning("Could not extract single expression value.")
             return ()
 
         other_occurrences = find_other_occurrences(
@@ -406,15 +407,14 @@ class Refactor:
             return None
 
         original_indentation = get_indentation(at=first.start)
-
-        while (
-            first_usage_after_range.row > last.row + 1
-            and get_indentation(at=first_usage_after_range) != original_indentation
+        for _, containing_range in reversed(
+            get_containing_nodes(
+                TextRange(first_usage_after_range, first_usage_after_range)
+            )
         ):
-            previous = first_usage_after_range.line.previous
-            if not previous:
+            if get_indentation(at=containing_range.start) == original_indentation:
+                first_usage_after_range = containing_range.start
                 break
-            first_usage_after_range = previous.start
 
         if first_usage_after_range and first_usage_after_range.row > last.row + 1:
             return first_usage_after_range.start_of_line

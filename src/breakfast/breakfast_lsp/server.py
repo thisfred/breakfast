@@ -236,6 +236,7 @@ async def code_action(
 ) -> list[CodeAction] | None:
     actions: list[CodeAction] = []
     if params.range:
+        logger.debug(f"{params.range=}")
         document_uri = params.text_document.uri
         document = server.workspace.get_text_document(document_uri)
         source_lines = tuple(document.source.split("\n"))

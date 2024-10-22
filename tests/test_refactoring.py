@@ -586,6 +586,25 @@ def test_slide_statements_should_not_slide_into_nested_scopes():
     assert not edits
 
 
+def test_slide_statements_should_not_slide_into_if_else_branches():
+    source = make_source(
+        """
+        value = 0
+        if True:
+            ...
+        else:
+            print(value)
+        """
+    )
+
+    first = source.lines[1]
+    last = source.lines[1]
+
+    refactor = Refactor(TextRange(first.start, last.end))
+    edits = refactor.slide_statements_down()
+    assert not edits
+
+
 def test_slide_statements_should_slide_past_irrelevant_statements():
     source = make_source(
         """
