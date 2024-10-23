@@ -406,15 +406,14 @@ class Refactor:
         if not first_usage_after_range:
             return None
 
-        original_indentation = get_indentation(at=first.start)
-        for _, containing_range in reversed(
-            get_containing_nodes(
-                TextRange(first_usage_after_range, first_usage_after_range)
-            )
-        ):
-            if get_indentation(at=containing_range.start) == original_indentation:
-                first_usage_after_range = containing_range.start
-                break
+        containing_nodes = get_containing_nodes(
+            TextRange(first_usage_after_range, first_usage_after_range)
+        )
+        origin_nodes = get_containing_nodes(text_range)
+        for (_, r1), (_, r2) in zip(origin_nodes, containing_nodes, strict=False):
+            if r1 == r2:
+                continue
+            first_usage_after_range = r2.start
 
         if first_usage_after_range and first_usage_after_range.row > last.row + 1:
             return first_usage_after_range.start_of_line

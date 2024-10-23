@@ -586,14 +586,20 @@ def test_slide_statements_should_not_slide_into_nested_scopes():
     assert not edits
 
 
-def test_slide_statements_should_not_slide_into_if_else_branches():
+def test_slide_statements_should_not_slide_up_to_if():
     source = make_source(
         """
-        value = 0
-        if True:
+        is_backstage_passes = item.name == BACKSTAGE_PASSES
+        is_sulfuras = item.name == SULFURAS
+        if is_sulfuras:
+            return
+        is_aged_brie = item.name == AGED_BRIE
+        if is_aged_brie:
+            ...
+        elif is_backstage_passes:
             ...
         else:
-            print(value)
+            ...
         """
     )
 
@@ -602,7 +608,7 @@ def test_slide_statements_should_not_slide_into_if_else_branches():
 
     refactor = Refactor(TextRange(first.start, last.end))
     edits = refactor.slide_statements_down()
-    assert not edits
+    assert edits[0].start.row == 6
 
 
 def test_slide_statements_should_slide_past_irrelevant_statements():
