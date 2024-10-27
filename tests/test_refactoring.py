@@ -586,29 +586,30 @@ def test_slide_statements_should_not_slide_into_nested_scopes():
     assert not edits
 
 
-def test_slide_statements_should_not_slide_up_to_if():
+def test_slide_statements_should_not_slide_inside_if_else():
     source = make_source(
         """
-        is_backstage_passes = item.name == BACKSTAGE_PASSES
-        is_sulfuras = item.name == SULFURAS
-        if is_sulfuras:
-            return
-        is_aged_brie = item.name == AGED_BRIE
-        if is_aged_brie:
-            ...
-        elif is_backstage_passes:
-            ...
-        else:
-            ...
+        def update_item(item):
+            is_backstage_passes = item.name == "bac"
+            is_sulfuras = item.name == "sul"
+            if is_sulfuras:
+                return
+            is_aged_brie = item.name == "age"
+            if is_aged_brie:
+                ...
+            elif is_backstage_passes:
+                ...
+            else:
+                ...
         """
     )
 
-    first = source.lines[1]
-    last = source.lines[1]
+    first = source.lines[2]
+    last = source.lines[2]
 
     refactor = Refactor(TextRange(first.start, last.end))
     edits = refactor.slide_statements_down()
-    assert edits[0].start.row == 6
+    assert edits[0].start.row == 7
 
 
 def test_slide_statements_should_slide_past_irrelevant_statements():
@@ -998,7 +999,7 @@ def test_extract_variable_should_include_quotest():
         """
         item = 'wat'
         if (
-            item.name != AGED_BRIE
+            item.name != "AGED_BRIE"
             and item.name != "foo"
         ):
             if item.quality > 0:

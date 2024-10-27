@@ -141,10 +141,10 @@ class Refactor:
         call, call_range = call_and_call_range
         definition = find_definition(self.scope_graph, call_range.start)
         if definition is None or definition.position is None:
-            logger.warn("No definition position {definition=}.")
+            logger.warn(f"No definition position {definition=}.")
             return ()
         if not isinstance(definition.ast, ast.FunctionDef):
-            logger.warn("Not a function {definition.ast=}.")
+            logger.warn(f"Not a function {definition.ast=}.")
             return ()
 
         body_range = self.get_body_range_for_callable(at=definition.position)
@@ -410,10 +410,14 @@ class Refactor:
             TextRange(first_usage_after_range, first_usage_after_range)
         )
         origin_nodes = get_containing_nodes(text_range)
-        for (_, r1), (_, r2) in zip(origin_nodes, containing_nodes, strict=False):
-            if r1 == r2:
-                continue
-            first_usage_after_range = r2.start
+        index = 0
+        while (
+            index < len(origin_nodes)
+            and origin_nodes[index][1] == containing_nodes[index][1]
+        ):
+            index += 1
+
+        first_usage_after_range = containing_nodes[index][1].start
 
         if first_usage_after_range and first_usage_after_range.row > last.row + 1:
             return first_usage_after_range.start_of_line
