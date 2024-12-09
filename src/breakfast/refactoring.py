@@ -45,7 +45,6 @@ class Refactor:
 
     def extract_variable(self, name: str) -> tuple[Edit, ...]:
         extracted = self.text_range.text
-        logger.info(f"{extracted=}")
 
         if not (expression := get_single_expression_value(extracted)):
             logger.warning("Could not extract single expression value.")

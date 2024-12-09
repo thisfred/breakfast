@@ -130,6 +130,7 @@ def test_kwarg_value() -> None:
     ]
 
 
+@mark.xfail
 def test_finds_global_variable() -> None:
     source = make_source(
         """

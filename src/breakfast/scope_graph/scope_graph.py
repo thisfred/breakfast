@@ -16,16 +16,13 @@ Path = tuple[str, ...]
 
 
 class Action(Protocol):
-    def __call__(self, stack: Path) -> Path:
-        ...
+    def __call__(self, stack: Path) -> Path: ...
 
-    def precondition(self, stack: Path) -> bool:
-        ...
+    def precondition(self, stack: Path) -> bool: ...
 
 
 class NodeCondition(Protocol):
-    def __call__(self, node: "ScopeNode") -> bool:
-        ...
+    def __call__(self, node: "ScopeNode") -> bool: ...
 
 
 class NotInScopeError(Exception):
@@ -40,8 +37,7 @@ class Edge:
 
 
 class Rule(Protocol):
-    def __call__(self, edge: Edge) -> bool:
-        ...
+    def __call__(self, edge: Edge) -> bool: ...
 
 
 class NodeType(Enum):
@@ -76,12 +72,10 @@ class Fragment(Protocol):
     is_statement: bool = True
 
     @property
-    def entry(self) -> ScopeNode:
-        ...
+    def entry(self) -> ScopeNode: ...
 
     @property
-    def exit(self) -> ScopeNode:
-        ...
+    def exit(self) -> ScopeNode: ...
 
 
 @dataclass
@@ -330,6 +324,7 @@ class ScopeGraph:
         queues: dict[int, deque[tuple[ScopeNode, Path]]] = {0: deque(), 1: deque()}
         self.extend_queues(node_id, stack, queues, rules)
 
+        seen = set()
         while any(q for q in queues.values()):
             for _, queue in sorted(queues.items()):
                 if not queue:
@@ -337,6 +332,11 @@ class ScopeGraph:
                 (node, stack) = queue.popleft()
                 break
 
+            if (node, stack) in seen:
+                raise NotFoundError()
+            seen.add((node, stack))
+
+            logger.info("node: %r", node)
             if node.action:
                 stack = node.action(stack)
 
@@ -345,7 +345,7 @@ class ScopeGraph:
 
             self.extend_queues(node.node_id, stack, queues, rules)
 
-        raise NotFoundError
+        raise NotFoundError()
 
     def extend_queues(
         self,
