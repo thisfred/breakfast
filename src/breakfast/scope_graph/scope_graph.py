@@ -333,7 +333,7 @@ class ScopeGraph:
                 break
 
             if (node, stack) in seen:
-                raise NotFoundError()
+                continue
             seen.add((node, stack))
 
             logger.info("node: %r", node)

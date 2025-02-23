@@ -130,8 +130,7 @@ def test_kwarg_value() -> None:
     ]
 
 
-@mark.xfail
-def test_finds_global_variable() -> None:
+def test_finds_global_variable_usage_from_definition() -> None:
     source = make_source(
         """
     var = 12
@@ -143,6 +142,26 @@ def test_finds_global_variable() -> None:
     )
 
     position = Position(source, 1, 0)
+
+    assert all_occurrence_positions(position) == [
+        Position(source, 1, 0),
+        Position(source, 4, 11),
+        Position(source, 5, 10),
+    ]
+
+
+def test_finds_global_variable_from_local_usage() -> None:
+    source = make_source(
+        """
+    var = 12
+
+    def fun():
+        global var
+        foo = var
+    """
+    )
+
+    position = Position(source, 5, 10)
 
     assert all_occurrence_positions(position) == [
         Position(source, 1, 0),

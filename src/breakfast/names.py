@@ -88,7 +88,6 @@ def find_definitions(
         definitions[definition].add(occurrence)
         if position in (definition.position, occurrence.position):
             found_definition = definition
-
     if not found_definition:
         raise NotFoundError
 
@@ -221,33 +220,26 @@ def visit_name(
     name = node.id
     position = source.node_position(node)
     if isinstance(node.ctx, ast.Store):
+        scopes = []
         if state.configuration.follow_redefinitions:
-            scopes = [
+            scopes.append(
                 graph.add_scope(
                     name=name,
                     position=position,
                     action=Push(name),
                     rules=(no_lookup_in_enclosing_scope,),
                     ast=node,
-                ),
-                graph.add_scope(
-                    name=name,
-                    position=position,
-                    action=Pop(name),
-                    is_definition=True,
-                    ast=node,
-                ),
-            ]
-        else:
-            scopes = [
-                graph.add_scope(
-                    name=name,
-                    position=position,
-                    action=Pop(name),
-                    is_definition=True,
-                    ast=node,
-                ),
-            ]
+                )
+            )
+        scopes.append(
+            graph.add_scope(
+                name=name,
+                position=position,
+                action=Pop(name),
+                is_definition=True,
+                ast=node,
+            )
+        )
 
     else:
         scopes = [
