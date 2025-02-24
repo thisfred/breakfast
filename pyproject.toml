@@ -29,7 +29,7 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "C", "W", "UP", "N", "YTT", "S", "B", "A", "DTZ", "RUF", "N"]
-ignore = ["E501"]  # we use ruff formatting, long lines are comments only
+ignore = ["A005", "E501"]
 fixable = ["ALL"]
 unfixable = []
 
