@@ -381,17 +381,13 @@ class State:
     def instance(
         self, *, instance_scope: ScopeNode, class_name: str
     ) -> Iterator["State"]:
-        if instance_scope:
-            old_instance_scope = self.instance_scope
-            self.instance_scope = instance_scope
-        if class_name:
-            old_class_name = self.class_name
-            self.class_name = class_name
+        old_instance_scope = self.instance_scope
+        self.instance_scope = instance_scope
+        old_class_name = self.class_name
+        self.class_name = class_name
         yield self
-        if instance_scope:
-            self.instance_scope = old_instance_scope
-        if class_name:
-            self.class_name = old_class_name
+        self.instance_scope = old_instance_scope
+        self.class_name = old_class_name
 
     @contextmanager
     def base_classes(self, names: list[tuple[str, ...]]) -> Iterator["State"]:
