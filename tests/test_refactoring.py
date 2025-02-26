@@ -994,7 +994,7 @@ def test_refactor_inside_method_is_true_for_range_inside_method():
     assert refactor.inside_method
 
 
-def test_extract_variable_should_include_quotest():
+def test_extract_variable_should_include_quotes():
     source = make_source(
         """
         item = 'wat'
