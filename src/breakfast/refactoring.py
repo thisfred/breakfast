@@ -102,17 +102,19 @@ class Refactor:
         name = self.source.get_name_at(position)
         value_range = get_assignment_value_text_range(position)
         if value_range is None:
+            logger.warn("Could not determine range.")
             return ()
         assignment_value = value_range.text
 
         try:
             occurrences = all_occurrence_positions(position, graph=self.scope_graph)
         except NotFoundError:
+            logger.warn("Could not determine range.")
             return ()
 
         edits = (
             Edit(
-                TextRange(occurrence, occurrence + len(name) - 1),
+                TextRange(occurrence, occurrence + len(name)),
                 text=assignment_value,
             )
             for occurrence in occurrences

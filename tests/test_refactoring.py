@@ -934,7 +934,7 @@ def test_inline_variable_should_replace_variable_with_expression():
 
     assert "f()" == edit.text
     assert edit.start == source.position(2, 6)
-    assert edit.end == source.position(2, 6)
+    assert edit.end == source.position(2, 7)
 
 
 def test_inline_variable_should_delete_definition():
