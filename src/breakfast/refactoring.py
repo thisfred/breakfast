@@ -660,7 +660,9 @@ def get_enclosing_call(
     text_range: types.TextRange,
 ) -> tuple[ast.Call, types.TextRange] | None:
     calls = [
-        (n, r) for n, r in get_containing_nodes(text_range) if isinstance(n, ast.Call)
+        (containing_node, node_range)
+        for containing_node, node_range in get_containing_nodes(text_range)
+        if isinstance(containing_node, ast.Call)
     ]
     return calls[-1] if calls else None
 
