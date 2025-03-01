@@ -1057,3 +1057,18 @@ def test_inline_variable_should_only_inline_after_definition():
     insert, *_edits = refactor.inline_variable()
     cut_off = source.position(3, 0)
     assert all(e.text_range.start > cut_off for e in _edits)
+
+
+def test_inline_variable_should_inline_twice():
+    source = make_source(
+        """
+        start = source.position(1, 0)
+        refactor = Refactor(TextRange(start, start))
+        """
+    )
+    start = source.position(1, 3)
+    refactor = Refactor(TextRange(start, start))
+    _, *edits = refactor.inline_variable()
+    assert [
+        ((e.start.row, e.start.column), (e.end.row, e.end.column)) for e in edits
+    ] == [((2, 30), (2, 35)), ((2, 37), (2, 42))]

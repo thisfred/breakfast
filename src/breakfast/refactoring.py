@@ -43,6 +43,22 @@ class Refactor:
     def containing_nodes(self) -> Sequence[tuple[ast.AST, types.TextRange]]:
         return get_containing_nodes(self.text_range)
 
+    def get_enclosing_call(self) -> tuple[ast.Call, types.TextRange] | None:
+        calls = [
+            (containing_node, node_range)
+            for containing_node, node_range in self.containing_nodes
+            if isinstance(containing_node, ast.Call)
+        ]
+        return calls[-1] if calls else None
+
+    def get_enclosing_assignment(self) -> tuple[ast.Assign, types.TextRange] | None:
+        assignments = [
+            (containing_node, node_range)
+            for containing_node, node_range in self.containing_nodes
+            if isinstance(containing_node, ast.Assign)
+        ]
+        return assignments[-1] if assignments else None
+
     def extract_variable(self, name: str) -> tuple[Edit, ...]:
         extracted = self.text_range.text
 
@@ -98,12 +114,19 @@ class Refactor:
         return self.extract_callable(name=name)
 
     def inline_variable(self) -> tuple[Edit, ...]:
-        position = self.text_range.start
-        name = self.source.get_name_at(position)
-        value_range = get_assignment_value_text_range(position)
+        assignment_and_range = self.get_enclosing_assignment()
+        if assignment_and_range is None:
+            logger.warn("No enclosing assignment.")
+            return ()
+
+        assignment, assignment_range = assignment_and_range
+        value_range = assignment_range.start.source.node_range(assignment.value)
         if value_range is None:
             logger.warn("Could not determine range.")
             return ()
+        position = assignment_range.start
+
+        name = self.source.get_name_at(position)
         assignment_value = value_range.text
 
         try:
@@ -134,7 +157,7 @@ class Refactor:
         return (delete, *edits) if edits else ()
 
     def inline_call(self, name: str) -> tuple[Edit, ...]:
-        call_and_call_range = get_enclosing_call(self.text_range)
+        call_and_call_range = self.get_enclosing_call()
         if not call_and_call_range:
             logger.warn("No enclosing call.")
             return ()
@@ -621,26 +644,6 @@ def passed_as_argument_within(name: str, text_range: types.TextRange) -> bool:
     )
 
 
-def get_assignment_value_text_range(position: Position) -> types.TextRange | None:
-    source = position.source
-
-    def assigment_filter(node: ast.AST) -> bool:
-        return (
-            isinstance(node, ast.Assign)
-            and position.source.node_position(node) == position
-        )
-
-    node = next(
-        get_nodes(source.ast, node_filter=assigment_filter),
-        None,
-    )
-
-    if not isinstance(node, ast.Assign):
-        return None
-
-    return source.node_range(node.value)
-
-
 def get_containing_nodes(
     text_range: types.TextRange,
 ) -> list[tuple[ast.AST, types.TextRange]]:
@@ -654,17 +657,6 @@ def get_containing_nodes(
                 scopes.append((node, node_range))
 
     return scopes
-
-
-def get_enclosing_call(
-    text_range: types.TextRange,
-) -> tuple[ast.Call, types.TextRange] | None:
-    calls = [
-        (containing_node, node_range)
-        for containing_node, node_range in get_containing_nodes(text_range)
-        if isinstance(containing_node, ast.Call)
-    ]
-    return calls[-1] if calls else None
 
 
 def rewrite(
