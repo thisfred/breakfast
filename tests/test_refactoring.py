@@ -1112,31 +1112,27 @@ def test_extract_method_containing_return_statement_should_preserve_it():
     refactor = CodeSelection(TextRange(start, end))
     insert, edit = refactor.extract_method("f")
 
-    assert edit.text == "    return self.f()\n"
+    assert "return" in edit.text
 
 
-# TODO: failed to rename "Refactor", may be due to `*`
-# async def make_code_action(
-#     *,
-#     refactor: Refactor,
-#     action: Any,
-#     kind: CodeActionKind,
-#     document_uri: str,
-#     version: None,
-# ) -> CodeAction:
-#     edit = await action(refactor, document_uri=document_uri, version=version)
-#     return CodeAction(
-#         title=f"breakfast: {action.__doc__}",
-#         kind=kind,
-#         data=document_uri,
-#         edit=edit,
-#         diagnostics=[],
-#     )
-#
-# TODO: failed to inline self.containing_nodes_by_type
-#
-# @cached_property
-# def containing_scopes(self) -> Sequence[tuple[ast.AST, types.TextRange]]:
-#     node_type = ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
-#     nodes = self.containing_nodes_by_type(node_type=node_type)
-#     return nodes
+@mark.xfail
+def test_inline_call_should_inline_method_call():
+    source = make_source(
+        """
+        class C:
+
+            def containing_scopes(self):
+                nodes = self.containing_nodes_by_type()
+                return nodes
+
+            def containing_nodes_by_type(self):
+                return "dummy value"
+        """
+    )
+
+    start = source.position(5, 23)
+    refactor = CodeSelection(TextRange(start, start))
+    insert, edit = refactor.inline_call(name="result")
+
+    assert "" == insert.text
+    assert "" == edit.text

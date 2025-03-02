@@ -1279,3 +1279,26 @@ def test_should_find_name_in_index_lookup():
         (2, 0),
         (2, 6),
     ]
+
+
+@mark.xfail
+def test_rename_should_rename_type_after_asterisk_argument():
+    source = make_source(
+        """
+        class Refactor:
+            ...
+
+
+        def make_code_action(
+            *,
+            refactor: Refactor,
+        ) -> CodeAction:
+            ...
+        """
+    )
+    position = source.position(1, 6)
+
+    assert all_occurrence_position_tuples(position, sources=[source]) == [
+        (1, 6),
+        (7, 14),
+    ]
