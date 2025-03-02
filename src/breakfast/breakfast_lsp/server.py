@@ -36,7 +36,7 @@ from pygls.server import LanguageServer
 
 import breakfast
 from breakfast import __version__
-from breakfast.refactoring import Refactor
+from breakfast.refactoring import CodeSelection
 from breakfast.source import TextRange
 from breakfast.types import Edit
 
@@ -258,7 +258,7 @@ async def code_action(
             row=extraction_range.end.line,
             column=max(extraction_range.end.character, 0),
         )
-        refactor = Refactor(text_range=TextRange(start, end))
+        refactor = CodeSelection(text_range=TextRange(start, end))
         code_action = partial(
             make_code_action,
             refactor=refactor,
@@ -290,7 +290,7 @@ async def code_action(
 
 async def make_code_action(
     *,
-    refactor: Refactor,
+    refactor: CodeSelection,
     action: Any,
     kind: CodeActionKind,
     document_uri: str,
@@ -319,7 +319,7 @@ async def slide_statements_down(
     source = get_source(uri=document_uri, project_root=project_root, lines=source_lines)
     start = source.position(row=line, column=0)
     end = source.position(row=line, column=0)
-    refactor = Refactor(text_range=TextRange(start, end))
+    refactor = CodeSelection(text_range=TextRange(start, end))
 
     client_documents = server.workspace.text_documents
     version = (
@@ -344,7 +344,7 @@ async def slide_statements_up(
     source = get_source(uri=document_uri, project_root=project_root, lines=source_lines)
     start = source.position(row=line, column=0)
     end = source.position(row=line, column=0)
-    refactor = Refactor(text_range=TextRange(start, end))
+    refactor = CodeSelection(text_range=TextRange(start, end))
 
     client_documents = server.workspace.text_documents
     version = (
@@ -357,7 +357,7 @@ async def slide_statements_up(
 
 
 async def _extract_function(
-    refactor: Refactor,
+    refactor: CodeSelection,
     document_uri: str,
     version: None,
 ) -> WorkspaceEdit:
@@ -377,7 +377,7 @@ async def _extract_function(
 
 
 async def _extract_method(
-    refactor: Refactor,
+    refactor: CodeSelection,
     document_uri: str,
     version: None,
 ) -> WorkspaceEdit | None:
@@ -397,7 +397,7 @@ async def _extract_method(
 
 
 async def _extract_variable(
-    refactor: Refactor,
+    refactor: CodeSelection,
     document_uri: str,
     version: None,
 ) -> WorkspaceEdit:
@@ -419,7 +419,7 @@ async def _extract_variable(
 
 
 async def _slide_statements_down(
-    refactor: Refactor,
+    refactor: CodeSelection,
     document_uri: str,
     version: None,
 ) -> WorkspaceEdit:
@@ -438,7 +438,7 @@ async def _slide_statements_down(
 
 
 async def _slide_statements_up(
-    refactor: Refactor,
+    refactor: CodeSelection,
     document_uri: str,
     version: None,
 ) -> WorkspaceEdit:
@@ -457,7 +457,7 @@ async def _slide_statements_up(
 
 
 async def _inline_variable(
-    refactor: Refactor,
+    refactor: CodeSelection,
     document_uri: str,
     version: None,
 ) -> WorkspaceEdit:
@@ -476,7 +476,7 @@ async def _inline_variable(
 
 
 async def _inline_call(
-    refactor: Refactor,
+    refactor: CodeSelection,
     document_uri: str,
     version: None,
 ) -> WorkspaceEdit:

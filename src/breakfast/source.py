@@ -79,6 +79,10 @@ class TextRange:
     def text(self) -> str:
         return self.start.source.get_text(start=self.start, end=self.end)
 
+    @property
+    def source(self) -> types.Source:
+        return self.start.source
+
     def __contains__(self, position_or_range: types.Position | types.TextRange) -> bool:
         match position_or_range:
             case Position() as position:
