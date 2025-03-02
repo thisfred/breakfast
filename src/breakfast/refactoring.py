@@ -38,12 +38,18 @@ class CodeSelection:
         self.scope_graph = build_graph([self.source], follow_redefinitions=False)
 
     @cached_property
-    def containing_scopes(self) -> Sequence[tuple[ast.AST, types.TextRange]]:
-        return [
-            (n, c)
-            for n, c in self.containing_nodes
-            if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
-        ]
+    def containing_scopes(
+        self,
+    ) -> Sequence[
+        tuple[ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef, types.TextRange]
+    ]:
+        node_type = ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
+        return [(n, c) for n, c in self.containing_nodes if isinstance(n, node_type)]
+
+    def containing_nodes_by_type[T: ast.AST](
+        self, node_type: type[T]
+    ) -> Sequence[tuple[T, types.TextRange]]:
+        return [(n, c) for n, c in self.containing_nodes if isinstance(n, node_type)]
 
     @cached_property
     def containing_nodes(self) -> Sequence[tuple[ast.AST, types.TextRange]]:
@@ -51,17 +57,13 @@ class CodeSelection:
 
     @cached_property
     def enclosing_call(self) -> tuple[ast.Call, types.TextRange] | None:
-        types = (ast.Call,)
-        calls = [
-            (containing_node, node_range)
-            for containing_node, node_range in self.containing_nodes
-            if isinstance(containing_node, types)
-        ]
+        calls = self.containing_nodes_by_type(ast.Call)
         return calls[-1] if calls else None
 
     @cached_property
     def enclosing_assignment(self) -> tuple[ast.Assign, types.TextRange] | None:
-        types = (ast.Assign,)
+        types = ast.Assign
+        assignments = self.containing_nodes_by_type(types)
         assignments = [
             (containing_node, node_range)
             for containing_node, node_range in self.containing_nodes
@@ -319,86 +321,6 @@ class CodeSelection:
         )
 
         return start.source.position(enclosing.end.row + 1, 0)
-
-
-def get_indentation(at: Position) -> str:
-    text = at.source.lines[at.row].text
-    if not (indentation_match := INDENTATION.match(text)):
-        return ""
-
-    if not (groups := indentation_match.groups()):
-        return ""
-
-    return groups[0]
-
-
-def get_single_expression_value(text: str) -> ast.AST | None:
-    try:
-        parsed = ast.parse(text)
-    except SyntaxError:
-        return None
-
-    if len(parsed.body) != 1 or not isinstance(parsed.body[0], ast.Expr):
-        return None
-
-    return parsed.body[0].value
-
-
-def make_edit(source: Source, node: ast.AST, length: int, new_text: str) -> Edit:
-    start = source.node_position(node)
-    return Edit(TextRange(start=start, end=start + length), text=new_text)
-
-
-def make_insert(at: Position, text: str) -> Edit:
-    return Edit(TextRange(start=at, end=at), text=text)
-
-
-def make_delete(start: Position, end: Position) -> Edit:
-    return Edit(TextRange(start=start, end=end), text="")
-
-
-def passed_as_argument_within(name: str, text_range: types.TextRange) -> bool:
-    return any(
-        n == name
-        for n in find_arguments_passed_in_range(text_range.start.source.ast, text_range)
-    )
-
-
-def get_containing_nodes(
-    text_range: types.TextRange,
-) -> list[tuple[ast.AST, types.TextRange]]:
-    source = text_range.start.source
-    scopes = []
-    for node in get_nodes(source.ast):
-        if hasattr(node, "end_lineno"):
-            if source.node_position(node) > text_range.end:
-                break
-            if (node_range := source.node_range(node)) and text_range in node_range:
-                scopes.append((node, node_range))
-
-    return scopes
-
-
-def rewrite(
-    text_range: types.TextRange,
-    substitutions: Sequence[tuple[types.TextRange, str]],
-) -> Sequence[str]:
-    row_offset = text_range.start.row
-    text = [
-        line.text
-        for line in text_range.start.source.lines[
-            text_range.start.row : text_range.end.row + 1
-        ]
-    ]
-    for substitution_range, new_text in sorted(substitutions, reverse=True):
-        row_index = substitution_range.start.row - row_offset
-        text[row_index] = (
-            text[row_index][: substitution_range.start.column]
-            + new_text
-            + text[row_index][substitution_range.end.column :]
-        )
-
-    return text
 
 
 class ExtractVariable:
@@ -764,3 +686,83 @@ def get_names_defined_in_range(text_range: TextRange) -> list[tuple[str, Positio
     ]
 
     return names_defined_in_range
+
+
+def get_indentation(at: Position) -> str:
+    text = at.source.lines[at.row].text
+    if not (indentation_match := INDENTATION.match(text)):
+        return ""
+
+    if not (groups := indentation_match.groups()):
+        return ""
+
+    return groups[0]
+
+
+def get_single_expression_value(text: str) -> ast.AST | None:
+    try:
+        parsed = ast.parse(text)
+    except SyntaxError:
+        return None
+
+    if len(parsed.body) != 1 or not isinstance(parsed.body[0], ast.Expr):
+        return None
+
+    return parsed.body[0].value
+
+
+def make_edit(source: Source, node: ast.AST, length: int, new_text: str) -> Edit:
+    start = source.node_position(node)
+    return Edit(TextRange(start=start, end=start + length), text=new_text)
+
+
+def make_insert(at: Position, text: str) -> Edit:
+    return Edit(TextRange(start=at, end=at), text=text)
+
+
+def make_delete(start: Position, end: Position) -> Edit:
+    return Edit(TextRange(start=start, end=end), text="")
+
+
+def passed_as_argument_within(name: str, text_range: types.TextRange) -> bool:
+    return any(
+        n == name
+        for n in find_arguments_passed_in_range(text_range.start.source.ast, text_range)
+    )
+
+
+def get_containing_nodes(
+    text_range: types.TextRange,
+) -> list[tuple[ast.AST, types.TextRange]]:
+    source = text_range.start.source
+    scopes = []
+    for node in get_nodes(source.ast):
+        if hasattr(node, "end_lineno"):
+            if source.node_position(node) > text_range.end:
+                break
+            if (node_range := source.node_range(node)) and text_range in node_range:
+                scopes.append((node, node_range))
+
+    return scopes
+
+
+def rewrite(
+    text_range: types.TextRange,
+    substitutions: Sequence[tuple[types.TextRange, str]],
+) -> Sequence[str]:
+    row_offset = text_range.start.row
+    text = [
+        line.text
+        for line in text_range.start.source.lines[
+            text_range.start.row : text_range.end.row + 1
+        ]
+    ]
+    for substitution_range, new_text in sorted(substitutions, reverse=True):
+        row_index = substitution_range.start.row - row_offset
+        text[row_index] = (
+            text[row_index][: substitution_range.start.column]
+            + new_text
+            + text[row_index][substitution_range.end.column :]
+        )
+
+    return text

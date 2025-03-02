@@ -1132,3 +1132,11 @@ def test_extract_method_containing_return_statement_should_preserve_it():
 #         edit=edit,
 #         diagnostics=[],
 #     )
+#
+# TODO: failed to inline self.containing_nodes_by_type
+#
+# @cached_property
+# def containing_scopes(self) -> Sequence[tuple[ast.AST, types.TextRange]]:
+#     node_type = ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
+#     nodes = self.containing_nodes_by_type(node_type=node_type)
+#     return nodes
