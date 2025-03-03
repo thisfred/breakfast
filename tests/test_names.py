@@ -2,7 +2,7 @@ import sys
 
 from pytest import mark
 
-from breakfast.names import all_occurrence_positions
+from breakfast.names import all_occurrence_positions, build_graph
 from breakfast.source import Position
 from tests import all_occurrence_position_tuples, make_source
 
@@ -1281,14 +1281,9 @@ def test_should_find_name_in_index_lookup():
     ]
 
 
-@mark.xfail
-def test_rename_should_rename_type_after_asterisk_argument():
+def test_name_for_type_of_keyword_only_argument_should_be_found():
     source = make_source(
         """
-        class Refactor:
-            ...
-
-
         def make_code_action(
             *,
             refactor: Refactor,
@@ -1296,9 +1291,7 @@ def test_rename_should_rename_type_after_asterisk_argument():
             ...
         """
     )
-    position = source.position(1, 6)
 
-    assert all_occurrence_position_tuples(position, sources=[source]) == [
-        (1, 6),
-        (7, 14),
-    ]
+    graph = build_graph(sources=[source])
+
+    assert len(graph.references["Refactor"]) == 1

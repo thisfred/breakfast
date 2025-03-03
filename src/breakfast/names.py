@@ -544,7 +544,7 @@ def visit_function_definition(
     position = source.node_position(node) + offset
     in_scope = out_scope = graph.add_scope()
 
-    call_scope = graph.add_scope(
+    function_scope = graph.add_scope(
         link_from=in_scope,
         name=name,
         position=position,
@@ -554,7 +554,7 @@ def visit_function_definition(
         ast=node,
     )
     function_definition = graph.add_scope(
-        link_from=call_scope,
+        link_from=function_scope,
         action=Pop("()"),
         same_rank=True,
     )
@@ -589,7 +589,9 @@ def visit_function_definition(
         )
 
     self_name = None
-    for i, arg in enumerate(node.args.args):
+    for i, arg in enumerate(
+        node.args.posonlyargs + node.args.args + node.args.kwonlyargs
+    ):
         current_scope = graph.add_scope(link_to=current_scope)
         arg_position = source.node_position(arg)
 
