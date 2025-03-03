@@ -1,6 +1,6 @@
 from pytest import mark
 
-from breakfast.refactoring import CodeSelection, Edit
+from breakfast.refactoring import CodeSelection, Edit, InlineCall
 from breakfast.source import Source, TextRange
 from tests import dedent, make_source
 
@@ -1096,26 +1096,6 @@ def test_inline_variable_should_inline_twice():
     ] == [((2, 30), (2, 35)), ((2, 37), (2, 42))]
 
 
-@mark.xfail
-def test_extract_method_containing_return_statement_should_preserve_it():
-    source = make_source(
-        """
-        def method(self):
-            range_end = self.text_range.start + 2
-            return range_end
-        """
-    )
-
-    start = source.position(2, 0)
-    end = source.position(3, 19)
-
-    refactor = CodeSelection(TextRange(start, end))
-    insert, edit = refactor.extract_method("f")
-
-    assert "return" in edit.text
-
-
-@mark.xfail
 def test_inline_call_should_inline_method_call():
     source = make_source(
         """
@@ -1126,13 +1106,34 @@ def test_inline_call_should_inline_method_call():
                 return nodes
 
             def containing_nodes_by_type(self):
-                return "dummy value"
+                return self
         """
     )
 
-    start = source.position(5, 23)
-    refactor = CodeSelection(TextRange(start, start))
-    insert, edit = refactor.inline_call(name="result")
+    start = source.position(4, 23)
+    selection = CodeSelection(TextRange(start, start))
 
-    assert "" == insert.text
-    assert "" == edit.text
+    refactoring = InlineCall(selection, "result")
+    insert, edit = refactoring.edits
+
+    assert "result = self" in insert.text
+    assert "result" == edit.text
+
+
+@mark.xfail
+def test_extract_callable_containing_return_statement_should_preserve_it():
+    source = make_source(
+        """
+        def function():
+            range_end = self.text_range.start + 2
+            return range_end
+        """
+    )
+
+    start = source.position(2, 0)
+    end = source.position(3, 19)
+
+    selection = CodeSelection(TextRange(start, end))
+    insert, edit = selection.extract_function("f")
+
+    assert "return f()" in edit.text

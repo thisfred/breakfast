@@ -433,7 +433,17 @@ class InlineCall:
             return ()
 
         call, call_range = self.enclosing_call
-        definition = find_definition(self.scope_graph, call_range.start)
+
+        name_start = call_range.start
+        call_args = call.args
+        if isinstance(call.func, ast.Attribute):
+            call_args = [call.func.value, *call_args]
+            if call.func.value.end_col_offset and call.func.col_offset:
+                name_start += (
+                    call.func.value.end_col_offset - call.func.col_offset
+                ) + 1
+
+        definition = find_definition(self.scope_graph, name_start)
         if definition is None or definition.position is None:
             logger.warn(f"No definition position {definition=}.")
             return ()
@@ -457,7 +467,7 @@ class InlineCall:
             )
 
         for call_arg, def_arg in zip(
-            call.args,
+            call_args,
             (a for a in definition.ast.args.args if a.arg not in seen),
             strict=True,
         ):
@@ -734,7 +744,7 @@ def passed_as_argument_within(name: str, text_range: types.TextRange) -> bool:
 def get_containing_nodes(
     text_range: types.TextRange,
 ) -> list[tuple[ast.AST, types.TextRange]]:
-    source = text_range.start.source
+    source = text_range.source
     scopes = []
     for node in get_nodes(source.ast):
         if hasattr(node, "end_lineno"):
