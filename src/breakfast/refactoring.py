@@ -38,36 +38,36 @@ class CodeSelection:
         self.scope_graph = build_graph([self.source], follow_redefinitions=False)
 
     @cached_property
-    def containing_scopes(
+    def enclosing_scopes(
         self,
     ) -> Sequence[
         tuple[ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef, types.TextRange]
     ]:
         node_type = ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
-        return [(n, c) for n, c in self.containing_nodes if isinstance(n, node_type)]
+        return [(n, c) for n, c in self.enclosing_nodes if isinstance(n, node_type)]
 
-    def containing_nodes_by_type[T: ast.AST](
+    def enclosing_nodes_by_type[T: ast.AST](
         self, node_type: type[T]
     ) -> Sequence[tuple[T, types.TextRange]]:
-        return [(n, c) for n, c in self.containing_nodes if isinstance(n, node_type)]
+        return [(n, c) for n, c in self.enclosing_nodes if isinstance(n, node_type)]
 
     @cached_property
-    def containing_nodes(self) -> Sequence[tuple[ast.AST, types.TextRange]]:
-        return get_containing_nodes(self.text_range)
+    def enclosing_nodes(self) -> Sequence[tuple[ast.AST, types.TextRange]]:
+        return get_enclosing_nodes(self.text_range)
 
     @cached_property
     def enclosing_call(self) -> tuple[ast.Call, types.TextRange] | None:
-        calls = self.containing_nodes_by_type(ast.Call)
+        calls = self.enclosing_nodes_by_type(ast.Call)
         return calls[-1] if calls else None
 
     @cached_property
     def enclosing_assignment(self) -> tuple[ast.Assign, types.TextRange] | None:
         types = ast.Assign
-        assignments = self.containing_nodes_by_type(types)
+        assignments = self.enclosing_nodes_by_type(types)
         assignments = [
-            (containing_node, node_range)
-            for containing_node, node_range in self.containing_nodes
-            if isinstance(containing_node, types)
+            (enclosing_node, node_range)
+            for enclosing_node, node_range in self.enclosing_nodes
+            if isinstance(enclosing_node, types)
         ]
         return assignments[-1] if assignments else None
 
@@ -77,8 +77,8 @@ class CodeSelection:
 
     @property
     def inside_method(self) -> bool:
-        if self.containing_scopes:
-            _, global_scope_range = self.containing_scopes[0]
+        if self.enclosing_scopes:
+            _, global_scope_range = self.enclosing_scopes[0]
         else:
             global_scope_range = None
 
@@ -211,6 +211,7 @@ class CodeSelection:
         return_values = self.get_return_values(
             names_in_range=names_in_range, end=text_range.end
         )
+
         extracted = NEWLINE.join(
             [
                 f"{new_indentation}{line}".rstrip()
@@ -303,21 +304,21 @@ class CodeSelection:
                     break
 
     def find_start_of_scope(self, start: Position) -> Position:
-        if not self.containing_scopes:
+        if not self.enclosing_scopes:
             return start.source.position(0, 0)
 
-        node, global_scope_range = self.containing_scopes[0]
+        node, global_scope_range = self.enclosing_scopes[0]
 
         return global_scope_range.start
 
     def find_callable_insert_point(
         self, start: Position, is_global: bool = False
     ) -> Position:
-        if not self.containing_scopes:
+        if not self.enclosing_scopes:
             return start.source.position(start.row, 0)
 
         node, enclosing = (
-            self.containing_scopes[0] if is_global else self.containing_scopes[-1]
+            self.enclosing_scopes[0] if is_global else self.enclosing_scopes[-1]
         )
 
         return start.source.position(enclosing.end.row + 1, 0)
@@ -587,18 +588,18 @@ class SlideStatementsDown:
         if not first_usage_after_range:
             return None
 
-        containing_nodes = get_containing_nodes(
+        enclosing_nodes = get_enclosing_nodes(
             TextRange(first_usage_after_range, first_usage_after_range)
         )
-        origin_nodes = get_containing_nodes(lines)
+        origin_nodes = get_enclosing_nodes(lines)
         index = 0
         while (
             index < len(origin_nodes)
-            and origin_nodes[index][1] == containing_nodes[index][1]
+            and origin_nodes[index][1] == enclosing_nodes[index][1]
         ):
             index += 1
 
-        first_usage_after_range = containing_nodes[index][1].start
+        first_usage_after_range = enclosing_nodes[index][1].start
 
         if first_usage_after_range and first_usage_after_range.row > last.row + 1:
             return first_usage_after_range.start_of_line
@@ -741,7 +742,7 @@ def passed_as_argument_within(name: str, text_range: types.TextRange) -> bool:
     )
 
 
-def get_containing_nodes(
+def get_enclosing_nodes(
     text_range: types.TextRange,
 ) -> list[tuple[ast.AST, types.TextRange]]:
     source = text_range.source
