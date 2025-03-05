@@ -452,7 +452,7 @@ class InlineCall:
             logger.warn(f"Not a function {definition.ast=}.")
             return ()
 
-        body_range = self.get_body_range_for_callable(at=definition.position)
+        body_range = get_body_range_for_callable(at=definition.position)
         if not body_range:
             return ()
 
@@ -514,25 +514,6 @@ class InlineCall:
                 ),
             )
 
-    def get_body_range_for_callable(self, at: Position) -> types.TextRange | None:
-        def node_filter(node: ast.AST) -> bool:
-            return (
-                isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
-                and self.source.node_position(node).row == at.row
-            )
-
-        found = next(get_nodes(self.source.ast, node_filter), None)
-
-        if not isinstance(found, ast.FunctionDef | ast.AsyncFunctionDef):
-            return None
-
-        children = found.body
-        start_position = self.source.node_position(children[0])
-        end_position = (
-            self.source.node_end_position(children[-1]) or start_position.line.end
-        )
-        return TextRange(start_position, end_position)
-
     def get_substitions(
         self,
         def_arg: ast.keyword | ast.arg,
@@ -556,13 +537,12 @@ class InlineCall:
 class SlideStatementsDown:
     def __init__(self, code_selection: CodeSelection):
         self.text_range = code_selection.text_range
-        self.source = self.text_range.start.source
         self.scope_graph = code_selection.scope_graph
 
     @property
     def edits(self) -> tuple[Edit, ...]:
         first, last = self.text_range.start.line, self.text_range.end.line
-        target = self.find_slide_target_after(first, last)
+        target = find_slide_target_after(self.scope_graph, first, last)
         if target is None:
             return ()
         insert = make_insert(
@@ -572,50 +552,16 @@ class SlideStatementsDown:
             start=first.start, end=last.next.start if last.next else last.end
         )
         return (insert, delete)
-
-    def find_slide_target_after(self, first: Line, last: Line) -> Position | None:
-        lines = TextRange(first.start, last.end)
-        names_defined_in_range = get_names_defined_in_range(lines)
-        first_usage_after_range = next(
-            (
-                p
-                for _, p in find_names_used_after_position(
-                    names_defined_in_range, self.scope_graph, last.end
-                )
-            ),
-            None,
-        )
-        if not first_usage_after_range:
-            return None
-
-        enclosing_nodes = get_enclosing_nodes(
-            TextRange(first_usage_after_range, first_usage_after_range)
-        )
-        origin_nodes = get_enclosing_nodes(lines)
-        index = 0
-        while (
-            index < len(origin_nodes)
-            and origin_nodes[index][1] == enclosing_nodes[index][1]
-        ):
-            index += 1
-
-        first_usage_after_range = enclosing_nodes[index][1].start
-
-        if first_usage_after_range and first_usage_after_range.row > last.row + 1:
-            return first_usage_after_range.start_of_line
-
-        return None
 
 
 class SlideStatementsUp:
     def __init__(self, code_selection: CodeSelection):
         self.text_range = code_selection.text_range
-        self.source = self.text_range.start.source
 
     @property
     def edits(self) -> tuple[Edit, ...]:
         first, last = self.text_range.start.line, self.text_range.end.line
-        target = self.find_slide_target_before(first, last)
+        target = find_slide_target_before(first, last)
         if target is None:
             return ()
         insert = make_insert(
@@ -625,38 +571,6 @@ class SlideStatementsUp:
             start=first.start, end=last.next.start if last.next else last.end
         )
         return (insert, delete)
-
-    def find_slide_target_before(self, first: Line, last: Line) -> Position | None:
-        original_indentation = get_indentation(at=first.start)
-        line = first
-        while (
-            line.previous
-            and get_indentation(at=line.previous.start) >= original_indentation
-        ):
-            line = line.previous
-        if line == first:
-            return None
-
-        scope_before = TextRange(
-            line.start, first.previous.end if first.previous else first.start
-        )
-
-        text_range = TextRange(first.start, last.end)
-        names_in_range = {n for n, _, _ in get_names_in_range(text_range)}
-        target = max(
-            [
-                line.start,
-                *(
-                    position.line.next.start
-                    if position.line.next
-                    else position.line.end
-                    for name, position, _ in get_names_in_range(scope_before)
-                    if name in names_in_range
-                ),
-            ]
-        )
-
-        return target
 
 
 def get_names_in_range(
@@ -777,3 +691,88 @@ def rewrite(
         )
 
     return text
+
+
+def get_body_range_for_callable(at: Position) -> types.TextRange | None:
+    def node_filter(node: ast.AST) -> bool:
+        return (
+            isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+            and at.source.node_position(node).row == at.row
+        )
+
+    found = next(get_nodes(at.source.ast, node_filter), None)
+
+    if not isinstance(found, ast.FunctionDef | ast.AsyncFunctionDef):
+        return None
+
+    children = found.body
+    start_position = at.source.node_position(children[0])
+    end_position = at.source.node_end_position(children[-1]) or start_position.line.end
+    return TextRange(start_position, end_position)
+
+
+def find_slide_target_after(
+    scope_graph: ScopeGraph, first: Line, last: Line
+) -> Position | None:
+    lines = TextRange(first.start, last.end)
+    names_defined_in_range = get_names_defined_in_range(lines)
+    first_usage_after_range = next(
+        (
+            p
+            for _, p in find_names_used_after_position(
+                names_defined_in_range, scope_graph, last.end
+            )
+        ),
+        None,
+    )
+    if not first_usage_after_range:
+        return None
+
+    enclosing_nodes = get_enclosing_nodes(
+        TextRange(first_usage_after_range, first_usage_after_range)
+    )
+    origin_nodes = get_enclosing_nodes(lines)
+    index = 0
+    while (
+        index < len(origin_nodes)
+        and origin_nodes[index][1] == enclosing_nodes[index][1]
+    ):
+        index += 1
+
+    first_usage_after_range = enclosing_nodes[index][1].start
+
+    if first_usage_after_range and first_usage_after_range.row > last.row + 1:
+        return first_usage_after_range.start_of_line
+
+    return None
+
+
+def find_slide_target_before(first: Line, last: Line) -> Position | None:
+    original_indentation = get_indentation(at=first.start)
+    line = first
+    while (
+        line.previous
+        and get_indentation(at=line.previous.start) >= original_indentation
+    ):
+        line = line.previous
+    if line == first:
+        return None
+
+    scope_before = TextRange(
+        line.start, first.previous.end if first.previous else first.start
+    )
+
+    text_range = TextRange(first.start, last.end)
+    names_in_range = {n for n, _, _ in get_names_in_range(text_range)}
+    target = max(
+        [
+            line.start,
+            *(
+                position.line.next.start if position.line.next else position.line.end
+                for name, position, _ in get_names_in_range(scope_before)
+                if name in names_in_range
+            ),
+        ]
+    )
+
+    return target
