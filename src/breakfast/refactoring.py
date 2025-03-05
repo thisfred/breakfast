@@ -114,13 +114,13 @@ class CodeSelection:
         names_in_range = get_names_in_range(self.extended_range)
         extracting_partial_line = start.row == end.row and start.column != 0
         if extracting_partial_line:
-            extracted, assignment = self.extract_expression(
+            extracted, assignment_or_return = self.extract_expression(
                 text_range=self.text_range,
                 names_in_range=names_in_range,
                 new_indentation=new_indentation,
             )
         else:
-            extracted, assignment = self.extract_statements(
+            extracted, assignment_or_return = self.extract_statements(
                 text_range=self.extended_range,
                 names_in_range=names_in_range,
                 new_indentation=new_indentation,
@@ -138,7 +138,7 @@ class CodeSelection:
         replace_text = (
             call
             if extracting_partial_line
-            else f"{original_indentation}{assignment}{call}{NEWLINE}"
+            else f"{original_indentation}{assignment_or_return}{call}{NEWLINE}"
         )
         parameters_with_self = (
             [
@@ -221,11 +221,11 @@ class CodeSelection:
         if return_values:
             return_values_as_string = f'{", ".join(return_values)}'
             extracted += f"{NEWLINE}{new_indentation}return {return_values_as_string}"
-            assignment = f"{return_values_as_string} = "
+            assignment_or_return = f"{return_values_as_string} = "
         else:
-            assignment = ""
+            assignment_or_return = "return "
 
-        return extracted, assignment
+        return extracted, assignment_or_return
 
     def slide_statements_down(self) -> tuple[Edit, ...]:
         refactoring = SlideStatementsDown(self)

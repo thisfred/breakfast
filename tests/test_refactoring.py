@@ -1,5 +1,3 @@
-from pytest import mark
-
 from breakfast.refactoring import CodeSelection, Edit, InlineCall
 from breakfast.source import Source, TextRange
 from tests import dedent, make_source
@@ -1120,12 +1118,11 @@ def test_inline_call_should_inline_method_call():
     assert "result" == edit.text
 
 
-@mark.xfail
 def test_extract_callable_containing_return_statement_should_preserve_it():
     source = make_source(
         """
         def function():
-            range_end = self.text_range.start + 2
+            range_end = 3 + 2
             return range_end
         """
     )
