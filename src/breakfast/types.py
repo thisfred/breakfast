@@ -53,6 +53,27 @@ class TextRange(Protocol):
 
     @property
     def source(self) -> "Source": ...
+
+    @property
+    def enclosing_scopes(
+        self,
+    ) -> Sequence[
+        tuple[ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef, "TextRange"]
+    ]: ...
+
+    def enclosing_nodes_by_type[T: ast.AST](
+        self, node_type: type[T]
+    ) -> Sequence[tuple[T, "TextRange"]]: ...
+
+    @property
+    def enclosing_nodes(self) -> Sequence[tuple[ast.AST, "TextRange"]]: ...
+
+    @property
+    def enclosing_call(self) -> tuple[ast.Call, "TextRange"] | None: ...
+
+    @property
+    def enclosing_assignment(self) -> tuple[ast.Assign, "TextRange"] | None: ...
+
     def __contains__(self, position_or_range: "Position | TextRange") -> bool: ...
 
 

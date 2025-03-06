@@ -2,7 +2,6 @@ import ast
 import logging
 import re
 from collections.abc import Callable, Iterable, Iterator, Sequence
-from functools import cached_property
 from textwrap import dedent, indent
 from typing import Protocol
 
@@ -13,7 +12,6 @@ from breakfast.search import (
     find_arguments_passed_in_range,
     find_other_occurrences,
     find_statements,
-    get_nodes,
 )
 from breakfast.source import TextRange
 from breakfast.types import Edit, NotFoundError, Position, Source
@@ -36,48 +34,14 @@ class CodeSelection:
         self.source = self.text_range.source
         self.scope_graph = build_graph([self.source], follow_redefinitions=False)
 
-    @cached_property
-    def enclosing_scopes(
-        self,
-    ) -> Sequence[
-        tuple[ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef, types.TextRange]
-    ]:
-        node_type = ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
-        return [(n, c) for n, c in self.enclosing_nodes if isinstance(n, node_type)]
-
-    def enclosing_nodes_by_type[T: ast.AST](
-        self, node_type: type[T]
-    ) -> Sequence[tuple[T, types.TextRange]]:
-        return [(n, c) for n, c in self.enclosing_nodes if isinstance(n, node_type)]
-
-    @cached_property
-    def enclosing_nodes(self) -> Sequence[tuple[ast.AST, types.TextRange]]:
-        return get_enclosing_nodes(self.text_range)
-
-    @cached_property
-    def enclosing_call(self) -> tuple[ast.Call, types.TextRange] | None:
-        calls = self.enclosing_nodes_by_type(ast.Call)
-        return calls[-1] if calls else None
-
-    @cached_property
-    def enclosing_assignment(self) -> tuple[ast.Assign, types.TextRange] | None:
-        types = ast.Assign
-        assignments = self.enclosing_nodes_by_type(types)
-        assignments = [
-            (enclosing_node, node_range)
-            for enclosing_node, node_range in self.enclosing_nodes
-            if isinstance(enclosing_node, types)
-        ]
-        return assignments[-1] if assignments else None
-
     def extract_variable(self, name: str) -> tuple[Edit, ...]:
         refactoring = ExtractVariable(self, name)
         return refactoring.edits
 
     @property
     def inside_method(self) -> bool:
-        if self.enclosing_scopes:
-            _, global_scope_range = self.enclosing_scopes[0]
+        if self.text_range.enclosing_scopes:
+            _, global_scope_range = self.text_range.enclosing_scopes[0]
         else:
             global_scope_range = None
 
@@ -304,21 +268,23 @@ class CodeSelection:
                     break
 
     def find_start_of_scope(self, start: Position) -> Position:
-        if not self.enclosing_scopes:
+        if not self.text_range.enclosing_scopes:
             return start.source.position(0, 0)
 
-        node, global_scope_range = self.enclosing_scopes[0]
+        node, global_scope_range = self.text_range.enclosing_scopes[0]
 
         return global_scope_range.start
 
     def find_callable_insert_point(
         self, start: Position, is_global: bool = False
     ) -> Position:
-        if not self.enclosing_scopes:
+        if not self.text_range.enclosing_scopes:
             return start.source.position(start.row, 0)
 
         node, enclosing = (
-            self.enclosing_scopes[0] if is_global else self.enclosing_scopes[-1]
+            self.text_range.enclosing_scopes[0]
+            if is_global
+            else self.text_range.enclosing_scopes[-1]
         )
 
         return start.source.position(enclosing.end.row + 1, 0)
@@ -372,7 +338,7 @@ class InlineVariable:
         self.text_range = code_selection.text_range
         self.source = self.text_range.start.source
         self.scope_graph = code_selection.scope_graph
-        self.enclosing_assignment = code_selection.enclosing_assignment
+        self.enclosing_assignment = code_selection.text_range.enclosing_assignment
 
     @property
     def edits(self) -> tuple[Edit, ...]:
@@ -424,7 +390,7 @@ class InlineCall:
         self.text_range = code_selection.text_range
         self.source = self.text_range.start.source
         self.scope_graph = code_selection.scope_graph
-        self.enclosing_call = code_selection.enclosing_call
+        self.enclosing_call = code_selection.text_range.enclosing_call
         self.name = name
 
     @property
@@ -575,10 +541,10 @@ class SlideStatements:
         if not first_usage_after_range:
             return None
 
-        enclosing_nodes = get_enclosing_nodes(
-            TextRange(first_usage_after_range, first_usage_after_range)
-        )
-        origin_nodes = get_enclosing_nodes(lines)
+        enclosing_nodes = TextRange(
+            first_usage_after_range, first_usage_after_range
+        ).enclosing_nodes
+        origin_nodes = lines.enclosing_nodes
         index = 0
         while (
             index < len(origin_nodes)
@@ -685,21 +651,6 @@ def passed_as_argument_within(name: str, text_range: types.TextRange) -> bool:
         n == name
         for n in find_arguments_passed_in_range(text_range.start.source.ast, text_range)
     )
-
-
-def get_enclosing_nodes(
-    text_range: types.TextRange,
-) -> list[tuple[ast.AST, types.TextRange]]:
-    source = text_range.source
-    scopes = []
-    for node in get_nodes(source.ast):
-        if hasattr(node, "end_lineno"):
-            if source.node_position(node) > text_range.end:
-                break
-            if (node_range := source.node_range(node)) and text_range in node_range:
-                scopes.append((node, node_range))
-
-    return scopes
 
 
 def rewrite(

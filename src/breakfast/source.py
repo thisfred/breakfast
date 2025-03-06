@@ -126,6 +126,44 @@ class TextRange:
             if isinstance(ctx, ast.Store)
         ]
 
+    @cached_property
+    def enclosing_scopes(
+        self,
+    ) -> Sequence[
+        tuple[ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef, types.TextRange]
+    ]:
+        node_type = ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
+        return [(n, c) for n, c in self.enclosing_nodes if isinstance(n, node_type)]
+
+    def enclosing_nodes_by_type[T: ast.AST](
+        self, node_type: type[T]
+    ) -> Sequence[tuple[T, types.TextRange]]:
+        return [(n, c) for n, c in self.enclosing_nodes if isinstance(n, node_type)]
+
+    @cached_property
+    def enclosing_nodes(self) -> Sequence[tuple[ast.AST, types.TextRange]]:
+        source = self.source
+        scopes = []
+        for node in get_nodes(source.ast):
+            if hasattr(node, "end_lineno"):
+                if source.node_position(node) > self.end:
+                    break
+                if (node_range := source.node_range(node)) and self in node_range:
+                    scopes.append((node, node_range))
+
+        return scopes
+
+    @cached_property
+    def enclosing_call(self) -> tuple[ast.Call, types.TextRange] | None:
+        calls = self.enclosing_nodes_by_type(ast.Call)
+        return calls[-1] if calls else None
+
+    @cached_property
+    def enclosing_assignment(self) -> tuple[ast.Assign, types.TextRange] | None:
+        types = ast.Assign
+        assignments = self.enclosing_nodes_by_type(types)
+        return assignments[-1] if assignments else None
+
     def __contains__(self, position_or_range: types.Position | types.TextRange) -> bool:
         match position_or_range:
             case Position() as position:
