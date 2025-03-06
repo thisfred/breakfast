@@ -732,21 +732,3 @@ def rewrite(
         )
 
     return text
-
-
-def get_body_range_for_callable(at: Position) -> types.TextRange | None:
-    def node_filter(node: ast.AST) -> bool:
-        return (
-            isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
-            and at.source.node_position(node).row == at.row
-        )
-
-    found = next(get_nodes(at.source.ast, node_filter), None)
-
-    if not isinstance(found, ast.FunctionDef | ast.AsyncFunctionDef):
-        return None
-
-    children = found.body
-    start_position = at.source.node_position(children[0])
-    end_position = at.source.node_end_position(children[-1]) or start_position.line.end
-    return TextRange(start_position, end_position)
