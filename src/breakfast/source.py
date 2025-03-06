@@ -1,13 +1,16 @@
+import ast
 import logging
 import os
 import re
 import sys
 from ast import AST, parse
+from collections.abc import Sequence
 from dataclasses import InitVar, dataclass, replace
 from functools import cached_property
 from typing import Protocol, TypeGuard
 
 from breakfast import types
+from breakfast.search import find_names
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +85,18 @@ class TextRange:
     @property
     def source(self) -> types.Source:
         return self.start.source
+
+    @property
+    def names(self) -> Sequence[tuple[str, types.Position, ast.expr_context]]:
+        names = []
+        for name, position, context in find_names(self.source.ast, self.source):
+            if position < self.start:
+                continue
+            if position > self.end:
+                break
+            names.append((name, position, context))
+
+        return names
 
     def __contains__(self, position_or_range: types.Position | types.TextRange) -> bool:
         match position_or_range:

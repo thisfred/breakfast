@@ -4,7 +4,9 @@ great care not to break backwards compatibility. Adding fields and methods shoul
 fine. Changing types or signatures of existing fields or methods is not.
 """
 
+import ast
 from ast import AST
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -39,6 +41,9 @@ class TextRange(Protocol):
 
     @property
     def text(self) -> str: ...
+
+    @property
+    def names(self) -> Sequence[tuple[str, Position, ast.expr_context]]: ...
 
     @property
     def source(self) -> "Source": ...

@@ -11,7 +11,6 @@ from breakfast.names import all_occurrence_positions, build_graph, find_definiti
 from breakfast.scope_graph import ScopeGraph
 from breakfast.search import (
     find_arguments_passed_in_range,
-    find_names,
     find_other_occurrences,
     find_statements,
     get_nodes,
@@ -111,7 +110,7 @@ class CodeSelection:
         original_indentation = get_indentation(at=start)
         new_indentation = original_indentation if is_method else FOUR_SPACES
 
-        names_in_range = get_names_in_range(self.extended_range)
+        names_in_range = self.extended_range.names
         extracting_partial_line = start.row == end.row and start.column != 0
         if extracting_partial_line:
             extracted, assignment_or_return = self.extract_expression(
@@ -229,11 +228,11 @@ class CodeSelection:
         return extracted, assignment_or_return
 
     def slide_statements_down(self) -> tuple[Edit, ...]:
-        refactoring = SlideStatements(self, find_slide_target_after)
+        refactoring = SlideStatements(self, SlideStatements.find_slide_target_after)
         return refactoring.edits
 
     def slide_statements_up(self) -> tuple[Edit, ...]:
-        refactoring = SlideStatements(self, find_slide_target_before)
+        refactoring = SlideStatements(self, SlideStatements.find_slide_target_before)
         return refactoring.edits
 
     @property
@@ -559,19 +558,74 @@ class SlideStatements:
         )
         return (insert, delete)
 
+    @staticmethod
+    def find_slide_target_after(selection: CodeSelection) -> Position | None:
+        first, last = selection.text_range.start.line, selection.text_range.end.line
+        lines = TextRange(first.start, last.end)
+        names_defined_in_range = get_names_defined_in_range(lines)
+        first_usage_after_range = next(
+            (
+                p
+                for _, p in find_names_used_after_position(
+                    names_defined_in_range, selection.scope_graph, last.end
+                )
+            ),
+            None,
+        )
+        if not first_usage_after_range:
+            return None
 
-def get_names_in_range(
-    text_range: types.TextRange,
-) -> Sequence[tuple[str, Position, ast.expr_context]]:
-    names = []
-    for name, position, context in find_names(text_range.source.ast, text_range.source):
-        if position < text_range.start:
-            continue
-        if position > text_range.end:
-            break
-        names.append((name, position, context))
+        enclosing_nodes = get_enclosing_nodes(
+            TextRange(first_usage_after_range, first_usage_after_range)
+        )
+        origin_nodes = get_enclosing_nodes(lines)
+        index = 0
+        while (
+            index < len(origin_nodes)
+            and origin_nodes[index][1] == enclosing_nodes[index][1]
+        ):
+            index += 1
 
-    return names
+        first_usage_after_range = enclosing_nodes[index][1].start
+
+        if first_usage_after_range and first_usage_after_range.row > last.row + 1:
+            return first_usage_after_range.start_of_line
+
+        return None
+
+    @staticmethod
+    def find_slide_target_before(selection: CodeSelection) -> Position | None:
+        first, last = selection.text_range.start.line, selection.text_range.end.line
+        original_indentation = get_indentation(at=first.start)
+        line = first
+        while (
+            line.previous
+            and get_indentation(at=line.previous.start) >= original_indentation
+        ):
+            line = line.previous
+        if line == first:
+            return None
+
+        scope_before = TextRange(
+            line.start, first.previous.end if first.previous else first.start
+        )
+
+        text_range = TextRange(first.start, last.end)
+        names_in_range = {n for n, _, _ in text_range.names}
+        target = max(
+            [
+                line.start,
+                *(
+                    position.line.next.start
+                    if position.line.next
+                    else position.line.end
+                    for name, position, _ in scope_before.names
+                    if name in names_in_range
+                ),
+            ]
+        )
+
+        return target
 
 
 def find_names_used_after_position(
@@ -593,7 +647,7 @@ def find_names_used_after_position(
 def get_names_defined_in_range(text_range: TextRange) -> list[tuple[str, Position]]:
     names_defined_in_range = [
         (name, position)
-        for name, position, ctx in get_names_in_range(text_range)
+        for name, position, ctx in text_range.names
         if isinstance(ctx, ast.Store)
     ]
 
@@ -696,70 +750,3 @@ def get_body_range_for_callable(at: Position) -> types.TextRange | None:
     start_position = at.source.node_position(children[0])
     end_position = at.source.node_end_position(children[-1]) or start_position.line.end
     return TextRange(start_position, end_position)
-
-
-def find_slide_target_after(selection: CodeSelection) -> Position | None:
-    first, last = selection.text_range.start.line, selection.text_range.end.line
-    lines = TextRange(first.start, last.end)
-    names_defined_in_range = get_names_defined_in_range(lines)
-    first_usage_after_range = next(
-        (
-            p
-            for _, p in find_names_used_after_position(
-                names_defined_in_range, selection.scope_graph, last.end
-            )
-        ),
-        None,
-    )
-    if not first_usage_after_range:
-        return None
-
-    enclosing_nodes = get_enclosing_nodes(
-        TextRange(first_usage_after_range, first_usage_after_range)
-    )
-    origin_nodes = get_enclosing_nodes(lines)
-    index = 0
-    while (
-        index < len(origin_nodes)
-        and origin_nodes[index][1] == enclosing_nodes[index][1]
-    ):
-        index += 1
-
-    first_usage_after_range = enclosing_nodes[index][1].start
-
-    if first_usage_after_range and first_usage_after_range.row > last.row + 1:
-        return first_usage_after_range.start_of_line
-
-    return None
-
-
-def find_slide_target_before(selection: CodeSelection) -> Position | None:
-    first, last = selection.text_range.start.line, selection.text_range.end.line
-    original_indentation = get_indentation(at=first.start)
-    line = first
-    while (
-        line.previous
-        and get_indentation(at=line.previous.start) >= original_indentation
-    ):
-        line = line.previous
-    if line == first:
-        return None
-
-    scope_before = TextRange(
-        line.start, first.previous.end if first.previous else first.start
-    )
-
-    text_range = TextRange(first.start, last.end)
-    names_in_range = {n for n, _, _ in get_names_in_range(text_range)}
-    target = max(
-        [
-            line.start,
-            *(
-                position.line.next.start if position.line.next else position.line.end
-                for name, position, _ in get_names_in_range(scope_before)
-                if name in names_in_range
-            ),
-        ]
-    )
-
-    return target
