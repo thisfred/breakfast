@@ -1,7 +1,7 @@
 import ast
 import logging
 import re
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from functools import cached_property
 from textwrap import dedent, indent
 from typing import Protocol
@@ -17,7 +17,7 @@ from breakfast.search import (
     get_nodes,
 )
 from breakfast.source import TextRange
-from breakfast.types import Edit, Line, NotFoundError, Position, Source
+from breakfast.types import Edit, NotFoundError, Position, Source
 
 logger = logging.getLogger(__name__)
 
@@ -223,16 +223,17 @@ class CodeSelection:
             extracted += f"{NEWLINE}{new_indentation}return {return_values_as_string}"
             assignment_or_return = f"{return_values_as_string} = "
         else:
+            # XXX: Pretty sure this is too simplistic
             assignment_or_return = "return "
 
         return extracted, assignment_or_return
 
     def slide_statements_down(self) -> tuple[Edit, ...]:
-        refactoring = SlideStatementsDown(self)
+        refactoring = SlideStatements(self, find_slide_target_after)
         return refactoring.edits
 
     def slide_statements_up(self) -> tuple[Edit, ...]:
-        refactoring = SlideStatementsUp(self)
+        refactoring = SlideStatements(self, find_slide_target_before)
         return refactoring.edits
 
     @property
@@ -534,36 +535,22 @@ class InlineCall:
             yield TextRange(position, position + len(def_arg.arg)), value
 
 
-class SlideStatementsDown:
-    def __init__(self, code_selection: CodeSelection):
+FindTarget = Callable[[CodeSelection], Position | None]
+
+
+class SlideStatements:
+    def __init__(self, code_selection: CodeSelection, find_target: FindTarget):
         self.text_range = code_selection.text_range
-        self.scope_graph = code_selection.scope_graph
+        self.code_selection = code_selection
+        self.find_target = find_target
 
     @property
     def edits(self) -> tuple[Edit, ...]:
-        first, last = self.text_range.start.line, self.text_range.end.line
-        target = find_slide_target_after(self.scope_graph, first, last)
+        target = self.find_target(self.code_selection)
         if target is None:
             return ()
-        insert = make_insert(
-            at=target, text=first.start.through(last.end).text + NEWLINE
-        )
-        delete = make_delete(
-            start=first.start, end=last.next.start if last.next else last.end
-        )
-        return (insert, delete)
 
-
-class SlideStatementsUp:
-    def __init__(self, code_selection: CodeSelection):
-        self.text_range = code_selection.text_range
-
-    @property
-    def edits(self) -> tuple[Edit, ...]:
         first, last = self.text_range.start.line, self.text_range.end.line
-        target = find_slide_target_before(first, last)
-        if target is None:
-            return ()
         insert = make_insert(
             at=target, text=first.start.through(last.end).text + NEWLINE
         )
@@ -711,16 +698,15 @@ def get_body_range_for_callable(at: Position) -> types.TextRange | None:
     return TextRange(start_position, end_position)
 
 
-def find_slide_target_after(
-    scope_graph: ScopeGraph, first: Line, last: Line
-) -> Position | None:
+def find_slide_target_after(selection: CodeSelection) -> Position | None:
+    first, last = selection.text_range.start.line, selection.text_range.end.line
     lines = TextRange(first.start, last.end)
     names_defined_in_range = get_names_defined_in_range(lines)
     first_usage_after_range = next(
         (
             p
             for _, p in find_names_used_after_position(
-                names_defined_in_range, scope_graph, last.end
+                names_defined_in_range, selection.scope_graph, last.end
             )
         ),
         None,
@@ -747,7 +733,8 @@ def find_slide_target_after(
     return None
 
 
-def find_slide_target_before(first: Line, last: Line) -> Position | None:
+def find_slide_target_before(selection: CodeSelection) -> Position | None:
+    first, last = selection.text_range.start.line, selection.text_range.end.line
     original_indentation = get_indentation(at=first.start)
     line = first
     while (
