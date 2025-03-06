@@ -452,7 +452,7 @@ class InlineCall:
             logger.warn(f"Not a function {definition.ast=}.")
             return ()
 
-        body_range = get_body_range_for_callable(at=definition.position)
+        body_range = definition.position.body_for_callable
         if not body_range:
             return ()
 

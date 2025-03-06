@@ -31,6 +31,9 @@ class Position(Protocol):
     @property
     def line(self) -> "Line": ...
 
+    @property
+    def body_for_callable(self) -> "TextRange | None": ...
+
     def through(self, end: "Position") -> "TextRange": ...
 
 

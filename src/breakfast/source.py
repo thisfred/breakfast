@@ -10,7 +10,7 @@ from functools import cached_property
 from typing import Protocol, TypeGuard
 
 from breakfast import types
-from breakfast.search import find_names
+from breakfast.search import find_names, get_nodes
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +65,26 @@ class Position:
     @property
     def line(self) -> types.Line:
         return self.source.lines[self.row]
+
+    @property
+    def body_for_callable(self) -> types.TextRange | None:
+        def node_filter(node: ast.AST) -> bool:
+            return (
+                isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+                and self.source.node_position(node).row == self.row
+            )
+
+        found = next(get_nodes(self.source.ast, node_filter), None)
+
+        if not isinstance(found, ast.FunctionDef | ast.AsyncFunctionDef):
+            return None
+
+        children = found.body
+        start_position = self.source.node_position(children[0])
+        end_position = (
+            self.source.node_end_position(children[-1]) or start_position.line.end
+        )
+        return TextRange(start_position, end_position)
 
     def through(self, end: types.Position) -> types.TextRange:
         return TextRange(self, end + 1)
