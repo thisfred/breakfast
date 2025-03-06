@@ -66,7 +66,7 @@ class Position:
     def line(self) -> types.Line:
         return self.source.lines[self.row]
 
-    @property
+    @cached_property
     def body_for_callable(self) -> types.TextRange | None:
         def node_filter(node: ast.AST) -> bool:
             return (
@@ -98,7 +98,7 @@ class TextRange:
     start: types.Position
     end: types.Position
 
-    @property
+    @cached_property
     def text(self) -> str:
         return self.start.source.get_text(start=self.start, end=self.end)
 
@@ -106,7 +106,7 @@ class TextRange:
     def source(self) -> types.Source:
         return self.start.source
 
-    @property
+    @cached_property
     def names(self) -> Sequence[tuple[str, types.Position, ast.expr_context]]:
         names = []
         for name, position, context in find_names(self.source.ast, self.source):
@@ -117,6 +117,14 @@ class TextRange:
             names.append((name, position, context))
 
         return names
+
+    @cached_property
+    def definitions(self) -> list[tuple[str, types.Position]]:
+        return [
+            (name, position)
+            for name, position, ctx in self.names
+            if isinstance(ctx, ast.Store)
+        ]
 
     def __contains__(self, position_or_range: types.Position | types.TextRange) -> bool:
         match position_or_range:

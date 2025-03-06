@@ -562,7 +562,7 @@ class SlideStatements:
     def find_slide_target_after(selection: CodeSelection) -> Position | None:
         first, last = selection.text_range.start.line, selection.text_range.end.line
         lines = TextRange(first.start, last.end)
-        names_defined_in_range = get_names_defined_in_range(lines)
+        names_defined_in_range = lines.definitions
         first_usage_after_range = next(
             (
                 p
@@ -642,16 +642,6 @@ def find_names_used_after_position(
             if occurrence > cutoff:
                 yield name, occurrence
                 break
-
-
-def get_names_defined_in_range(text_range: TextRange) -> list[tuple[str, Position]]:
-    names_defined_in_range = [
-        (name, position)
-        for name, position, ctx in text_range.names
-        if isinstance(ctx, ast.Store)
-    ]
-
-    return names_defined_in_range
 
 
 def get_indentation(at: Position) -> str:
