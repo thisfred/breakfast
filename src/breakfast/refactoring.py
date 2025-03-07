@@ -1,6 +1,5 @@
 import ast
 import logging
-import re
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from textwrap import dedent, indent
 from typing import Protocol
@@ -18,7 +17,6 @@ from breakfast.types import Edit, NotFoundError, Position, Source
 
 logger = logging.getLogger(__name__)
 
-INDENTATION = re.compile(r"^(\s+)")
 FOUR_SPACES = "    "
 NEWLINE = "\n"
 
@@ -71,7 +69,7 @@ class CodeSelection:
         is_method: bool = False,
     ) -> tuple[Edit, ...]:
         start, end = self.text_range.start, self.text_range.end
-        original_indentation = get_indentation(at=start)
+        original_indentation = start.indentation
         new_indentation = original_indentation if is_method else FOUR_SPACES
 
         names_in_range = self.extended_range.names
@@ -449,7 +447,7 @@ class InlineCall:
             insert_range = TextRange(
                 self.text_range.start.line.start, self.text_range.start.line.start
             )
-            indentation = get_indentation(at=self.text_range.start)
+            indentation = self.text_range.start.indentation
 
             return_value = last_line[len("return ") :]
             body = (
@@ -468,7 +466,7 @@ class InlineCall:
                 replace,
             )
         else:
-            indentation = get_indentation(at=self.text_range.start)
+            indentation = self.text_range.start.indentation
             body = indent(
                 dedent(NEWLINE.join(line for line in new_lines) + NEWLINE),
                 indentation,
@@ -562,11 +560,10 @@ class SlideStatements:
     @staticmethod
     def find_slide_target_before(selection: CodeSelection) -> Position | None:
         first, last = selection.text_range.start.line, selection.text_range.end.line
-        original_indentation = get_indentation(at=first.start)
+        original_indentation = first.start.indentation
         line = first
-        while (
-            line.previous
-            and get_indentation(at=line.previous.start) >= original_indentation
+        while line.previous and len(line.previous.start.indentation) >= len(
+            original_indentation
         ):
             line = line.previous
         if line == first:
@@ -608,17 +605,6 @@ def find_names_used_after_position(
             if occurrence > cutoff:
                 yield name, occurrence
                 break
-
-
-def get_indentation(at: Position) -> str:
-    text = at.source.lines[at.row].text
-    if not (indentation_match := INDENTATION.match(text)):
-        return ""
-
-    if not (groups := indentation_match.groups()):
-        return ""
-
-    return groups[0]
 
 
 def get_single_expression_value(text: str) -> ast.AST | None:

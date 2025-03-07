@@ -15,6 +15,7 @@ from breakfast.search import find_names, get_nodes
 logger = logging.getLogger(__name__)
 
 WORD = re.compile(r"\w+|\W+")
+INDENTATION = re.compile(r"^(\s+)")
 
 
 class IllegalPositionError(Exception):
@@ -91,6 +92,17 @@ class Position:
 
     def _add_offset(self, offset: int) -> types.Position:
         return replace(self, column=self.column + offset)
+
+    @property
+    def indentation(self) -> str:
+        text = self.source.lines[self.row].text
+        if not (indentation_match := INDENTATION.match(text)):
+            return ""
+
+        if not (groups := indentation_match.groups()):
+            return ""
+
+        return groups[0]
 
 
 @dataclass(order=True, frozen=True)
