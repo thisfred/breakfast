@@ -39,6 +39,8 @@ class Position(Protocol):
 
     def through(self, end: "Position") -> "TextRange": ...
 
+    def insert(self, text: str) -> "Edit": ...
+
 
 @dataclass(order=True, frozen=True)  # pragma: nocover
 class TextRange(Protocol):
@@ -76,6 +78,10 @@ class TextRange(Protocol):
 
     @property
     def enclosing_assignment(self) -> tuple[ast.Assign, "TextRange"] | None: ...
+
+    def text_with_substitutions(
+        self, substitutions: Sequence[tuple["TextRange", str]]
+    ) -> Sequence[str]: ...
 
     def __contains__(self, position_or_range: "Position | TextRange") -> bool: ...
 

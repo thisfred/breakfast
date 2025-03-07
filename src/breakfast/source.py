@@ -104,6 +104,9 @@ class Position:
 
         return groups[0]
 
+    def insert(self, text: str) -> types.Edit:
+        return types.Edit(TextRange(start=self, end=self), text=text)
+
 
 @dataclass(order=True, frozen=True)
 class TextRange:
@@ -175,6 +178,27 @@ class TextRange:
         types = ast.Assign
         assignments = self.enclosing_nodes_by_type(types)
         return assignments[-1] if assignments else None
+
+    def text_with_substitutions(
+        self, substitutions: Sequence[tuple[types.TextRange, str]]
+    ) -> Sequence[str]:
+        row_offset = self.start.row
+        text = [
+            line.text
+            for line in self.start.source.lines[self.start.row : self.end.row + 1]
+        ]
+        for substitution_range, new_text in sorted(substitutions, reverse=True):
+            row_index = substitution_range.start.row - row_offset
+            text[row_index] = (
+                text[row_index][: substitution_range.start.column]
+                + new_text
+                + text[row_index][substitution_range.end.column :]
+            )
+
+        return text
+
+    def replace(self, new_text: str) -> types.Edit:
+        return types.Edit(TextRange(self.start, self.end), text=new_text)
 
     def __contains__(self, position_or_range: types.Position | types.TextRange) -> bool:
         match position_or_range:

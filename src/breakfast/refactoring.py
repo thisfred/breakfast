@@ -13,7 +13,7 @@ from breakfast.search import (
     find_statements,
 )
 from breakfast.source import TextRange
-from breakfast.types import Edit, NotFoundError, Position, Source
+from breakfast.types import Edit, NotFoundError, Position
 
 logger = logging.getLogger(__name__)
 
@@ -127,10 +127,10 @@ class CodeSelection:
         )
         return (
             Edit(
-                TextRange(start=insert_position, end=insert_position),
+                TextRange(insert_position, insert_position),
                 text=f"{NEWLINE}{static_method}{definition_indentation}def {name}({parameters}):{NEWLINE}{extracted}{NEWLINE}",
             ),
-            Edit(TextRange(start=start, end=end), text=replace_text),
+            Edit(TextRange(start, end), text=replace_text),
         )
 
     def get_parameter_names(
@@ -306,7 +306,9 @@ class ExtractVariable:
             source_ast=self.source.ast, node=expression, position=self.text_range.start
         )
         other_edits = [
-            make_edit(self.source, o, len(extracted), new_text=self.name)
+            TextRange(
+                (start := self.source.node_position(o)), start + len(extracted)
+            ).replace(self.name)
             for o in other_occurrences
         ]
         edits = sorted(
@@ -327,7 +329,7 @@ class ExtractVariable:
         insert_point = statement_start or first_edit_position.start_of_line
         indentation = " " * insert_point.column
         definition = f"{self.name} = {extracted}{NEWLINE}{indentation}"
-        insert = make_insert(at=insert_point, text=definition)
+        insert = insert_point.insert(definition)
         return (insert, *edits)
 
 
@@ -440,7 +442,7 @@ class InlineCall:
                 list(self.get_substitions(def_arg, call_arg, body_range))
             )
 
-        new_lines = rewrite(body_range, substitutions)
+        new_lines = body_range.text_with_substitutions(substitutions)
 
         last_line = new_lines[-1].strip()
         if last_line.startswith("return"):
@@ -514,12 +516,10 @@ class SlideStatements:
             return ()
 
         first, last = self.text_range.start.line, self.text_range.end.line
-        insert = make_insert(
-            at=target, text=first.start.through(last.end).text + NEWLINE
-        )
-        delete = make_delete(
-            start=first.start, end=last.next.start if last.next else last.end
-        )
+        insert = target.insert(first.start.through(last.end).text + NEWLINE)
+        delete = TextRange(
+            first.start, last.next.start if last.next else last.end
+        ).replace("")
         return (insert, delete)
 
     @staticmethod
@@ -619,43 +619,8 @@ def get_single_expression_value(text: str) -> ast.AST | None:
     return parsed.body[0].value
 
 
-def make_edit(source: Source, node: ast.AST, length: int, new_text: str) -> Edit:
-    start = source.node_position(node)
-    return Edit(TextRange(start=start, end=start + length), text=new_text)
-
-
-def make_insert(at: Position, text: str) -> Edit:
-    return Edit(TextRange(start=at, end=at), text=text)
-
-
-def make_delete(start: Position, end: Position) -> Edit:
-    return Edit(TextRange(start=start, end=end), text="")
-
-
 def passed_as_argument_within(name: str, text_range: types.TextRange) -> bool:
     return any(
         n == name
         for n in find_arguments_passed_in_range(text_range.start.source.ast, text_range)
     )
-
-
-def rewrite(
-    text_range: types.TextRange,
-    substitutions: Sequence[tuple[types.TextRange, str]],
-) -> Sequence[str]:
-    row_offset = text_range.start.row
-    text = [
-        line.text
-        for line in text_range.start.source.lines[
-            text_range.start.row : text_range.end.row + 1
-        ]
-    ]
-    for substitution_range, new_text in sorted(substitutions, reverse=True):
-        row_index = substitution_range.start.row - row_offset
-        text[row_index] = (
-            text[row_index][: substitution_range.start.column]
-            + new_text
-            + text[row_index][substitution_range.end.column :]
-        )
-
-    return text
