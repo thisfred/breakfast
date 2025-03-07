@@ -10,7 +10,7 @@ from functools import cached_property
 from typing import Protocol, TypeGuard
 
 from breakfast import types
-from breakfast.search import find_names, get_nodes
+from breakfast.search import find_arguments_passed_in_range, find_names, get_nodes
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +199,12 @@ class TextRange:
 
     def replace(self, new_text: str) -> types.Edit:
         return types.Edit(TextRange(self.start, self.end), text=new_text)
+
+    def contains_as_argument(self, name: str) -> bool:
+        return any(
+            n == name
+            for n in find_arguments_passed_in_range(self.start.source.ast, self)
+        )
 
     def __contains__(self, position_or_range: types.Position | types.TextRange) -> bool:
         match position_or_range:

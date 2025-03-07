@@ -8,7 +8,6 @@ from breakfast import types
 from breakfast.names import all_occurrence_positions, build_graph, find_definition
 from breakfast.scope_graph import ScopeGraph
 from breakfast.search import (
-    find_arguments_passed_in_range,
     find_other_occurrences,
     find_statements,
 )
@@ -148,7 +147,7 @@ class CodeSelection:
             # If we are extracting code that passes a name as an argument to a another
             # function, it is very likely that we want to receive that as an argument as
             # well, rather than close over it or get it from the global scope:
-            or passed_as_argument_within(name, text_range)
+            or text_range.contains_as_argument(name)
         ]
 
     def extract_expression(
@@ -249,22 +248,6 @@ class CodeSelection:
                     yield occurrence, name
                 break
 
-    def find_names_used_after_position(
-        self,
-        names: Sequence[tuple[str, Position]],
-        scope_graph: ScopeGraph,
-        cutoff: Position,
-    ) -> Iterable[tuple[str, Position]]:
-        for name, position in names:
-            try:
-                occurrences = all_occurrence_positions(position, graph=scope_graph)
-            except NotFoundError:
-                continue
-            for occurrence in occurrences:
-                if occurrence > cutoff:
-                    yield name, occurrence
-                    break
-
     def find_start_of_scope(self, start: Position) -> Position:
         if not self.text_range.enclosing_scopes:
             return start.source.position(0, 0)
@@ -298,7 +281,7 @@ class ExtractVariable:
     def edits(self) -> tuple[Edit, ...]:
         extracted = self.text_range.text
 
-        if not (expression := get_single_expression_value(extracted)):
+        if not (expression := self.get_single_expression_value(extracted)):
             logger.warning("Could not extract single expression value.")
             return ()
 
@@ -331,6 +314,18 @@ class ExtractVariable:
         definition = f"{self.name} = {extracted}{NEWLINE}{indentation}"
         insert = insert_point.insert(definition)
         return (insert, *edits)
+
+    @staticmethod
+    def get_single_expression_value(text: str) -> ast.AST | None:
+        try:
+            parsed = ast.parse(text)
+        except SyntaxError:
+            return None
+
+        if len(parsed.body) != 1 or not isinstance(parsed.body[0], ast.Expr):
+            return None
+
+        return parsed.body[0].value
 
 
 class InlineVariable:
@@ -605,22 +600,3 @@ def find_names_used_after_position(
             if occurrence > cutoff:
                 yield name, occurrence
                 break
-
-
-def get_single_expression_value(text: str) -> ast.AST | None:
-    try:
-        parsed = ast.parse(text)
-    except SyntaxError:
-        return None
-
-    if len(parsed.body) != 1 or not isinstance(parsed.body[0], ast.Expr):
-        return None
-
-    return parsed.body[0].value
-
-
-def passed_as_argument_within(name: str, text_range: types.TextRange) -> bool:
-    return any(
-        n == name
-        for n in find_arguments_passed_in_range(text_range.start.source.ast, text_range)
-    )

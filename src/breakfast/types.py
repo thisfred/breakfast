@@ -47,6 +47,8 @@ class TextRange(Protocol):
     start: Position
     end: Position
 
+    def __contains__(self, position_or_range: "Position | TextRange") -> bool: ...
+
     @property
     def text(self) -> str: ...
 
@@ -83,7 +85,7 @@ class TextRange(Protocol):
         self, substitutions: Sequence[tuple["TextRange", str]]
     ) -> Sequence[str]: ...
 
-    def __contains__(self, position_or_range: "Position | TextRange") -> bool: ...
+    def contains_as_argument(self, name: str) -> bool: ...
 
 
 @dataclass(order=True, frozen=True)  # pragma: nocover
