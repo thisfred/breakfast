@@ -7,10 +7,7 @@ from typing import Protocol
 from breakfast import types
 from breakfast.names import all_occurrence_positions, build_graph, find_definition
 from breakfast.scope_graph import ScopeGraph
-from breakfast.search import (
-    find_other_occurrences,
-    find_statements,
-)
+from breakfast.search import find_other_occurrences, find_returns, find_statements
 from breakfast.source import TextRange
 from breakfast.types import Edit, NotFoundError, Position
 
@@ -18,11 +15,6 @@ logger = logging.getLogger(__name__)
 
 FOUR_SPACES = "    "
 NEWLINE = "\n"
-
-
-class Refactoring(Protocol):
-    @property
-    def edits(self) -> tuple[Edit, ...]: ...
 
 
 class CodeSelection:
@@ -52,7 +44,7 @@ class CodeSelection:
         refactoring = InlineVariable(self)
         return refactoring.edits
 
-    def inline_call(self, name: str) -> tuple[Edit, ...]:
+    def inline_call(self, name: str = "result") -> tuple[Edit, ...]:
         refactoring = InlineCall(self, name)
         return refactoring.edits
 
@@ -71,35 +63,38 @@ class CodeSelection:
         original_indentation = start.indentation
         new_indentation = original_indentation if is_method else FOUR_SPACES
 
-        names_in_range = self.extended_range.names
+        names_in_range = self.full_line_range.names
+
         extracting_partial_line = start.row == end.row and start.column != 0
         if extracting_partial_line:
-            extracted, assignment_or_return = self.extract_expression(
-                text_range=self.text_range,
-                names_in_range=names_in_range,
-                new_indentation=new_indentation,
-            )
+            extraction_range = self.text_range
+            extractor = self.extract_expression
         else:
-            extracted, assignment_or_return = self.extract_statements(
-                text_range=self.extended_range,
-                names_in_range=names_in_range,
-                new_indentation=new_indentation,
-            )
+            extraction_range = self.full_line_range
+            extractor = self.extract_statements
+
+        extracted, assignment_or_return = extractor(
+            text_range=extraction_range,
+            names_in_range=names_in_range,
+            new_indentation=new_indentation,
+        )
         start_of_current_scope = self.find_start_of_scope(start=start)
         parameter_names: Sequence[str] = self.get_parameter_names(
             names_in_range=names_in_range,
-            text_range=self.extended_range,
+            text_range=self.full_line_range,
             start_of_current_scope=start_of_current_scope,
         )
         self_name = "self" if is_method else None
         arguments = ", ".join(f"{n}={n}" for n in parameter_names if n != self_name)
         self_prefix = (self_name + ".") if self_name else ""
+
         call = f"{self_prefix}{name}({arguments})"
         replace_text = (
             call
             if extracting_partial_line
             else f"{original_indentation}{assignment_or_return}{call}{NEWLINE}"
         )
+
         parameters_with_self = (
             [
                 self_name,
@@ -183,7 +178,7 @@ class CodeSelection:
             extracted += f"{NEWLINE}{new_indentation}return {return_values_as_string}"
             assignment_or_return = f"{return_values_as_string} = "
         else:
-            # XXX: Pretty sure this is too simplistic
+            # XXX: Pretty sure this is way too simplistic
             assignment_or_return = "return "
 
         return extracted, assignment_or_return
@@ -197,7 +192,7 @@ class CodeSelection:
         return refactoring.edits
 
     @property
-    def extended_range(self) -> types.TextRange:
+    def full_line_range(self) -> types.TextRange:
         start = self.text_range.start
         end = self.text_range.end
         if start.row < end.row:
@@ -271,6 +266,12 @@ class CodeSelection:
         return start.source.position(enclosing.end.row + 1, 0)
 
 
+class Refactoring(Protocol):
+    def __init__(self, selection: CodeSelection): ...
+    @property
+    def edits(self) -> tuple[Edit, ...]: ...
+
+
 class ExtractVariable:
     def __init__(self, code_selection: CodeSelection, name: str):
         self.text_range = code_selection.text_range
@@ -308,6 +309,8 @@ class ExtractVariable:
                 statement_position := self.source.node_position(statement)
             ) < first_edit_position:
                 statement_start = statement_position
+            else:
+                break
 
         insert_point = statement_start or first_edit_position.start_of_line
         indentation = " " * insert_point.column
@@ -381,7 +384,7 @@ class InlineVariable:
 
 
 class InlineCall:
-    def __init__(self, code_selection: CodeSelection, name: str):
+    def __init__(self, code_selection: CodeSelection, name: str = "result"):
         self.text_range = code_selection.text_range
         self.source = self.text_range.start.source
         self.scope_graph = code_selection.scope_graph
@@ -413,6 +416,10 @@ class InlineCall:
             logger.warn(f"Not a function {definition.ast=}.")
             return ()
 
+        returns = [
+            r for statement in definition.ast.body for r in find_returns(statement)
+        ]
+
         body_range = definition.position.body_for_callable
         if not body_range:
             return ()
@@ -439,17 +446,26 @@ class InlineCall:
 
         new_lines = body_range.text_with_substitutions(substitutions)
 
-        last_line = new_lines[-1].strip()
-        if last_line.startswith("return"):
+        if (
+            len(returns) == 1
+            and returns[0].value
+            and (return_range := self.source.node_range(returns[0]))
+        ):
+            n = (return_range.start.row - body_range.start.row) - len(new_lines)
+
             insert_range = TextRange(
                 self.text_range.start.line.start, self.text_range.start.line.start
             )
             indentation = self.text_range.start.indentation
+            return_value = " ".join(
+                " ".join(return_range.text_with_substitutions(substitutions))
+                .strip()
+                .split()[1:]
+            )
 
-            return_value = last_line[len("return ") :]
             body = (
                 indent(
-                    dedent(NEWLINE.join(line for line in new_lines[:-1]) + NEWLINE),
+                    dedent(NEWLINE.join(line for line in new_lines[:n]) + NEWLINE),
                     indentation,
                 )
                 + f"{indentation}{self.name} = {return_value}{NEWLINE}"
@@ -495,11 +511,20 @@ class InlineCall:
             yield TextRange(position, position + len(def_arg.arg)), value
 
 
-FindTarget = Callable[[CodeSelection], Position | None]
+def get_return_value(new_lines: Sequence[str]) -> str:
+    for line in new_lines[::-1]:
+        if (stripped := line.strip()).startswith("return "):
+            return stripped[len("return ") :]
+
+    raise NotFoundError("No return found")
 
 
 class SlideStatements:
-    def __init__(self, code_selection: CodeSelection, find_target: FindTarget):
+    def __init__(
+        self,
+        code_selection: CodeSelection,
+        find_target: Callable[[CodeSelection], Position | None],
+    ):
         self.text_range = code_selection.text_range
         self.code_selection = code_selection
         self.find_target = find_target

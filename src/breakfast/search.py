@@ -180,6 +180,23 @@ def find_arguments_in_call(node: ast.Call, text_range: TextRange) -> Iterator[st
     yield from generic_visit(find_arguments_passed_in_range, node, text_range)
 
 
+@singledispatch
+def find_returns(node: ast.AST) -> Iterator[ast.Return]:
+    yield from generic_visit(find_returns, node)
+
+
+@find_returns.register
+def find_returns_in_return(node: ast.Return) -> Iterator[ast.Return]:
+    yield node
+
+
+@find_returns.register
+def find_returns_in_nested_definition(
+    node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
+) -> Iterator[ast.Return]:
+    yield from ()
+
+
 class NodeFilter(Protocol):
     def __call__(self, node: ast.AST) -> bool: ...
 

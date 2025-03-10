@@ -1,6 +1,6 @@
 from breakfast.names import build_graph
 from breakfast.source import Position
-from tests import make_source
+from tests.conftest import make_source
 
 
 def test_functions() -> None:

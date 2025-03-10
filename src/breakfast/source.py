@@ -188,6 +188,10 @@ class TextRange:
             for line in self.start.source.lines[self.start.row : self.end.row + 1]
         ]
         for substitution_range, new_text in sorted(substitutions, reverse=True):
+            if substitution_range.end < self.start:
+                continue
+            if substitution_range.start > self.end:
+                break
             row_index = substitution_range.start.row - row_offset
             text[row_index] = (
                 text[row_index][: substitution_range.start.column]

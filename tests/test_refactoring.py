@@ -1,6 +1,6 @@
 from breakfast.refactoring import CodeSelection, Edit, InlineCall
 from breakfast.source import Source, TextRange
-from tests import dedent, make_source
+from tests.conftest import assert_refactors_to, dedent, make_source
 
 
 def test_extract_variable_should_insert_name_definition():
@@ -861,23 +861,29 @@ def test_inline_call_should_extract_body_before_assignment():
 
 
 def test_inline_call_should_substitute_parameters():
-    source = make_source(
-        """
+    assert_refactors_to(
+        refactoring=InlineCall,
+        target="f",
+        occurrence=2,
+        code="""
         def f(c):
             c += 1
             return c
 
         a = 2
         b = f(a)
-        """
+        """,
+        expected="""
+        def f(c):
+            c += 1
+            return c
+
+        a = 2
+        a += 1
+        result = a
+        b = result
+        """,
     )
-
-    start = source.position(6, 4)
-    end = source.position(6, 7)
-    refactor = CodeSelection(TextRange(start, end))
-    insert, edit = refactor.inline_call(name="result")
-
-    assert "a += 1\nresult = a" in insert.text
 
 
 def test_inline_call_should_substitute_parameters_in_attribute():
@@ -901,23 +907,29 @@ def test_inline_call_should_substitute_parameters_in_attribute():
 
 
 def test_inline_call_should_substitute_keyword_arguments():
-    source = make_source(
-        """
+    assert_refactors_to(
+        refactoring=InlineCall,
+        target="f",
+        occurrence=2,
+        code="""
         def f(c):
             c += 1
             return c
 
         a = 2
         b = f(c=a)
-        """
+        """,
+        expected="""
+        def f(c):
+            c += 1
+            return c
+
+        a = 2
+        a += 1
+        result = a
+        b = result
+        """,
     )
-
-    start = source.position(6, 4)
-    end = source.position(6, 7)
-    refactor = CodeSelection(TextRange(start, end))
-    insert, edit = refactor.inline_call(name="result")
-
-    assert "a += 1\nresult = a" in insert.text
 
 
 def test_inline_call_should_indent_in_new_context():
@@ -1134,3 +1146,33 @@ def test_extract_callable_containing_return_statement_should_preserve_it():
     insert, edit = selection.extract_function("f")
 
     assert "return f()" in edit.text
+
+
+def test_inline_callable_should_handle_multiline_return():
+    assert_refactors_to(
+        refactoring=InlineCall,
+        target="f2",
+        code="""
+        def f1():
+            return f2()
+
+
+        def f2():
+            print("a")
+            return (
+                1,
+            )
+        """,
+        expected="""
+        def f1():
+            print("a")
+            result = (1,)
+            return result
+
+        def f2():
+            print("a")
+            return (
+                1,
+            )
+        """,
+    )

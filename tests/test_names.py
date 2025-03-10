@@ -4,7 +4,7 @@ from pytest import mark
 
 from breakfast.names import all_occurrence_positions, build_graph
 from breakfast.source import Position
-from tests import all_occurrence_position_tuples, make_source
+from tests.conftest import all_occurrence_position_tuples, make_source
 
 
 def test_assignment_occurrences() -> None:
