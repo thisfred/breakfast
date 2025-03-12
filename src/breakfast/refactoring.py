@@ -416,59 +416,38 @@ class InlineCall:
             logger.warn(f"Not a function {definition.ast=}.")
             return ()
 
-        returns = [
-            r for statement in definition.ast.body for r in find_returns(statement)
-        ]
-
         body_range = definition.position.body_for_callable
         if not body_range:
             return ()
 
-        substitutions = []
-        seen = set()
+        new_lines = self.get_new_lines(
+            call=call,
+            call_range=call_range,
+            body_range=body_range,
+            definition_ast=definition.ast,
+            name_start=name_start,
+        )
 
-        for keyword in call.keywords:
-            def_arg: ast.keyword | ast.arg = keyword
-            seen.add(def_arg.arg)
-            call_arg = keyword.value
-            substitutions.extend(
-                list(self.get_substitions(def_arg, call_arg, body_range))
-            )
+        return_ranges = [
+            return_range
+            for statement in definition.ast.body
+            for r in find_returns(statement)
+            if (return_range := self.source.node_range(r))
+        ]
 
-        for call_arg, def_arg in zip(
-            call_args,
-            (a for a in definition.ast.args.args if a.arg not in seen),
-            strict=True,
-        ):
-            substitutions.extend(
-                list(self.get_substitions(def_arg, call_arg, body_range))
-            )
-
-        new_lines = body_range.text_with_substitutions(substitutions)
-
-        if (
-            len(returns) == 1
-            and returns[0].value
-            and (return_range := self.source.node_range(returns[0]))
-        ):
-            n = (return_range.start.row - body_range.start.row) - len(new_lines)
-
+        if return_ranges:
+            for return_range in return_ranges:
+                offset = return_range.start.row - body_range.start.row
+                new_lines[offset] = new_lines[offset].replace(
+                    "return ", f"{self.name} = ", 1
+                )
+            indentation = self.text_range.start.indentation
             insert_range = TextRange(
                 self.text_range.start.line.start, self.text_range.start.line.start
             )
-            indentation = self.text_range.start.indentation
-            return_value = " ".join(
-                " ".join(return_range.text_with_substitutions(substitutions))
-                .strip()
-                .split()[1:]
-            )
-
-            body = (
-                indent(
-                    dedent(NEWLINE.join(line for line in new_lines[:n]) + NEWLINE),
-                    indentation,
-                )
-                + f"{indentation}{self.name} = {return_value}{NEWLINE}"
+            body = indent(
+                dedent(NEWLINE.join(new_lines) + NEWLINE),
+                indentation,
             )
             replace = Edit(call_range, text=self.name)
             return (
@@ -491,12 +470,46 @@ class InlineCall:
                 ),
             )
 
+    def get_new_lines(
+        self,
+        *,
+        call: ast.Call,
+        call_range: types.TextRange,
+        body_range: types.TextRange,
+        definition_ast: ast.FunctionDef,
+        name_start: types.Position,
+    ) -> list[str]:
+        substitutions = []
+        seen = set()
+
+        call_args = call.args
+        if isinstance(call.func, ast.Attribute):
+            call_args = [call.func.value, *call_args]
+        for keyword in call.keywords:
+            def_arg: ast.keyword | ast.arg = keyword
+            seen.add(def_arg.arg)
+            call_arg = keyword.value
+            substitutions.extend(
+                list(self.get_substitions(def_arg, call_arg, body_range))
+            )
+
+        for call_arg, def_arg in zip(
+            call_args,
+            (a for a in definition_ast.args.args if a.arg not in seen),
+            strict=True,
+        ):
+            substitutions.extend(
+                list(self.get_substitions(def_arg, call_arg, body_range))
+            )
+
+        return list(body_range.text_with_substitutions(substitutions))
+
     def get_substitions(
         self,
         def_arg: ast.keyword | ast.arg,
         call_arg: ast.expr,
         body_range: types.TextRange,
-    ) -> Iterator[tuple[types.TextRange, str]]:
+    ) -> Iterator[types.Edit]:
         assert def_arg.arg is not None  # noqa: S101
         arg_position = self.source.node_position(def_arg)
         value = (
@@ -508,7 +521,7 @@ class InlineCall:
         for position in all_occurrence_positions(arg_position):
             if position not in body_range:
                 continue
-            yield TextRange(position, position + len(def_arg.arg)), value
+            yield Edit(TextRange(position, position + len(def_arg.arg)), value)
 
 
 def get_return_value(new_lines: Sequence[str]) -> str:

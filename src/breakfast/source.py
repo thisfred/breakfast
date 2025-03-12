@@ -180,23 +180,23 @@ class TextRange:
         return assignments[-1] if assignments else None
 
     def text_with_substitutions(
-        self, substitutions: Sequence[tuple[types.TextRange, str]]
+        self, substitutions: Sequence[types.Edit]
     ) -> Sequence[str]:
         row_offset = self.start.row
         text = [
             line.text
             for line in self.start.source.lines[self.start.row : self.end.row + 1]
         ]
-        for substitution_range, new_text in sorted(substitutions, reverse=True):
-            if substitution_range.end < self.start:
+        for substitution in sorted(substitutions, reverse=True):
+            if substitution.text_range.end < self.start:
                 continue
-            if substitution_range.start > self.end:
+            if substitution.text_range.start > self.end:
                 break
-            row_index = substitution_range.start.row - row_offset
+            row_index = substitution.text_range.start.row - row_offset
             text[row_index] = (
-                text[row_index][: substitution_range.start.column]
-                + new_text
-                + text[row_index][substitution_range.end.column :]
+                text[row_index][: substitution.text_range.start.column]
+                + substitution.text
+                + text[row_index][substitution.text_range.end.column :]
             )
 
         return text

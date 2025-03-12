@@ -1176,3 +1176,34 @@ def test_inline_callable_should_handle_multiline_return():
             )
         """,
     )
+
+
+def test_inline_callable_should_handle_multiple_returns():
+    assert_refactors_to(
+        refactoring=InlineCall,
+        target="function",
+        occurrence=2,
+        code="""
+        def function(a):
+            if a is True:
+                return 1
+            else:
+                return 2
+
+        b = function(False)
+        """,
+        expected="""
+        def function(a):
+            if a is True:
+                return 1
+            else:
+                return 2
+
+        if False is True:
+            result = 1
+        else:
+            result = 2
+
+        b = result
+        """,
+    )

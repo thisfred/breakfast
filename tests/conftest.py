@@ -62,9 +62,7 @@ def apply_edits(source: types.Source, edits: Sequence[types.Edit]):
     end = source.position(len(source.lines), 0)
     full_range = TextRange(source.position(0, 0), end)
 
-    new_text = "\n".join(
-        full_range.text_with_substitutions([(e.text_range, e.text) for e in edits])
-    )
+    new_text = "\n".join(full_range.text_with_substitutions(edits))
 
     return new_text
 
