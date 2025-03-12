@@ -421,10 +421,7 @@ class InlineCall:
             return ()
 
         new_lines = self.get_new_lines(
-            call=call,
-            call_range=call_range,
-            body_range=body_range,
-            definition_ast=definition.ast,
+            call=call, body_range=body_range, definition_ast=definition.ast
         )
 
         return_ranges = [
@@ -473,7 +470,6 @@ class InlineCall:
         self,
         *,
         call: ast.Call,
-        call_range: types.TextRange,
         body_range: types.TextRange,
         definition_ast: ast.FunctionDef,
     ) -> list[str]:
