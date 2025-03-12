@@ -431,29 +431,7 @@ class InlineCall:
             if (return_range := self.source.node_range(r))
         ]
 
-        if return_ranges:
-            for return_range in return_ranges:
-                offset = return_range.start.row - body_range.start.row
-                new_lines[offset] = new_lines[offset].replace(
-                    "return ", f"{self.name} = ", 1
-                )
-            indentation = self.text_range.start.indentation
-            insert_range = TextRange(
-                self.text_range.start.line.start, self.text_range.start.line.start
-            )
-            body = indent(
-                dedent(NEWLINE.join(new_lines) + NEWLINE),
-                indentation,
-            )
-            replace = Edit(call_range, text=self.name)
-            return (
-                Edit(
-                    insert_range,
-                    text=f"{body}",
-                ),
-                replace,
-            )
-        else:
+        if not return_ranges:
             indentation = self.text_range.start.indentation
             body = indent(
                 dedent(NEWLINE.join(line for line in new_lines) + NEWLINE),
@@ -465,6 +443,28 @@ class InlineCall:
                     text=f"{body}",
                 ),
             )
+
+        for return_range in return_ranges:
+            offset = return_range.start.row - body_range.start.row
+            new_lines[offset] = new_lines[offset].replace(
+                "return ", f"{self.name} = ", 1
+            )
+        indentation = self.text_range.start.indentation
+        insert_range = TextRange(
+            self.text_range.start.line.start, self.text_range.start.line.start
+        )
+        body = indent(
+            dedent(NEWLINE.join(new_lines) + NEWLINE),
+            indentation,
+        )
+        replace = Edit(call_range, text=self.name)
+        return (
+            Edit(
+                insert_range,
+                text=f"{body}",
+            ),
+            replace,
+        )
 
     def get_new_lines(
         self,
