@@ -4,7 +4,6 @@
 
 * cache scope graphs (and/or partial paths?)
 * add go to definition
-* add Undo
 
 ### Refactoring
 
