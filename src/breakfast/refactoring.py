@@ -425,7 +425,6 @@ class InlineCall:
             call_range=call_range,
             body_range=body_range,
             definition_ast=definition.ast,
-            name_start=name_start,
         )
 
         return_ranges = [
@@ -477,7 +476,6 @@ class InlineCall:
         call_range: types.TextRange,
         body_range: types.TextRange,
         definition_ast: ast.FunctionDef,
-        name_start: types.Position,
     ) -> list[str]:
         substitutions = []
         seen = set()
