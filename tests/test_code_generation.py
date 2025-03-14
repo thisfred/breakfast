@@ -34,7 +34,15 @@ def test_roundtrip_string_should_result_in_same_ast(code):
         "src/breakfast/source.py",
         "src/breakfast/types.py",
         "src/breakfast/visitor.py",
+        "tests/conftest.py",
+        "tests/test_breakfast_lsp_server.py",
         "tests/test_code_generation.py",
+        "tests/test_main.py",
+        "tests/test_names.py",
+        "tests/test_position.py",
+        "tests/test_refactoring.py",
+        "tests/test_scope_graph.py",
+        "tests/test_source.py",
     ),
 )
 def test_roundtrip_file_should_result_in_same_ast(filename):
