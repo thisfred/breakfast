@@ -15,6 +15,8 @@ from breakfast.source import Source
         "src/breakfast/code_generation.py",
         "src/breakfast/names.py",
         "src/breakfast/source.py",
+        "src/breakfast/project.py",
+        "src/breakfast/refactoring.py",
     ),
 )
 def test_roundtrip_should_result_in_same_ast(filename):

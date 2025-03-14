@@ -18,6 +18,7 @@ COMPARISONS = {
     ast.IsNot: "is not",
     ast.Lt: "<",
     ast.LtE: "<=",
+    ast.NotEq: "!=",
     ast.NotIn: "not in",
 }
 BINARY_OPERATORS = {
@@ -253,7 +254,9 @@ def while_node(node: ast.While, level: int) -> Iterator[str]:
 
 @to_source.register
 def generator_exp(node: ast.GeneratorExp, level: int) -> Iterator[str]:
+    yield "("
     yield from render_comprehension(node, level)
+    yield ")"
 
 
 @to_source.register
@@ -430,12 +433,14 @@ def joined_str(node: ast.JoinedStr, level: int) -> Iterator[str]:
 
 @to_source.register
 def if_exp(node: ast.IfExp, level: int) -> Iterator[str]:
+    yield "("
     yield from to_source(node.body, level)
     yield " if "
     yield from to_source(node.test, level)
     if node.orelse:
         yield " else "
         yield from to_source(node.orelse, level)
+    yield ")"
 
 
 @to_source.register
