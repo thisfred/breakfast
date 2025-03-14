@@ -162,10 +162,19 @@ def call(node: ast.Call, level: int) -> Iterator[str]:
         yield from to_source(argument, level)
         yield comma
     for keyword, comma in zip(node.keywords, commas(node.keywords), strict=True):
-        yield f"{keyword.arg}="
-        yield from to_source(keyword.value, level)
-        yield comma
+        if keyword.arg:
+            yield f"{keyword.arg}="
+            yield from to_source(keyword.value, level)
+            yield comma
+        else:
+            yield from to_source(keyword, level)
     yield ")"
+
+
+@to_source.register
+def keyword(node: ast.keyword, level: int) -> Iterator[str]:
+    yield "**"
+    yield from to_source(node.value, level)
 
 
 @to_source.register
@@ -300,6 +309,7 @@ def function_def(node: ast.FunctionDef, level: int) -> Iterator[str]:
     yield from render_args(node, level)
     yield from render_vararg(node, level)
     yield from render_keyword_only_args(node, level)
+    yield from render_kwarg(node, level)
     yield ")"
     yield from render_returns(node, level)
     yield ":"
@@ -563,6 +573,16 @@ def render_vararg(node: ast.FunctionDef, level: int) -> Iterator[str]:
         yield from to_source(arg.annotation, level)
     if node.args.kwonlyargs or node.args.kwarg:
         yield ", "
+
+
+def render_kwarg(node: ast.FunctionDef, level: int) -> Iterator[str]:
+    if not node.args.kwarg:
+        return
+    arg = node.args.kwarg
+    yield f"**{arg.arg}"
+    if arg.annotation:
+        yield ": "
+        yield from to_source(arg.annotation, level)
 
 
 def render_keyword_only_args(node: ast.FunctionDef, level: int) -> Iterator[str]:
