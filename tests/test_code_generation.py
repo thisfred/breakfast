@@ -20,6 +20,8 @@ from breakfast.source import Source
         "src/breakfast/search.py",
         "src/breakfast/types.py",
         "src/breakfast/visitor.py",
+        "src/breakfast/scope_graph/scope_graph.py",
+        # "src/breakfast/scope_graph/visualization.py",
     ),
 )
 def test_roundtrip_should_result_in_same_ast(filename):

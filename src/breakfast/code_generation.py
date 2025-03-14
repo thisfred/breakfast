@@ -1,10 +1,13 @@
 import ast
+import logging
 from collections.abc import Iterable, Iterator, Sequence
 from functools import singledispatch
 from itertools import repeat
 from typing import Protocol
 
 from breakfast.visitor import generic_visit
+
+logger = logging.getLogger(__name__)
 
 NEWLINE = "\n"
 INDENTATION = "    "
@@ -39,7 +42,7 @@ class NodeWithElse(Protocol):
 
 @singledispatch
 def to_source(node: ast.AST, level: int = 0) -> Iterator[str]:
-    print(ast.dump(node))
+    logger.warning(f"Unhandled node type: {node}")
     yield from generic_visit(to_source, node, level)
 
 
@@ -55,9 +58,11 @@ def expr(node: ast.Expr, level: int) -> Iterator[str]:
 
 @to_source.register
 def bin_op(node: ast.BinOp, level: int) -> Iterator[str]:
+    yield "("
     yield from to_source(node.left, level)
     yield f" {BINARY_OPERATORS[type(node.op)]} "
     yield from to_source(node.right, level)
+    yield ")"
 
 
 @to_source.register
@@ -80,10 +85,12 @@ def slice_node(node: ast.Slice, level: int) -> Iterator[str]:
 
 @to_source.register
 def bool_op(node: ast.BoolOp, level: int) -> Iterator[str]:
+    yield "("
     operators = (*repeat(BOOLEAN_OPERATORS[type(node.op)], len(node.values) - 1), "")
     for value, operator in zip(node.values, operators, strict=True):
         yield from to_source(value, level)
         yield operator
+    yield ")"
 
 
 @to_source.register
@@ -468,6 +475,15 @@ def list_node(node: ast.List, level: int) -> Iterator[str]:
 
 
 @to_source.register
+def set_node(node: ast.Set, level: int) -> Iterator[str]:
+    yield "{"
+    for element in node.elts:
+        yield from to_source(element, level)
+        yield ", "
+    yield "}"
+
+
+@to_source.register
 def dict_node(node: ast.Dict, level: int) -> Iterator[str]:
     yield "{"
     for key, value in zip(node.keys, node.values, strict=True):
@@ -583,7 +599,7 @@ def render_keyword_only_args(node: ast.FunctionDef, level: int) -> Iterator[str]
     defaults = (
         *repeat(
             None,
-            len(node.args.args) - len(node.args.kw_defaults),
+            len(node.args.kwonlyargs) - len(node.args.kw_defaults),
         ),
         *node.args.kw_defaults,
     )
