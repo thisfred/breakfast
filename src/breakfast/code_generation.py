@@ -142,8 +142,7 @@ def aug_assign(node: ast.AugAssign, level: int) -> Iterator[str]:
 @to_source.register
 def ann_assign(node: ast.AnnAssign, level: int) -> Iterator[str]:
     yield from to_source(node.target, level)
-    yield ": "
-    yield from to_source(node.annotation, level)
+    yield from render_annotation(node, level)
     if node.value:
         yield " = "
         yield from to_source(node.value, level)
@@ -518,9 +517,7 @@ def render_position_only_args(node: ast.FunctionDef, level: int) -> Iterator[str
         strict=True,
     ):
         yield arg.arg
-        if arg.annotation:
-            yield ": "
-            yield from to_source(arg.annotation, level)
+        yield from render_annotation(arg, level)
         yield comma
     yield ", /, "
 
@@ -545,9 +542,7 @@ def render_args(node: ast.FunctionDef, level: int) -> Iterator[str]:
         strict=True,
     ):
         yield arg.arg
-        if arg.annotation:
-            yield ": "
-            yield from to_source(arg.annotation, level)
+        yield from render_annotation(arg, level)
         if default:
             yield "="
             yield from to_source(default, level)
@@ -568,9 +563,7 @@ def render_vararg(node: ast.FunctionDef, level: int) -> Iterator[str]:
         return
     arg = node.args.vararg
     yield f"*{arg.arg}"
-    if arg.annotation:
-        yield ": "
-        yield from to_source(arg.annotation, level)
+    yield from render_annotation(arg, level)
     if node.args.kwonlyargs or node.args.kwarg:
         yield ", "
 
@@ -580,9 +573,7 @@ def render_kwarg(node: ast.FunctionDef, level: int) -> Iterator[str]:
         return
     arg = node.args.kwarg
     yield f"**{arg.arg}"
-    if arg.annotation:
-        yield ": "
-        yield from to_source(arg.annotation, level)
+    yield from render_annotation(arg, level)
 
 
 def render_keyword_only_args(node: ast.FunctionDef, level: int) -> Iterator[str]:
@@ -600,13 +591,17 @@ def render_keyword_only_args(node: ast.FunctionDef, level: int) -> Iterator[str]
         node.args.kwonlyargs, defaults, commas(node.args.kwonlyargs), strict=True
     ):
         yield arg.arg
-        if arg.annotation:
-            yield ": "
-            yield from to_source(arg.annotation, level)
+        yield from render_annotation(arg, level)
         if default:
             yield "="
             yield from to_source(default, level)
         yield comma
+
+
+def render_annotation(node: ast.arg | ast.AnnAssign, level: int) -> Iterator[str]:
+    if node.annotation:
+        yield ": "
+        yield from to_source(node.annotation, level)
 
 
 def render_returns(node: ast.FunctionDef, level: int) -> Iterator[str]:
