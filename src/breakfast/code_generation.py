@@ -91,10 +91,9 @@ def slice_node(node: ast.Slice, level: int) -> Iterator[str]:
 @to_source.register
 def bool_op(node: ast.BoolOp, level: int) -> Iterator[str]:
     yield "("
-    operators = (*repeat(BOOLEAN_OPERATORS[type(node.op)], len(node.values) - 1), "")
-    for value, operator in zip(node.values, operators, strict=True):
-        yield from to_source(value, level)
-        yield operator
+    yield from with_separators(
+        node.values, level, separator=BOOLEAN_OPERATORS[type(node.op)]
+    )
     yield ")"
 
 
@@ -109,9 +108,9 @@ def subscript(node: ast.Subscript, level: int) -> Iterator[str]:
 @to_source.register
 def tuple_node(node: ast.Tuple, level: int) -> Iterator[str]:
     yield "("
-    for element in node.elts:
-        yield from to_source(element, level)
-        yield ", "
+    yield from with_separators(
+        node.elts, level, include_final_separator=len(node.elts) == 1
+    )
     yield ")"
 
 
@@ -165,14 +164,10 @@ def call(node: ast.Call, level: int) -> Iterator[str]:
     yield from to_source(node.func, level)
     yield "("
 
-    for argument, comma in zip(
-        node.args,
-        commas(node.args, include_final_comma=bool(node.keywords)),
-        strict=True,
-    ):
-        yield from to_source(argument, level)
-        yield comma
-    for keyword, comma in zip(node.keywords, commas(node.keywords), strict=True):
+    yield from with_separators(
+        node.args, level, include_final_separator=bool(node.keywords)
+    )
+    for keyword, comma in zip(node.keywords, separators(node.keywords), strict=True):
         if keyword.arg:
             yield f"{keyword.arg}="
             yield from to_source(keyword.value, level)
@@ -379,9 +374,7 @@ def class_def(node: ast.ClassDef, level: int) -> Iterator[str]:
 
     if node.bases or node.keywords:
         yield "("
-        for base in node.bases:
-            yield from to_source(base, level)
-            yield ", "
+        yield from with_separators(node.bases, level)
         yield ")"
     yield ":"
     yield from render_body(node.body, level + 1)
@@ -412,10 +405,7 @@ def except_handler(node: ast.ExceptHandler, level: int) -> Iterator[str]:
 @to_source.register
 def with_node(node: ast.With, level: int) -> Iterator[str]:
     yield start_line("with ", level)
-    for item, comma in zip(node.items, commas(node.items), strict=True):
-        yield from to_source(item, level)
-        yield comma
-
+    yield from with_separators(node.items, level)
     yield ":"
     yield from render_body(node.body, level + 1)
 
@@ -514,30 +504,28 @@ def formatted_value(node: ast.FormattedValue, level: int) -> Iterator[str]:
 @to_source.register
 def list_node(node: ast.List, level: int) -> Iterator[str]:
     yield "["
-    for element in node.elts:
-        yield from to_source(element, level)
-        yield ", "
+    yield from with_separators(node.elts, level)
     yield "]"
 
 
 @to_source.register
 def set_node(node: ast.Set, level: int) -> Iterator[str]:
     yield "{"
-    for element in node.elts:
-        yield from to_source(element, level)
-        yield ", "
+    yield from with_separators(node.elts, level)
     yield "}"
 
 
 @to_source.register
 def dict_node(node: ast.Dict, level: int) -> Iterator[str]:
     yield "{"
-    for key, value in zip(node.keys, node.values, strict=True):
+    for key, value, comma in zip(
+        node.keys, node.values, separators(node.keys), strict=True
+    ):
         if key and value:
             yield from to_source(key, level)
             yield ": "
             yield from to_source(value, level)
-            yield ", "
+            yield comma
     yield "}"
 
 
@@ -570,16 +558,11 @@ def render_else(node: NodeWithElse, level: int) -> Iterator[str]:
 def render_position_only_args(node: ast.arguments, level: int) -> Iterator[str]:
     if not node.posonlyargs:
         return
-    for arg, comma in zip(
+    yield from with_separators(
         node.posonlyargs,
-        commas(
-            node.posonlyargs,
-            include_final_comma=bool(node.args or node.kwonlyargs),
-        ),
-        strict=True,
-    ):
-        yield from to_source(arg, level)
-        yield comma
+        level,
+        include_final_separator=bool(node.args or node.kwonlyargs),
+    )
     yield ", /, "
 
 
@@ -596,7 +579,7 @@ def render_args(node: ast.arguments, level: int) -> Iterator[str]:
     for arg, default, comma in zip(
         node.args,
         defaults[: len(node.args)],
-        commas(
+        separators(
             node.args,
             include_final_comma=bool(node.kwonlyargs or node.vararg),
         ),
@@ -650,7 +633,7 @@ def render_keyword_only_args(node: ast.arguments, level: int) -> Iterator[str]:
         *node.kw_defaults,
     )
     for arg, default, comma in zip(
-        node.kwonlyargs, defaults, commas(node.kwonlyargs), strict=True
+        node.kwonlyargs, defaults, separators(node.kwonlyargs), strict=True
     ):
         yield from to_source(arg, level)
         if default:
@@ -698,9 +681,25 @@ def start_line(text: str, level: int) -> str:
     return f"{NEWLINE}{level * INDENTATION}{text}"
 
 
-def commas[T](
-    sequence: Sequence[T], include_final_comma: bool = False
+def with_separators(
+    nodes: Sequence[ast.AST],
+    level: int,
+    include_final_separator: bool = False,
+    separator: str = ", ",
+) -> Iterator[str]:
+    for node, comma in zip(
+        nodes, separators(nodes, include_final_separator, separator), strict=True
+    ):
+        yield from to_source(node, level)
+        yield comma
+
+
+def separators[T](
+    sequence: Sequence[T], include_final_comma: bool = False, separator: str = ", "
 ) -> tuple[str, ...]:
     if not sequence:
         return ()
-    return (*repeat(", ", len(sequence) - 1), ", " if include_final_comma else "")
+    return (
+        *repeat(separator, len(sequence) - 1),
+        separator if include_final_comma else "",
+    )

@@ -53,7 +53,7 @@ def all_occurrence_positions(
         raise AssertionError("Should have found at least the original position.")
 
     return sorted(
-        consolidate_definitions(definitions, found_definition), reverse=in_reverse_order
+        consolidate_occurrences(definitions, found_definition), reverse=in_reverse_order
     )
 
 
@@ -101,7 +101,7 @@ def find_definition(graph: ScopeGraph, position: Position) -> ScopeNode | None:
         return None
 
 
-def consolidate_definitions(
+def consolidate_occurrences(
     definitions: dict[ScopeNode, set[ScopeNode]], found_definition: ScopeNode
 ) -> set[Position]:
     groups: list[set[Position]] = []

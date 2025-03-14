@@ -1,4 +1,5 @@
 import ast
+import re
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 from textwrap import dedent
@@ -73,15 +74,12 @@ def range_for(
 ) -> types.TextRange:
     found = 0
     for row, line in enumerate(source.lines):
-        try:
-            column = line.text.index(needle)
-        except ValueError:
-            continue
-
-        found += 1
-        if found == occurrence:
-            return TextRange(
-                source.position(row, column), source.position(row, column + len(needle))
-            )
+        for match in re.finditer(needle, line.text):
+            found += 1
+            if found == occurrence:
+                return TextRange(
+                    source.position(row, match.start()),
+                    source.position(row, match.start() + len(needle)),
+                )
 
     raise ValueError("not found")
