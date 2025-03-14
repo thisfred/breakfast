@@ -308,21 +308,19 @@ def raise_node(node: ast.Raise, level: int) -> Iterator[str]:
 
 @to_source.register
 def async_function_def(node: ast.AsyncFunctionDef, level: int) -> Iterator[str]:
-    yield from render_decorators(node.decorator_list, level)
-    yield start_line(f"async def {node.name}", level)
-    yield from render_type_parameters(node, level)
-    yield "("
-    yield from to_source(node.args, level)
-    yield ")"
-    yield from render_returns(node, level)
-    yield ":"
-    yield from render_body(node.body, level + 1)
+    yield from render_function_definition(node, level, prefix="async ")
 
 
 @to_source.register
 def function_def(node: ast.FunctionDef, level: int) -> Iterator[str]:
+    yield from render_function_definition(node, level)
+
+
+def render_function_definition(
+    node: ast.FunctionDef | ast.AsyncFunctionDef, level: int, prefix: str = ""
+) -> Iterator[str]:
     yield from render_decorators(node.decorator_list, level)
-    yield start_line(f"def {node.name}", level)
+    yield start_line(f"{prefix}def {node.name}", level)
     yield from render_type_parameters(node, level)
     yield "("
     yield from to_source(node.args, level)
