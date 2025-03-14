@@ -152,12 +152,15 @@ def ann_assign(node: ast.AnnAssign, level: int) -> Iterator[str]:
 def call(node: ast.Call, level: int) -> Iterator[str]:
     yield from to_source(node.func, level)
     yield "("
-    commas = (*repeat(", ", len(node.args) - 1), ", " if node.keywords else "")
-    for argument, comma in zip(node.args, commas, strict=False):
+
+    for argument, comma in zip(
+        node.args,
+        commas(node.args, include_final_comma=bool(node.keywords)),
+        strict=True,
+    ):
         yield from to_source(argument, level)
         yield comma
-    commas = (*repeat(", ", len(node.keywords) - 1), "")
-    for keyword, comma in zip(node.keywords, commas, strict=False):
+    for keyword, comma in zip(node.keywords, commas(node.keywords), strict=True):
         yield f"{keyword.arg}="
         yield from to_source(keyword.value, level)
         yield comma
@@ -348,8 +351,7 @@ def except_handler(node: ast.ExceptHandler, level: int) -> Iterator[str]:
 @to_source.register
 def with_node(node: ast.With, level: int) -> Iterator[str]:
     yield start_line("with ", level)
-    commas = (*repeat(", ", len(node.items) - 1), "")
-    for item, comma in zip(node.items, commas, strict=False):
+    for item, comma in zip(node.items, commas(node.items), strict=True):
         yield from to_source(item, level)
         yield comma
 
@@ -492,11 +494,14 @@ def render_else(node: NodeWithElse, level: int) -> Iterator[str]:
 def render_position_only_args(node: ast.FunctionDef, level: int) -> Iterator[str]:
     if not node.args.posonlyargs:
         return
-    commas = (
-        *repeat(", ", len(node.args.posonlyargs) - 1),
-        ", " if node.args.args or node.args.kwonlyargs else "",
-    )
-    for arg, comma in zip(node.args.posonlyargs, commas, strict=False):
+    for arg, comma in zip(
+        node.args.posonlyargs,
+        commas(
+            node.args.posonlyargs,
+            include_final_comma=bool(node.args.args or node.args.kwonlyargs),
+        ),
+        strict=True,
+    ):
         yield arg.arg
         if arg.annotation:
             yield ": "
@@ -515,12 +520,14 @@ def render_args(node: ast.FunctionDef, level: int) -> Iterator[str]:
         ),
         *node.args.defaults,
     )
-    commas = (
-        *repeat(", ", len(node.args.args) - 1),
-        ", " if node.args.kwonlyargs or node.args.vararg else "",
-    )
     for arg, default, comma in zip(
-        node.args.args, defaults[: len(node.args.args)], commas, strict=True
+        node.args.args,
+        defaults[: len(node.args.args)],
+        commas(
+            node.args.args,
+            include_final_comma=bool(node.args.kwonlyargs or node.args.vararg),
+        ),
+        strict=True,
     ):
         yield arg.arg
         if arg.annotation:
@@ -564,8 +571,9 @@ def render_keyword_only_args(node: ast.FunctionDef, level: int) -> Iterator[str]
         ),
         *node.args.kw_defaults,
     )
-    commas = (*repeat(", ", len(node.args.kwonlyargs) - 1), "")
-    for arg, default, comma in zip(node.args.kwonlyargs, defaults, commas, strict=True):
+    for arg, default, comma in zip(
+        node.args.kwonlyargs, defaults, commas(node.args.kwonlyargs), strict=True
+    ):
         yield arg.arg
         if arg.annotation:
             yield ": "
@@ -605,3 +613,11 @@ def render_comprehension(
 
 def start_line(text: str, level: int) -> str:
     return f"{NEWLINE}{level * INDENTATION}{text}"
+
+
+def commas[T](
+    sequence: Sequence[T], include_final_comma: bool = False
+) -> tuple[str, ...]:
+    if not sequence:
+        return ()
+    return (*repeat(", ", len(sequence) - 1), ", " if include_final_comma else "")
