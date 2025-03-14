@@ -438,11 +438,15 @@ def match_class(node: ast.MatchClass, level: int) -> Iterator[str]:
 @to_source.register
 def joined_str(node: ast.JoinedStr, level: int) -> Iterator[str]:
     strings = [part for value in node.values for part in to_source(value, level)]
-    yield 'f"' if any(s.startswith('f"') for s in strings) else '"'
+    f_string = any(s.startswith('f"') for s in strings)
+    yield 'f"' if f_string else '"'
     for string in strings:
         if string.startswith('f"'):
             yield string[2:-1]
         else:
+            if f_string:
+                string = string.replace("{", "{{")
+                string = string.replace("}", "}}")
             yield string[1:-1]
     yield '"'
 
