@@ -6,6 +6,7 @@ from textwrap import dedent
 from pytest import fixture
 
 from breakfast import types
+from breakfast.code_generation import unparse
 from breakfast.names import all_occurrence_positions
 from breakfast.refactoring import CodeSelection, Refactoring
 from breakfast.source import Source, TextRange
@@ -52,8 +53,8 @@ def assert_refactors_to(
     )
     selection = CodeSelection(selection_range)
     edits = refactoring(selection).edits
-    actual = ast.unparse(ast.parse(apply_edits(source=source, edits=edits))).strip()
-    expected = ast.unparse(ast.parse(dedent(expected).strip())).strip()
+    actual = unparse(ast.parse(apply_edits(source=source, edits=edits)))
+    expected = unparse(ast.parse(dedent(expected).strip()))
 
     assert actual == expected
 

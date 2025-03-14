@@ -41,8 +41,12 @@ class NodeWithElse(Protocol):
     orelse: list[ast.stmt]
 
 
+def unparse(node: ast.AST) -> str:
+    return "".join(to_source(node, level=0)).strip()
+
+
 @singledispatch
-def to_source(node: ast.AST, level: int = 0) -> Iterator[str]:
+def to_source(node: ast.AST, level: int) -> Iterator[str]:
     logger.warning(f"Unhandled node type: {node}")
     yield from generic_visit(to_source, node, level)
 
