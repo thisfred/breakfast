@@ -191,7 +191,8 @@ def import_node(node: ast.Import, level: int) -> Iterator[str]:
 
 @to_source.register
 def import_from(node: ast.ImportFrom, level: int) -> Iterator[str]:
-    yield f"from {node.module} import "
+    print(ast.dump(node))
+    yield f"from {('.' * node.level) + node.module if node.module else ''} import "
     yield ", ".join(alias.name for alias in node.names)
 
 
