@@ -28,6 +28,7 @@ BINARY_OPERATORS = {
     ast.Add: "+",
     ast.BitAnd: "&",
     ast.BitOr: "|",
+    ast.Div: "/",
     ast.Mult: "*",
     ast.Sub: "-",
 }
@@ -191,7 +192,6 @@ def import_node(node: ast.Import, level: int) -> Iterator[str]:
 
 @to_source.register
 def import_from(node: ast.ImportFrom, level: int) -> Iterator[str]:
-    print(ast.dump(node))
     yield f"from {('.' * node.level) + node.module if node.module else ''} import "
     yield ", ".join(alias.name for alias in node.names)
 
@@ -307,20 +307,59 @@ def raise_node(node: ast.Raise, level: int) -> Iterator[str]:
 
 
 @to_source.register
+def async_function_def(node: ast.AsyncFunctionDef, level: int) -> Iterator[str]:
+    yield from render_decorators(node.decorator_list, level)
+    yield start_line(f"async def {node.name}", level)
+    yield from render_type_parameters(node, level)
+    yield "("
+    yield from to_source(node.args, level)
+    yield ")"
+    yield from render_returns(node, level)
+    yield ":"
+    yield from render_body(node.body, level + 1)
+
+
+@to_source.register
 def function_def(node: ast.FunctionDef, level: int) -> Iterator[str]:
     yield from render_decorators(node.decorator_list, level)
     yield start_line(f"def {node.name}", level)
     yield from render_type_parameters(node, level)
     yield "("
+    yield from to_source(node.args, level)
+    yield ")"
+    yield from render_returns(node, level)
+    yield ":"
+    yield from render_body(node.body, level + 1)
+
+
+@to_source.register
+def await_node(node: ast.Await, level: int) -> Iterator[str]:
+    yield "await "
+    yield from to_source(node.value, level)
+
+
+@to_source.register
+def lambda_node(node: ast.Lambda, level: int) -> Iterator[str]:
+    print(ast.dump(node))
+    yield "lambda "
+    yield from to_source(node.args, level)
+    yield ": "
+    yield from to_source(node.body, level)
+
+
+@to_source.register
+def arguments(node: ast.arguments, level: int) -> Iterator[str]:
     yield from render_position_only_args(node, level)
     yield from render_args(node, level)
     yield from render_vararg(node, level)
     yield from render_keyword_only_args(node, level)
     yield from render_kwarg(node, level)
-    yield ")"
-    yield from render_returns(node, level)
-    yield ":"
-    yield from render_body(node.body, level + 1)
+
+
+@to_source.register
+def arg(node: ast.arg, level: int) -> Iterator[str]:
+    yield node.arg
+    yield from render_annotation(node, level)
 
 
 @to_source.register
@@ -526,51 +565,51 @@ def render_else(node: NodeWithElse, level: int) -> Iterator[str]:
     yield from render_body(node.orelse, level + 1)
 
 
-def render_position_only_args(node: ast.FunctionDef, level: int) -> Iterator[str]:
-    if not node.args.posonlyargs:
+def render_position_only_args(node: ast.arguments, level: int) -> Iterator[str]:
+    if not node.posonlyargs:
         return
     for arg, comma in zip(
-        node.args.posonlyargs,
+        node.posonlyargs,
         commas(
-            node.args.posonlyargs,
-            include_final_comma=bool(node.args.args or node.args.kwonlyargs),
+            node.posonlyargs,
+            include_final_comma=bool(node.args or node.kwonlyargs),
         ),
         strict=True,
     ):
-        yield arg.arg
-        yield from render_annotation(arg, level)
+        yield from to_source(arg, level)
         yield comma
     yield ", /, "
 
 
-def render_args(node: ast.FunctionDef, level: int) -> Iterator[str]:
-    if not node.args.args:
+def render_args(node: ast.arguments, level: int) -> Iterator[str]:
+    if not node.args:
         return
     defaults = (
         *repeat(
             None,
-            len(node.args.args) - len(node.args.defaults),
+            len(node.args) - len(node.defaults),
         ),
-        *node.args.defaults,
+        *node.defaults,
     )
     for arg, default, comma in zip(
-        node.args.args,
-        defaults[: len(node.args.args)],
+        node.args,
+        defaults[: len(node.args)],
         commas(
-            node.args.args,
-            include_final_comma=bool(node.args.kwonlyargs or node.args.vararg),
+            node.args,
+            include_final_comma=bool(node.kwonlyargs or node.vararg),
         ),
         strict=True,
     ):
-        yield arg.arg
-        yield from render_annotation(arg, level)
+        yield from to_source(arg, level)
         if default:
             yield "="
             yield from to_source(default, level)
         yield comma
 
 
-def render_type_parameters(node: ast.FunctionDef, level: int) -> Iterator[str]:
+def render_type_parameters(
+    node: ast.FunctionDef | ast.AsyncFunctionDef, level: int
+) -> Iterator[str]:
     if not node.type_params:
         return
     yield "["
@@ -579,40 +618,39 @@ def render_type_parameters(node: ast.FunctionDef, level: int) -> Iterator[str]:
     yield "]"
 
 
-def render_vararg(node: ast.FunctionDef, level: int) -> Iterator[str]:
-    if not node.args.vararg:
+def render_vararg(node: ast.arguments, level: int) -> Iterator[str]:
+    if not node.vararg:
         return
-    arg = node.args.vararg
-    yield f"*{arg.arg}"
-    yield from render_annotation(arg, level)
-    if node.args.kwonlyargs or node.args.kwarg:
+    arg = node.vararg
+    yield "*"
+    yield from to_source(arg, level)
+    if node.kwonlyargs or node.kwarg:
         yield ", "
 
 
-def render_kwarg(node: ast.FunctionDef, level: int) -> Iterator[str]:
-    if not node.args.kwarg:
+def render_kwarg(node: ast.arguments, level: int) -> Iterator[str]:
+    if not node.kwarg:
         return
-    arg = node.args.kwarg
-    yield f"**{arg.arg}"
-    yield from render_annotation(arg, level)
+    arg = node.kwarg
+    yield "**"
+    yield from to_source(arg, level)
 
 
-def render_keyword_only_args(node: ast.FunctionDef, level: int) -> Iterator[str]:
-    if not node.args.kwonlyargs:
+def render_keyword_only_args(node: ast.arguments, level: int) -> Iterator[str]:
+    if not node.kwonlyargs:
         return
     yield "*, "
     defaults = (
         *repeat(
             None,
-            len(node.args.kwonlyargs) - len(node.args.kw_defaults),
+            len(node.kwonlyargs) - len(node.kw_defaults),
         ),
-        *node.args.kw_defaults,
+        *node.kw_defaults,
     )
     for arg, default, comma in zip(
-        node.args.kwonlyargs, defaults, commas(node.args.kwonlyargs), strict=True
+        node.kwonlyargs, defaults, commas(node.kwonlyargs), strict=True
     ):
-        yield arg.arg
-        yield from render_annotation(arg, level)
+        yield from to_source(arg, level)
         if default:
             yield "="
             yield from to_source(default, level)
@@ -625,7 +663,9 @@ def render_annotation(node: ast.arg | ast.AnnAssign, level: int) -> Iterator[str
         yield from to_source(node.annotation, level)
 
 
-def render_returns(node: ast.FunctionDef, level: int) -> Iterator[str]:
+def render_returns(
+    node: ast.FunctionDef | ast.AsyncFunctionDef, level: int
+) -> Iterator[str]:
     if not node.returns:
         return
     yield " -> "

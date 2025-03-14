@@ -19,19 +19,22 @@ def test_roundtrip_string_should_result_in_same_ast(code):
 @mark.parametrize(
     "filename",
     (
-        "tests/test_code_generation.py",
         "src/breakfast/__init__.py",
+        "src/breakfast/breakfast_lsp/__init__.py",
+        "src/breakfast/breakfast_lsp/__main__.py",
+        "src/breakfast/breakfast_lsp/server.py",
         "src/breakfast/code_generation.py",
         "src/breakfast/names.py",
-        "src/breakfast/source.py",
         "src/breakfast/project.py",
         "src/breakfast/refactoring.py",
-        "src/breakfast/search.py",
-        "src/breakfast/types.py",
-        "src/breakfast/visitor.py",
         "src/breakfast/scope_graph/__init__.py",
         "src/breakfast/scope_graph/scope_graph.py",
         "src/breakfast/scope_graph/visualization.py",
+        "src/breakfast/search.py",
+        "src/breakfast/source.py",
+        "src/breakfast/types.py",
+        "src/breakfast/visitor.py",
+        "tests/test_code_generation.py",
     ),
 )
 def test_roundtrip_file_should_result_in_same_ast(filename):
