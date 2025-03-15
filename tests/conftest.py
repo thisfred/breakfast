@@ -50,7 +50,9 @@ def assert_refactors_to(
 ):
     source = make_source(code) if isinstance(code, str) else code
     selection_range = (
-        range_for(target, source, occurrence) if isinstance(target, str) else target
+        range_for(target, source, occurrence)
+        if isinstance(target, str)
+        else target
     )
     selection = CodeSelection(selection_range)
     edits = refactoring(selection).edits

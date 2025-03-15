@@ -10,7 +10,11 @@ from functools import cached_property
 from typing import Protocol, TypeGuard
 
 from breakfast import types
-from breakfast.search import find_arguments_passed_in_range, find_names, get_nodes
+from breakfast.search import (
+    find_arguments_passed_in_range,
+    find_names,
+    get_nodes,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +50,9 @@ class Position:
 
     def __post_init__(self) -> None:
         if self.column < 0:
-            raise IllegalPositionError(f"Illegal value for column: {self.column}.")
+            raise IllegalPositionError(
+                f"Illegal value for column: {self.column}."
+            )
         if self.row < 0:
             raise IllegalPositionError(f"Illegal value for row: {self.row}.")
 
@@ -83,7 +89,8 @@ class Position:
         children = found.body
         start_position = self.source.node_position(children[0])
         end_position = (
-            self.source.node_end_position(children[-1]) or start_position.line.end
+            self.source.node_end_position(children[-1])
+            or start_position.line.end
         )
         return TextRange(start_position, end_position)
 
@@ -145,15 +152,22 @@ class TextRange:
     def enclosing_scopes(
         self,
     ) -> Sequence[
-        tuple[ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef, types.TextRange]
+        tuple[
+            ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
+            types.TextRange,
+        ]
     ]:
         node_type = ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
-        return [(n, c) for n, c in self.enclosing_nodes if isinstance(n, node_type)]
+        return [
+            (n, c) for n, c in self.enclosing_nodes if isinstance(n, node_type)
+        ]
 
     def enclosing_nodes_by_type[T: ast.AST](
         self, node_type: type[T]
     ) -> Sequence[tuple[T, types.TextRange]]:
-        return [(n, c) for n, c in self.enclosing_nodes if isinstance(n, node_type)]
+        return [
+            (n, c) for n, c in self.enclosing_nodes if isinstance(n, node_type)
+        ]
 
     @cached_property
     def enclosing_nodes(self) -> Sequence[tuple[ast.AST, types.TextRange]]:
@@ -163,7 +177,9 @@ class TextRange:
             if hasattr(node, "end_lineno"):
                 if source.node_position(node) > self.end:
                     break
-                if (node_range := source.node_range(node)) and self in node_range:
+                if (
+                    node_range := source.node_range(node)
+                ) and self in node_range:
                     scopes.append((node, node_range))
 
         return scopes
@@ -185,7 +201,9 @@ class TextRange:
         row_offset = self.start.row
         text = [
             line.text
-            for line in self.start.source.lines[self.start.row : self.end.row + 1]
+            for line in self.start.source.lines[
+                self.start.row : self.end.row + 1
+            ]
         ]
         for substitution in sorted(substitutions, reverse=True):
             if substitution.text_range.end < self.start:
@@ -210,7 +228,9 @@ class TextRange:
             for n in find_arguments_passed_in_range(self.start.source.ast, self)
         )
 
-    def __contains__(self, position_or_range: types.Position | types.TextRange) -> bool:
+    def __contains__(
+        self, position_or_range: types.Position | types.TextRange
+    ) -> bool:
         match position_or_range:
             case Position() as position:
                 return self.start <= position and self.end >= position
@@ -269,7 +289,9 @@ class Source:
     def text(self) -> tuple[str, ...]:
         if self._lines is None:
             with open(self.path, encoding="utf-8") as source_file:
-                self._lines = tuple(line[:-1] for line in source_file.readlines())
+                self._lines = tuple(
+                    line[:-1] for line in source_file.readlines()
+                )
         return self._lines
 
     @cached_property

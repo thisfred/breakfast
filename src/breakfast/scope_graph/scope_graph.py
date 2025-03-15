@@ -249,7 +249,9 @@ class ScopeGraph:
         same_rank: bool = False,
     ) -> Fragment:
         self.add_edge(
-            fragment_or_scope_1.exit, fragment_or_scope_2.entry, same_rank=same_rank
+            fragment_or_scope_1.exit,
+            fragment_or_scope_2.entry,
+            same_rank=same_rank,
         )
         return IncompleteFragment(fragment_or_scope_1, fragment_or_scope_2)
 
@@ -272,7 +274,9 @@ class ScopeGraph:
             to_check = [node_id]
 
             while to_check:
-                other_ids = self.get_same_rank_links(to_check.pop(), edges_to, seen_ids)
+                other_ids = self.get_same_rank_links(
+                    to_check.pop(), edges_to, seen_ids
+                )
                 group |= other_ids
                 seen_ids |= other_ids
                 to_check.extend(list(other_ids))
@@ -321,7 +325,10 @@ class ScopeGraph:
         if scope.action:
             stack = scope.action(stack)
 
-        queues: dict[int, deque[tuple[ScopeNode, Path]]] = {0: deque(), 1: deque()}
+        queues: dict[int, deque[tuple[ScopeNode, Path]]] = {
+            0: deque(),
+            1: deque(),
+        }
         self.extend_queues(node_id, stack, queues, rules)
 
         seen = set()

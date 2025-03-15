@@ -142,7 +142,9 @@ async def prepare_rename(
     )
 
 
-def get_source(uri: str, project_root: str, lines: Iterable[str]) -> breakfast.Source:
+def get_source(
+    uri: str, project_root: str, lines: Iterable[str]
+) -> breakfast.Source:
     return breakfast.Source(
         input_lines=tuple(line for line in lines),
         path=uri[len("file://") :],
@@ -151,7 +153,9 @@ def get_source(uri: str, project_root: str, lines: Iterable[str]) -> breakfast.S
 
 
 @LSP_SERVER.feature(TEXT_DOCUMENT_RENAME)
-async def rename(server: LanguageServer, params: RenameParams) -> WorkspaceEdit | None:
+async def rename(
+    server: LanguageServer, params: RenameParams
+) -> WorkspaceEdit | None:
     document = server.workspace.get_text_document(params.text_document.uri)
     source_lines = tuple(document.source.split("\n"))
     line = source_lines[params.position.line]
@@ -162,7 +166,9 @@ async def rename(server: LanguageServer, params: RenameParams) -> WorkspaceEdit 
 
     project_root = server.workspace.root_uri[len("file://") :]
     source = get_source(
-        uri=params.text_document.uri, project_root=project_root, lines=source_lines
+        uri=params.text_document.uri,
+        project_root=project_root,
+        lines=source_lines,
     )
     project = breakfast.Project(source=source, root=project_root)
     position = source.position(row=params.position.line, column=start)
@@ -172,7 +178,9 @@ async def rename(server: LanguageServer, params: RenameParams) -> WorkspaceEdit 
 
     logger.debug(f"found {len(occurrences)} occurrences to rename.")
     old_identifier = source.get_name_at(position)
-    document_changes: list[TextDocumentEdit | CreateFile | RenameFile | DeleteFile] = []
+    document_changes: list[
+        TextDocumentEdit | CreateFile | RenameFile | DeleteFile
+    ] = []
     client_documents = server.workspace.text_documents
     for source, source_occurences in groupby(occurrences, lambda o: o.source):
         document_uri = f"file://{source.path}"
@@ -192,7 +200,8 @@ async def rename(server: LanguageServer, params: RenameParams) -> WorkspaceEdit 
                         range=Range(
                             start=Position(line=o.row, character=o.column),
                             end=Position(
-                                line=o.row, character=o.column + len(old_identifier)
+                                line=o.row,
+                                character=o.column + len(old_identifier),
                             ),
                         ),
                         new_text=params.new_name,
@@ -213,7 +222,9 @@ def edits_to_text_edits(
     return [
         TextEdit(
             range=Range(
-                start=Position(line=edit.start.row, character=edit.start.column),
+                start=Position(
+                    line=edit.start.row, character=edit.start.column
+                ),
                 end=Position(line=edit.end.row, character=edit.end.column),
             ),
             new_text=edit.text,
@@ -252,7 +263,8 @@ async def code_action(
         )
         extraction_range = params.range
         start = source.position(
-            row=extraction_range.start.line, column=extraction_range.start.character
+            row=extraction_range.start.line,
+            column=extraction_range.start.character,
         )
         end = source.position(
             row=extraction_range.end.line,
@@ -273,9 +285,13 @@ async def code_action(
             for extractor in extractors:
                 actions.append(await extract_code_action(action=extractor))
             if refactor.inside_method:
-                actions.append(await extract_code_action(action=_extract_method))
+                actions.append(
+                    await extract_code_action(action=_extract_method)
+                )
 
-        refactor_code_action = partial(code_action, kind=CodeActionKind.Refactor)
+        refactor_code_action = partial(
+            code_action, kind=CodeActionKind.Refactor
+        )
         refactorings = (
             _slide_statements_down,
             _slide_statements_up,
@@ -316,16 +332,22 @@ async def slide_statements_down(
 
     source_lines = tuple(document.source.split("\n"))
     project_root = server.workspace.root_uri[len("file://") :]
-    source = get_source(uri=document_uri, project_root=project_root, lines=source_lines)
+    source = get_source(
+        uri=document_uri, project_root=project_root, lines=source_lines
+    )
     start = source.position(row=line, column=0)
     end = source.position(row=line, column=0)
     refactor = CodeSelection(text_range=TextRange(start, end))
 
     client_documents = server.workspace.text_documents
     version = (
-        versioned.version if (versioned := client_documents.get(document_uri)) else None
+        versioned.version
+        if (versioned := client_documents.get(document_uri))
+        else None
     )
-    workspace_edit = await _slide_statements_down(refactor, document_uri, version)
+    workspace_edit = await _slide_statements_down(
+        refactor, document_uri, version
+    )
     if workspace_edit is None:
         return
     server.apply_edit(workspace_edit, "breakfast: slide statement")
@@ -341,14 +363,18 @@ async def slide_statements_up(
 
     source_lines = tuple(document.source.split("\n"))
     project_root = server.workspace.root_uri[len("file://") :]
-    source = get_source(uri=document_uri, project_root=project_root, lines=source_lines)
+    source = get_source(
+        uri=document_uri, project_root=project_root, lines=source_lines
+    )
     start = source.position(row=line, column=0)
     end = source.position(row=line, column=0)
     refactor = CodeSelection(text_range=TextRange(start, end))
 
     client_documents = server.workspace.text_documents
     version = (
-        versioned.version if (versioned := client_documents.get(document_uri)) else None
+        versioned.version
+        if (versioned := client_documents.get(document_uri))
+        else None
     )
     workspace_edit = await _slide_statements_up(refactor, document_uri, version)
     if workspace_edit is None:
@@ -365,7 +391,9 @@ async def _extract_function(
     edits = refactor.extract_function(name=f"extracted_function_{timestamp()}")
 
     text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
-    document_changes: list[TextDocumentEdit | CreateFile | RenameFile | DeleteFile] = [
+    document_changes: list[
+        TextDocumentEdit | CreateFile | RenameFile | DeleteFile
+    ] = [
         TextDocumentEdit(
             text_document=OptionalVersionedTextDocumentIdentifier(
                 uri=document_uri, version=version
@@ -385,7 +413,9 @@ async def _extract_method(
     edits = refactor.extract_method(name=f"extracted_method_{timestamp()}")
 
     text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
-    document_changes: list[TextDocumentEdit | CreateFile | RenameFile | DeleteFile] = [
+    document_changes: list[
+        TextDocumentEdit | CreateFile | RenameFile | DeleteFile
+    ] = [
         TextDocumentEdit(
             text_document=OptionalVersionedTextDocumentIdentifier(
                 uri=document_uri, version=version
@@ -407,7 +437,9 @@ async def _extract_variable(
     )
 
     text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
-    document_changes: list[TextDocumentEdit | CreateFile | RenameFile | DeleteFile] = [
+    document_changes: list[
+        TextDocumentEdit | CreateFile | RenameFile | DeleteFile
+    ] = [
         TextDocumentEdit(
             text_document=OptionalVersionedTextDocumentIdentifier(
                 uri=document_uri, version=version
@@ -426,7 +458,9 @@ async def _slide_statements_down(
     """Slide statements down."""
     edits = refactor.slide_statements_down()
     text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
-    document_changes: list[TextDocumentEdit | CreateFile | RenameFile | DeleteFile] = [
+    document_changes: list[
+        TextDocumentEdit | CreateFile | RenameFile | DeleteFile
+    ] = [
         TextDocumentEdit(
             text_document=OptionalVersionedTextDocumentIdentifier(
                 uri=document_uri, version=version
@@ -445,7 +479,9 @@ async def _slide_statements_up(
     """Slide statements up."""
     edits = refactor.slide_statements_up()
     text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
-    document_changes: list[TextDocumentEdit | CreateFile | RenameFile | DeleteFile] = [
+    document_changes: list[
+        TextDocumentEdit | CreateFile | RenameFile | DeleteFile
+    ] = [
         TextDocumentEdit(
             text_document=OptionalVersionedTextDocumentIdentifier(
                 uri=document_uri, version=version
@@ -464,7 +500,9 @@ async def _inline_variable(
     """Inline variable."""
     edits = refactor.inline_variable()
     text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
-    document_changes: list[TextDocumentEdit | CreateFile | RenameFile | DeleteFile] = [
+    document_changes: list[
+        TextDocumentEdit | CreateFile | RenameFile | DeleteFile
+    ] = [
         TextDocumentEdit(
             text_document=OptionalVersionedTextDocumentIdentifier(
                 uri=document_uri, version=version
@@ -483,7 +521,9 @@ async def _inline_call(
     """Inline function/method call."""
     edits = refactor.inline_call("result")
     text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
-    document_changes: list[TextDocumentEdit | CreateFile | RenameFile | DeleteFile] = [
+    document_changes: list[
+        TextDocumentEdit | CreateFile | RenameFile | DeleteFile
+    ] = [
         TextDocumentEdit(
             text_document=OptionalVersionedTextDocumentIdentifier(
                 uri=document_uri, version=version

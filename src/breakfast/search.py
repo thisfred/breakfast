@@ -11,7 +11,11 @@ from breakfast.visitor import generic_visit
 def find_functions(
     node: ast.AST, up_to: Position | None
 ) -> Iterator[ast.FunctionDef | ast.AsyncFunctionDef]:
-    if up_to and hasattr(node, "lineno") and up_to.source.node_position(node) > up_to:
+    if (
+        up_to
+        and hasattr(node, "lineno")
+        and up_to.source.node_position(node) > up_to
+    ):
         return
     yield from generic_visit(find_functions, node, up_to)
 
@@ -29,14 +33,19 @@ def find_function_in_function(
 def find_scopes(
     node: ast.AST, up_to: Position | None
 ) -> Iterator[ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef]:
-    if up_to and hasattr(node, "lineno") and up_to.source.node_position(node) > up_to:
+    if (
+        up_to
+        and hasattr(node, "lineno")
+        and up_to.source.node_position(node) > up_to
+    ):
         return
     yield from generic_visit(find_scopes, node, up_to)
 
 
 @find_scopes.register
 def find_scope_in_function_or_class(
-    node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef, up_to: Position | None
+    node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
+    up_to: Position | None,
 ) -> Iterator[ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef]:
     yield node
     for child in node.body:
@@ -55,7 +64,11 @@ def find_statements_in_expression(node: ast.Expr) -> Iterator[ast.AST]:
 
 @find_statements.register
 def find_statements_in_node_with_body(
-    node: ast.Module | ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef | ast.For,
+    node: ast.Module
+    | ast.FunctionDef
+    | ast.AsyncFunctionDef
+    | ast.ClassDef
+    | ast.For,
 ) -> Iterator[ast.AST]:
     for child in node.body:
         yield child
@@ -81,7 +94,9 @@ def find_other_occurrences(
     ]
 
 
-def is_compatible_with(scope: tuple[str, ...], original_scope: tuple[str, ...]) -> bool:
+def is_compatible_with(
+    scope: tuple[str, ...], original_scope: tuple[str, ...]
+) -> bool:
     return all(scope[i] == s for i, s in enumerate(original_scope))
 
 
@@ -144,7 +159,11 @@ def find_names_in_function(
     node: ast.FunctionDef | ast.AsyncFunctionDef, source: Source
 ) -> Iterator[tuple[str, Position, ast.expr_context]]:
     for arg in node.args.args:
-        yield arg.arg, source.position(arg.lineno - 1, arg.col_offset), ast.Store()
+        yield (
+            arg.arg,
+            source.position(arg.lineno - 1, arg.col_offset),
+            ast.Store(),
+        )
     yield from generic_visit(find_names, node, source)
 
 
@@ -168,7 +187,9 @@ def find_arguments_passed_in_range(
 
 
 @find_arguments_passed_in_range.register
-def find_arguments_in_call(node: ast.Call, text_range: TextRange) -> Iterator[str]:
+def find_arguments_in_call(
+    node: ast.Call, text_range: TextRange
+) -> Iterator[str]:
     for argument in node.args:
         if isinstance(argument, ast.Name):
             yield argument.id

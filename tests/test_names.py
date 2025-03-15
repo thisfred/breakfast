@@ -264,7 +264,9 @@ def test_does_not_rename_random_attributes() -> None:
 
     position = source.position(row=3, column=0)
 
-    assert all_occurrence_positions(position) == [source.position(row=3, column=0)]
+    assert all_occurrence_positions(position) == [
+        source.position(row=3, column=0)
+    ]
 
 
 def test_finds_parameter() -> None:
@@ -294,9 +296,10 @@ def test_finds_function() -> None:
         """
     )
 
-    assert [source.position(1, 4), source.position(3, 9)] == all_occurrence_positions(
-        source.position(1, 4)
-    )
+    assert [
+        source.position(1, 4),
+        source.position(3, 9),
+    ] == all_occurrence_positions(source.position(1, 4))
 
 
 def test_finds_class() -> None:
@@ -309,9 +312,10 @@ def test_finds_class() -> None:
         """
     )
 
-    assert [source.position(1, 6), source.position(4, 11)] == all_occurrence_positions(
-        source.position(1, 6)
-    )
+    assert [
+        source.position(1, 6),
+        source.position(4, 11),
+    ] == all_occurrence_positions(source.position(1, 6))
 
 
 def test_finds_method_name() -> None:
@@ -344,9 +348,10 @@ def test_finds_passed_argument() -> None:
         """
     )
 
-    assert [source.position(1, 0), source.position(4, 7)] == all_occurrence_positions(
-        source.position(1, 0)
-    )
+    assert [
+        source.position(1, 0),
+        source.position(4, 7),
+    ] == all_occurrence_positions(source.position(1, 0))
 
 
 def test_does_not_find_method_of_unrelated_class() -> None:
@@ -397,9 +402,10 @@ def test_finds_definition_from_call() -> None:
         """
     )
 
-    assert [source.position(1, 4), source.position(5, 4)] == all_occurrence_positions(
-        source.position(1, 4)
-    )
+    assert [
+        source.position(1, 4),
+        source.position(5, 4),
+    ] == all_occurrence_positions(source.position(1, 4))
 
 
 def test_considers_self_properties_instance_properties() -> None:
@@ -1086,7 +1092,9 @@ def test_should_rename_annotated_class_property():
     ]
 
 
-@mark.skipif(sys.version_info < (3, 12), reason="requires Python 3.12 or higher")
+@mark.skipif(
+    sys.version_info < (3, 12), reason="requires Python 3.12 or higher"
+)
 def test_should_rename_type_parameters():
     source = make_source(
         """
@@ -1102,7 +1110,9 @@ def test_should_rename_type_parameters():
     ]
 
 
-@mark.skipif(sys.version_info < (3, 12), reason="requires Python 3.12 or higher")
+@mark.skipif(
+    sys.version_info < (3, 12), reason="requires Python 3.12 or higher"
+)
 def test_should_consider_type_vars_local_to_function():
     source = make_source(
         """
@@ -1121,7 +1131,9 @@ def test_should_consider_type_vars_local_to_function():
     ]
 
 
-@mark.skipif(sys.version_info < (3, 12), reason="requires Python 3.12 or higher")
+@mark.skipif(
+    sys.version_info < (3, 12), reason="requires Python 3.12 or higher"
+)
 def test_should_rename_type_parameters_in_class():
     source = make_source(
         """
@@ -1138,7 +1150,9 @@ def test_should_rename_type_parameters_in_class():
     ]
 
 
-@mark.skipif(sys.version_info < (3, 12), reason="requires Python 3.12 or higher")
+@mark.skipif(
+    sys.version_info < (3, 12), reason="requires Python 3.12 or higher"
+)
 def test_should_rename_type_variable_bounds():
     source = make_source(
         """

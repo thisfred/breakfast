@@ -47,7 +47,9 @@ class TextRange(Protocol):
     start: Position
     end: Position
 
-    def __contains__(self, position_or_range: "Position | TextRange") -> bool: ...
+    def __contains__(
+        self, position_or_range: "Position | TextRange"
+    ) -> bool: ...
 
     @property
     def text(self) -> str: ...
@@ -65,7 +67,9 @@ class TextRange(Protocol):
     def enclosing_scopes(
         self,
     ) -> Sequence[
-        tuple[ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef, "TextRange"]
+        tuple[
+            ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef, "TextRange"
+        ]
     ]: ...
 
     def enclosing_nodes_by_type[T: ast.AST](

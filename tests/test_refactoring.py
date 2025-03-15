@@ -1,4 +1,9 @@
-from breakfast.refactoring import CodeSelection, Edit, InlineCall
+from breakfast.refactoring import (
+    CodeSelection,
+    Edit,
+    InlineCall,
+    InlineVariable2,
+)
 from breakfast.source import Source, TextRange
 from tests.conftest import assert_refactors_to, dedent, make_source
 
@@ -1091,6 +1096,75 @@ def test_inline_variable_should_only_inline_after_definition():
     assert all(e.text_range.start > cut_off for e in _edits)
 
 
+def test_inline_variable2_should_not_remove_multi_target_assignment():
+    assert_refactors_to(
+        refactoring=InlineVariable2,
+        target="extracted",
+        occurrence=2,
+        code="""
+        foo = extracted = text_range.text.strip()
+        print(foo)
+        return extracted, assignment
+        """,
+        expected="""
+        foo = text_range.text.strip()
+        print(foo)
+        return text_range.text.strip(), assignment
+        """,
+    )
+
+
+def test_inline_variable2_should_remove_unused_definition():
+    assert_refactors_to(
+        refactoring=InlineVariable2,
+        target="extracted",
+        occurrence=2,
+        code="""
+        extracted = text_range.text.strip()
+        return extracted, assignment
+        """,
+        expected="""
+        return text_range.text.strip(), assignment
+        """,
+    )
+
+
+def test_inline_variable2_should_not_remove_used_definition():
+    assert_refactors_to(
+        refactoring=InlineVariable2,
+        target="extracted",
+        occurrence=3,
+        code="""
+        extracted = text_range.text.strip()
+        print(extracted)
+        return extracted, assignment
+        """,
+        expected="""
+        extracted = text_range.text.strip()
+        print(extracted)
+        return text_range.text.strip(), assignment
+        """,
+    )
+
+
+def test_inline_variable2_should_not_remove_use_after_refactor():
+    assert_refactors_to(
+        refactoring=InlineVariable2,
+        target="extracted",
+        occurrence=2,
+        code="""
+        extracted = text_range.text.strip()
+        print(extracted)
+        return extracted, assignment
+        """,
+        expected="""
+        extracted = text_range.text.strip()
+        print(text_range.text.strip())
+        return extracted, assignment
+        """,
+    )
+
+
 def test_inline_variable_should_inline_twice():
     source = make_source(
         """
@@ -1102,7 +1176,8 @@ def test_inline_variable_should_inline_twice():
     refactor = CodeSelection(TextRange(start, start))
     _, *edits = refactor.inline_variable()
     assert [
-        ((e.start.row, e.start.column), (e.end.row, e.end.column)) for e in edits
+        ((e.start.row, e.start.column), (e.end.row, e.end.column))
+        for e in edits
     ] == [((2, 30), (2, 35)), ((2, 37), (2, 42))]
 
 

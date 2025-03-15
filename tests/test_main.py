@@ -43,13 +43,15 @@ def test_get_module_paths_should_return_python_files(project_root):
 
 def test_get_module_paths_should_return_nested_python_files(project_root):
     assert "subpackage" in {
-        p.parent.name for p in get_module_paths(Path(project_root) / "tests" / "data")
+        p.parent.name
+        for p in get_module_paths(Path(project_root) / "tests" / "data")
     }
 
 
 def test_get_module_paths_should_not_return_text_files(project_root):
     assert "txt" not in {
-        p.suffix for p in get_module_paths(Path(project_root) / "tests" / "data")
+        p.suffix
+        for p in get_module_paths(Path(project_root) / "tests" / "data")
     }
 
 
@@ -57,7 +59,8 @@ def test_get_module_paths_should_not_return_python_files_in_dotted_directories(
     project_root,
 ):
     assert ".ignore" not in {
-        p.parent.name for p in get_module_paths(Path(project_root) / "tests" / "data")
+        p.parent.name
+        for p in get_module_paths(Path(project_root) / "tests" / "data")
     }
     assert "wat.py" not in {
         p.name for p in get_module_paths(Path(project_root) / "tests" / "data")

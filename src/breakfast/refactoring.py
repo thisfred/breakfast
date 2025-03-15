@@ -5,9 +5,19 @@ from textwrap import dedent, indent
 from typing import Protocol
 
 from breakfast import types
-from breakfast.names import all_occurrence_positions, build_graph, find_definition
-from breakfast.scope_graph import ScopeGraph
-from breakfast.search import find_other_occurrences, find_returns, find_statements
+from breakfast.code_generation import unparse
+from breakfast.names import (
+    all_occurrence_positions,
+    all_occurrences,
+    build_graph,
+    find_definition,
+)
+from breakfast.scope_graph import NodeType, ScopeGraph
+from breakfast.search import (
+    find_other_occurrences,
+    find_returns,
+    find_statements,
+)
 from breakfast.source import TextRange
 from breakfast.types import Edit, NotFoundError, Position
 
@@ -21,7 +31,9 @@ class CodeSelection:
     def __init__(self, text_range: types.TextRange):
         self.text_range = text_range
         self.source = self.text_range.source
-        self.scope_graph = build_graph([self.source], follow_redefinitions=False)
+        self.scope_graph = build_graph(
+            [self.source], follow_redefinitions=False
+        )
 
     def extract_variable(self, name: str) -> tuple[Edit, ...]:
         refactoring = ExtractVariable(self, name)
@@ -37,7 +49,9 @@ class CodeSelection:
         if not global_scope_range:
             return False
 
-        in_method = global_scope_range.start.line.text.strip().startswith("class")
+        in_method = global_scope_range.start.line.text.strip().startswith(
+            "class"
+        )
         return in_method
 
     def inline_variable(self) -> tuple[Edit, ...]:
@@ -85,7 +99,9 @@ class CodeSelection:
             start_of_current_scope=start_of_current_scope,
         )
         self_name = "self" if is_method else None
-        arguments = ", ".join(f"{n}={n}" for n in parameter_names if n != self_name)
+        arguments = ", ".join(
+            f"{n}={n}" for n in parameter_names if n != self_name
+        )
         self_prefix = (self_name + ".") if self_name else ""
 
         call = f"{self_prefix}{name}({arguments})"
@@ -110,7 +126,9 @@ class CodeSelection:
                 static_method = ""
                 parameters = ", ".join(parameters_with_self)
             else:
-                static_method = f"{definition_indentation}@staticmethod{NEWLINE}"
+                static_method = (
+                    f"{definition_indentation}@staticmethod{NEWLINE}"
+                )
                 parameters = ", ".join(parameter_names)
         else:
             static_method = ""
@@ -175,7 +193,9 @@ class CodeSelection:
         )
         if return_values:
             return_values_as_string = f'{", ".join(return_values)}'
-            extracted += f"{NEWLINE}{new_indentation}return {return_values_as_string}"
+            extracted += (
+                f"{NEWLINE}{new_indentation}return {return_values_as_string}"
+            )
             assignment_or_return = f"{return_values_as_string} = "
         else:
             # XXX: Pretty sure this is way too simplistic
@@ -184,11 +204,15 @@ class CodeSelection:
         return extracted, assignment_or_return
 
     def slide_statements_down(self) -> tuple[Edit, ...]:
-        refactoring = SlideStatements(self, SlideStatements.find_slide_target_after)
+        refactoring = SlideStatements(
+            self, SlideStatements.find_slide_target_after
+        )
         return refactoring.edits
 
     def slide_statements_up(self) -> tuple[Edit, ...]:
-        refactoring = SlideStatements(self, SlideStatements.find_slide_target_before)
+        refactoring = SlideStatements(
+            self, SlideStatements.find_slide_target_before
+        )
         return refactoring.edits
 
     @property
@@ -207,7 +231,9 @@ class CodeSelection:
         end: Position,
     ) -> list[str]:
         names_modified_in_body = [
-            name for name, _, ctx in names_in_range if isinstance(ctx, ast.Store)
+            name
+            for name, _, ctx in names_in_range
+            if isinstance(ctx, ast.Store)
         ]
         names_used_after = {
             n
@@ -234,7 +260,9 @@ class CodeSelection:
             if name in found:
                 continue
             try:
-                occurrences = all_occurrence_positions(position, graph=self.scope_graph)
+                occurrences = all_occurrence_positions(
+                    position, graph=self.scope_graph
+                )
             except NotFoundError:
                 continue
             for occurrence in occurrences:
@@ -287,7 +315,9 @@ class ExtractVariable:
             return ()
 
         other_occurrences = find_other_occurrences(
-            source_ast=self.source.ast, node=expression, position=self.text_range.start
+            source_ast=self.source.ast,
+            node=expression,
+            position=self.text_range.start,
         )
         other_edits = [
             TextRange(
@@ -331,12 +361,80 @@ class ExtractVariable:
         return parsed.body[0].value
 
 
+class InlineVariable2:
+    def __init__(self, code_selection: CodeSelection):
+        self.text_range = code_selection.text_range
+        self.source = self.text_range.start.source
+        self.scope_graph = code_selection.scope_graph
+
+    @property
+    def edits(self) -> tuple[Edit, ...]:
+        try:
+            occurrences = all_occurrences(
+                self.text_range.start, graph=self.scope_graph
+            )
+        except NotFoundError:
+            logger.exception("Could not find occurrences.")
+            return ()
+
+        last_definition_position = None
+        last_occurrence_position = None
+        for position, occurrence in sorted(
+            (p, o) for p, o in occurrences.items()
+        ):
+            if occurrence.node_type is NodeType.DEFINITION:
+                last_definition_position = position
+            elif position not in self.text_range:
+                last_occurrence_position = position
+
+        if last_definition_position is None:
+            logger.warning("Could not find definition.")
+            return ()
+        assignment = TextRange(
+            last_definition_position, last_definition_position
+        ).enclosing_assignment
+        if assignment is None:
+            return ()
+        definition_node, definition_text_range = assignment
+
+        name = self.source.get_name_at(self.text_range.start)
+        edits: tuple[Edit, ...] = (
+            Edit(
+                TextRange(
+                    self.text_range.start, self.text_range.start + len(name)
+                ),
+                text=unparse(definition_node.value),
+            ),
+        )
+        can_remove_last_definition = (
+            last_occurrence_position is None
+            or last_occurrence_position < last_definition_position
+        )
+        if can_remove_last_definition:
+            if len(definition_node.targets) == 1:
+                delete = Edit(definition_text_range, text="")
+            else:
+                definition_node.targets = [
+                    t
+                    for t in definition_node.targets
+                    if isinstance(t, ast.Name) and t.id != name
+                ]
+                delete = Edit(
+                    definition_text_range, text=unparse(definition_node)
+                )
+
+            edits = (*edits, delete)
+        return edits
+
+
 class InlineVariable:
     def __init__(self, code_selection: CodeSelection):
         self.text_range = code_selection.text_range
         self.source = self.text_range.start.source
         self.scope_graph = code_selection.scope_graph
-        self.enclosing_assignment = code_selection.text_range.enclosing_assignment
+        self.enclosing_assignment = (
+            code_selection.text_range.enclosing_assignment
+        )
 
     @property
     def edits(self) -> tuple[Edit, ...]:
@@ -345,6 +443,7 @@ class InlineVariable:
             return ()
 
         assignment, assignment_range = self.enclosing_assignment
+
         value_range = assignment_range.start.source.node_range(assignment.value)
         if value_range is None:
             logger.warn("Could not determine range.")
@@ -356,7 +455,9 @@ class InlineVariable:
         assignment_value = value_range.text
 
         try:
-            occurrences = all_occurrence_positions(position, graph=self.scope_graph)
+            occurrences = all_occurrence_positions(
+                position, graph=self.scope_graph
+            )
         except NotFoundError:
             logger.warn("Could not determine range.")
             return ()
@@ -546,7 +647,10 @@ class SlideStatements:
 
     @staticmethod
     def find_slide_target_after(selection: CodeSelection) -> Position | None:
-        first, last = selection.text_range.start.line, selection.text_range.end.line
+        first, last = (
+            selection.text_range.start.line,
+            selection.text_range.end.line,
+        )
         lines = TextRange(first.start, last.end)
         names_defined_in_range = lines.definitions
         first_usage_after_range = next(
@@ -574,14 +678,20 @@ class SlideStatements:
 
         first_usage_after_range = enclosing_nodes[index][1].start
 
-        if first_usage_after_range and first_usage_after_range.row > last.row + 1:
+        if (
+            first_usage_after_range
+            and first_usage_after_range.row > last.row + 1
+        ):
             return first_usage_after_range.start_of_line
 
         return None
 
     @staticmethod
     def find_slide_target_before(selection: CodeSelection) -> Position | None:
-        first, last = selection.text_range.start.line, selection.text_range.end.line
+        first, last = (
+            selection.text_range.start.line,
+            selection.text_range.end.line,
+        )
         original_indentation = first.start.indentation
         line = first
         while line.previous and len(line.previous.start.indentation) >= len(

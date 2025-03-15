@@ -46,12 +46,18 @@ def view_graph(graph: ScopeGraph) -> None:
     breakpoint()
 
 
-def render_node(node: ScopeNode, subgraph: Any, scope_graph: ScopeGraph) -> None:
+def render_node(
+    node: ScopeNode, subgraph: Any, scope_graph: ScopeGraph
+) -> None:
     if isinstance(node.action, Pop):
         subgraph.node(
             name=str(node.node_id),
             label=f"↑ {node.action.path}"
-            + (f" {node.position.row}:{node.position.column}" if node.position else "")
+            + (
+                f" {node.position.row}:{node.position.column}"
+                if node.position
+                else ""
+            )
             + (
                 f"{{{','.join(r.__doc__ for r in node.rules if r.__doc__)}}}"
                 if node.rules
@@ -67,7 +73,11 @@ def render_node(node: ScopeNode, subgraph: Any, scope_graph: ScopeGraph) -> None
         subgraph.node(
             name=str(node.node_id),
             label=f"↓ {node.action.path} "
-            + (f" {node.position.row}:{node.position.column}" if node.position else "")
+            + (
+                f" {node.position.row}:{node.position.column}"
+                if node.position
+                else ""
+            )
             + (
                 f"{{{','.join(r.__doc__ for r in node.rules if r.__doc__)}}}"
                 if node.rules

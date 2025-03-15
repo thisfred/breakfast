@@ -167,7 +167,9 @@ def call(node: ast.Call, level: int) -> Iterator[str]:
     yield from with_separators(
         node.args, level, include_final_separator=bool(node.keywords)
     )
-    for keyword, comma in zip(node.keywords, separators(node.keywords), strict=True):
+    for keyword, comma in zip(
+        node.keywords, separators(node.keywords), strict=True
+    ):
         if keyword.arg:
             yield f"{keyword.arg}="
             yield from to_source(keyword.value, level)
@@ -286,6 +288,17 @@ def list_comp(node: ast.ListComp, level: int) -> Iterator[str]:
     yield "["
     yield from render_comprehension(node, level)
     yield "]"
+
+
+@to_source.register
+def dict_comp(node: ast.DictComp, level: int) -> Iterator[str]:
+    print(ast.dump(node))
+    yield "{"
+    yield from to_source(node.key, level)
+    yield ": "
+    yield from to_source(node.value, level)
+    yield from render_generators(node.generators, level)
+    yield "}"
 
 
 @to_source.register
@@ -469,7 +482,9 @@ def match_class(node: ast.MatchClass, level: int) -> Iterator[str]:
 
 @to_source.register
 def joined_str(node: ast.JoinedStr, level: int) -> Iterator[str]:
-    strings = [part for value in node.values for part in to_source(value, level)]
+    strings = [
+        part for value in node.values for part in to_source(value, level)
+    ]
     f_string = any(s.startswith('f"') for s in strings)
     yield 'f"' if f_string else '"'
     for string in strings:
@@ -642,7 +657,9 @@ def render_keyword_only_args(node: ast.arguments, level: int) -> Iterator[str]:
         yield comma
 
 
-def render_annotation(node: ast.arg | ast.AnnAssign, level: int) -> Iterator[str]:
+def render_annotation(
+    node: ast.arg | ast.AnnAssign, level: int
+) -> Iterator[str]:
     if node.annotation:
         yield ": "
         yield from to_source(node.annotation, level)
@@ -657,7 +674,9 @@ def render_returns(
     yield from to_source(node.returns, level)
 
 
-def render_decorators(decorators: Iterable[ast.AST], level: int) -> Iterator[str]:
+def render_decorators(
+    decorators: Iterable[ast.AST], level: int
+) -> Iterator[str]:
     for decorator in decorators:
         yield start_line("@ ", level)
         yield from to_source(decorator, level)
@@ -667,7 +686,13 @@ def render_comprehension(
     node: ast.GeneratorExp | ast.ListComp | ast.SetComp, level: int
 ) -> Iterator[str]:
     yield from to_source(node.elt, level)
-    for generator in node.generators:
+    yield from render_generators(node.generators, level)
+
+
+def render_generators(
+    generators: list[ast.comprehension], level: int
+) -> Iterator[str]:
+    for generator in generators:
         yield " for "
         yield from to_source(generator.target, level)
         yield " in "
@@ -688,14 +713,18 @@ def with_separators(
     separator: str = ", ",
 ) -> Iterator[str]:
     for node, comma in zip(
-        nodes, separators(nodes, include_final_separator, separator), strict=True
+        nodes,
+        separators(nodes, include_final_separator, separator),
+        strict=True,
     ):
         yield from to_source(node, level)
         yield comma
 
 
 def separators[T](
-    sequence: Sequence[T], include_final_comma: bool = False, separator: str = ", "
+    sequence: Sequence[T],
+    include_final_comma: bool = False,
+    separator: str = ", ",
 ) -> tuple[str, ...]:
     if not sequence:
         return ()

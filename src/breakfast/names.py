@@ -41,20 +41,45 @@ def all_occurrence_positions(
     debug: bool = False,
     graph: ScopeGraph | None = None,
 ) -> list[Position]:
+    return sorted(
+        (
+            p
+            for p in all_occurrences(
+                position,
+                sources=sources,
+                in_reverse_order=in_reverse_order,
+                debug=debug,
+                graph=graph,
+            )
+        ),
+        reverse=in_reverse_order,
+    )
+
+
+def all_occurrences(
+    position: Position,
+    *,
+    sources: Iterable[Source] | None = None,
+    in_reverse_order: bool = False,
+    debug: bool = False,
+    graph: ScopeGraph | None = None,
+) -> dict[Position, ScopeNode]:
     graph = graph or build_graph(sources or [position.source])
     if debug:  # pragma: nocover
         from breakfast.scope_graph.visualization import view_graph
 
         view_graph(graph)
 
-    found_definition, definitions = find_definitions(graph=graph, position=position)
+    found_definition, definitions = find_definitions(
+        graph=graph, position=position
+    )
 
     if not found_definition.position:
-        raise AssertionError("Should have found at least the original position.")
+        raise AssertionError(
+            "Should have found at least the original position."
+        )
 
-    return sorted(
-        consolidate_occurrences(definitions, found_definition), reverse=in_reverse_order
-    )
+    return consolidate_occurrences(definitions, found_definition)
 
 
 def find_definitions(
@@ -103,16 +128,16 @@ def find_definition(graph: ScopeGraph, position: Position) -> ScopeNode | None:
 
 def consolidate_occurrences(
     definitions: dict[ScopeNode, set[ScopeNode]], found_definition: ScopeNode
-) -> set[Position]:
-    groups: list[set[Position]] = []
-    found_group: set[Position] = set()
+) -> dict[Position, ScopeNode]:
+    groups: list[dict[Position, ScopeNode]] = []
+    found_group: dict[Position, ScopeNode] = {}
     for definition, occurrences in definitions.items():
-        positions = {o.position for o in occurrences if o.position}
+        positions = {o.position: o for o in occurrences if o.position}
         if definition.position:
-            positions.add(definition.position)
+            positions[definition.position] = definition
         for group in groups:
-            if positions & group:
-                group |= positions
+            if positions.keys() & group.keys():
+                group.update(positions)
                 if found_definition.position in group:
                     found_group = group
                 break
@@ -173,7 +198,10 @@ def visit_module(
         found = None
         for _, other_id in graph.edges[current.node_id]:
             other_node = graph.nodes[other_id]
-            if isinstance(other_node.action, Pop) and other_node.action.path == part:
+            if (
+                isinstance(other_node.action, Pop)
+                and other_node.action.path == part
+            ):
                 found = other_node
                 break
         if found:
@@ -181,7 +209,10 @@ def visit_module(
             found = None
             for _, other_id in graph.edges[current.node_id]:
                 dot_node = graph.nodes[other_id]
-                if isinstance(dot_node.action, Pop) and dot_node.action.path == ".":
+                if (
+                    isinstance(dot_node.action, Pop)
+                    and dot_node.action.path == "."
+                ):
                     found = dot_node
                     break
             if found:
@@ -243,7 +274,9 @@ def visit_name(
 
     else:
         scopes = [
-            graph.add_scope(name=name, position=position, action=Push(name), ast=node)
+            graph.add_scope(
+                name=name, position=position, action=Push(name), ast=node
+            )
         ]
 
     for scope in scopes:
@@ -379,23 +412,31 @@ def visit_attribute(
     previous_fragment = None
     for name, name_position in zip(names, positions[:-1], strict=True):
         fragment = graph.connect(
-            graph.add_scope(name=name, position=name_position, action=Pop(name)),
+            graph.add_scope(
+                name=name, position=name_position, action=Pop(name)
+            ),
             graph.add_scope(action=Pop(".")),
             same_rank=True,
         )
         if previous_fragment:
-            fragment = graph.connect(previous_fragment, fragment, same_rank=True)
+            fragment = graph.connect(
+                previous_fragment, fragment, same_rank=True
+            )
         previous_fragment = fragment
 
     fragment = graph.connect(
         fragment,
-        graph.add_scope(action=Pop(node.attr), position=position, same_rank=True),
+        graph.add_scope(
+            action=Pop(node.attr), position=position, same_rank=True
+        ),
     )
     yield fragment
 
     # XXX: hate this
     if len(names) == 1 and state.instance_scope and names[0] == state.self:
-        add_instance_property(graph, state, node.attr, position, state.instance_scope)
+        add_instance_property(
+            graph, state, node.attr, position, state.instance_scope
+        )
 
 
 def add_instance_property(
@@ -540,7 +581,11 @@ def visit_function_definition(
 ) -> Iterator[Fragment]:
     yield from visit_all(node.decorator_list, source, graph, state)
     name = node.name
-    offset = ASYNC_DEF_OFFSET if isinstance(node, ast.AsyncFunctionDef) else DEF_OFFSET
+    offset = (
+        ASYNC_DEF_OFFSET
+        if isinstance(node, ast.AsyncFunctionDef)
+        else DEF_OFFSET
+    )
     position = source.node_position(node) + offset
     in_scope = out_scope = graph.add_scope()
 
@@ -560,7 +605,8 @@ def visit_function_definition(
     )
 
     current_scope = graph.add_scope(
-        link_to=state.scope_hierarchy[-1] or graph.module_roots[source.module_name],
+        link_to=state.scope_hierarchy[-1]
+        or graph.module_roots[source.module_name],
         to_enclosing_scope=True,
     )
     parent_scope = current_scope
@@ -573,7 +619,9 @@ def visit_function_definition(
     for fragment in visit_type_annotation(node.returns, source, graph, state):
         if not found:
             found = True
-            graph.add_edge(function_definition.exit, fragment.entry, same_rank=True)
+            graph.add_edge(
+                function_definition.exit, fragment.entry, same_rank=True
+            )
 
         yield fragment
 
@@ -605,10 +653,14 @@ def visit_function_definition(
             ast=arg,
         )
         found = False
-        for fragment in visit_type_annotation(arg.annotation, source, graph, state):
+        for fragment in visit_type_annotation(
+            arg.annotation, source, graph, state
+        ):
             if not found:
                 found = True
-                graph.add_edge(arg_definition.exit, fragment.entry, same_rank=True)
+                graph.add_edge(
+                    arg_definition.exit, fragment.entry, same_rank=True
+                )
             yield fragment
 
         if i == 0 and is_method and state.class_name:
@@ -631,7 +683,9 @@ def visit_function_definition(
 
     with state.method(self_name=self_name):
         with state.scope(function_bottom):
-            current_scope = process_body(node.body, source, graph, state, current_scope)
+            current_scope = process_body(
+                node.body, source, graph, state, current_scope
+            )
     graph.add_edge(function_bottom, current_scope)
     yield Gadget([in_scope, out_scope])
 
@@ -642,7 +696,9 @@ def visit_type_annotation(
     if not annotation:
         return
 
-    if isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
+    if isinstance(annotation, ast.Constant) and isinstance(
+        annotation.value, str
+    ):
         annotation_position = source.node_position(annotation)
         yield from visit_all(
             # XXX: parse always returns a module node, which we want to skip here,
@@ -690,13 +746,17 @@ def process_body(
 
 def is_static_method(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     return any(
-        n.id == "staticmethod" for n in node.decorator_list if isinstance(n, ast.Name)
+        n.id == "staticmethod"
+        for n in node.decorator_list
+        if isinstance(n, ast.Name)
     )
 
 
 def is_class_method(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     return any(
-        n.id == "classmethod" for n in node.decorator_list if isinstance(n, ast.Name)
+        n.id == "classmethod"
+        for n in node.decorator_list
+        if isinstance(n, ast.Name)
     )
 
 
@@ -770,11 +830,15 @@ def visit_class_definition(
     yield Gadget([original_scope])
 
 
-def _get_relative_module_path(node: ast.ImportFrom, state: State) -> Iterable[str]:
+def _get_relative_module_path(
+    node: ast.ImportFrom, state: State
+) -> Iterable[str]:
     if node.level == 0:
         return
 
-    module_path = tuple(state.package_path[: -node.level]) if state.package_path else ()
+    module_path = (
+        tuple(state.package_path[: -node.level]) if state.package_path else ()
+    )
 
     for p in module_path:
         yield p
@@ -918,7 +982,8 @@ def visit_nonlocal(
             ast=node,
         )
         graph.add_edge(
-            parent, state.scope_hierarchy[-2] or graph.module_roots[source.module_name]
+            parent,
+            state.scope_hierarchy[-2] or graph.module_roots[source.module_name],
         )
 
     yield Gadget([current_scope])
@@ -935,7 +1000,9 @@ def visit_list_comprehension(
 def visit_dictionary_comprehension(
     node: ast.DictComp, source: Source, graph: ScopeGraph, state: State
 ) -> Iterator[Fragment]:
-    yield from visit_comprehension(node, source, graph, state, node.key, node.value)
+    yield from visit_comprehension(
+        node, source, graph, state, node.key, node.value
+    )
 
 
 @visit.register
@@ -1016,7 +1083,11 @@ def visit_type_var(
     position = source.node_position(node)
     name = node.name
     scope = graph.add_scope(
-        name=name, position=position, action=Pop(name), is_definition=True, ast=node
+        name=name,
+        position=position,
+        action=Pop(name),
+        is_definition=True,
+        ast=node,
     )
     if node.bound:
         yield from visit(node.bound, source, graph, state)
@@ -1072,7 +1143,9 @@ def build_graph(
     graph = ScopeGraph()
     configuration = Configuration(follow_redefinitions=follow_redefinitions)
     state = State(
-        scope_hierarchy=[], inheritance_hierarchy=[], configuration=configuration
+        scope_hierarchy=[],
+        inheritance_hierarchy=[],
+        configuration=configuration,
     )
 
     for source in sources:
