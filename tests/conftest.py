@@ -76,7 +76,7 @@ def range_for(
 ) -> types.TextRange:
     found = 0
     for row, line in enumerate(source.lines):
-        for match in re.finditer(needle, line.text):
+        for match in re.finditer(rf"\b{needle}\b", line.text):
             found += 1
             if found == occurrence:
                 return TextRange(

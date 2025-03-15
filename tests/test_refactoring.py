@@ -868,18 +868,18 @@ def test_inline_call_should_extract_body_before_assignment():
 def test_inline_call_should_substitute_parameters():
     assert_refactors_to(
         refactoring=InlineCall,
-        target="f1",
+        target="f",
         occurrence=2,
         code="""
-        def f1(c):
+        def f(c):
             c += 1
             return c
 
         a = 2
-        b = f1(a)
+        b = f(a)
         """,
         expected="""
-        def f1(c):
+        def f(c):
             c += 1
             return c
 
@@ -914,18 +914,18 @@ def test_inline_call_should_substitute_parameters_in_attribute():
 def test_inline_call_should_substitute_keyword_arguments():
     assert_refactors_to(
         refactoring=InlineCall,
-        target="f1",
+        target="f",
         occurrence=2,
         code="""
-        def f1(c):
+        def f(c):
             c += 1
             return c
 
         a = 2
-        b = f1(c=a)
+        b = f(c=a)
         """,
         expected="""
-        def f1(c):
+        def f(c):
             c += 1
             return c
 

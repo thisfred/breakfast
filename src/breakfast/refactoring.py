@@ -394,6 +394,7 @@ class InlineVariable2:
             last_definition_position, last_definition_position
         ).enclosing_assignment
         if assignment is None:
+            logger.warning("Could not find definition.")
             return ()
         definition_node, definition_text_range = assignment
 
