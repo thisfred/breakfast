@@ -213,7 +213,6 @@ class TextRange:
             ]
         ]
 
-        print(text)
         for substitution in sorted(substitutions, reverse=True):
             if substitution.text_range.end < self.start:
                 continue
@@ -240,7 +239,6 @@ class TextRange:
                     substitution.text_range.end.column :
                 ]
                 text[row_index + 1 : row_index + size] = []
-        print(text)
         return text
 
     def replace(self, new_text: str) -> types.Edit:
