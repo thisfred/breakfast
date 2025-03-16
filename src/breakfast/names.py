@@ -6,10 +6,10 @@ try:
 except ImportError:  # pragma: nocover
     TypeVar = None  # type: ignore[assignment,misc]
 from collections import defaultdict
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from functools import singledispatch
-from typing import Protocol
+from typing import Protocol, TypeGuard
 
 from breakfast.scope_graph import (
     Configuration,
@@ -37,8 +37,12 @@ ASYNC_DEF_OFFSET = 10  # len('async def ')
 class Occurrence(Protocol):
     name: str
     position: Position
-    ast: ast.AST
+    ast: ast.AST | None
     node_type: NodeType
+
+
+def is_occurrence(node: ScopeNode) -> TypeGuard[Occurrence]:
+    return node.position is not None and node.name is not None
 
 
 def all_occurrence_positions(
@@ -51,8 +55,8 @@ def all_occurrence_positions(
 ) -> list[Position]:
     return sorted(
         (
-            p
-            for p in all_occurrences(
+            o.position
+            for o in all_occurrences(
                 position,
                 sources=sources,
                 debug=debug,
@@ -69,7 +73,7 @@ def all_occurrences(
     sources: Iterable[Source] | None = None,
     debug: bool = False,
     graph: ScopeGraph | None = None,
-) -> dict[Position, ScopeNode]:
+) -> Sequence[Occurrence]:
     graph = graph or build_graph(sources or [position.source])
     if debug:  # pragma: nocover
         from breakfast.scope_graph.visualization import view_graph
@@ -85,7 +89,11 @@ def all_occurrences(
             "Should have found at least the original position."
         )
 
-    return consolidate_occurrences(definitions, found_definition)
+    consolidated = consolidate_occurrences(
+        definitions, found_definition
+    ).items()
+    print(repr(consolidated))
+    return [o for _, o in consolidated if is_occurrence(o)]
 
 
 def find_definitions(

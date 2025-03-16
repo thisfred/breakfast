@@ -370,17 +370,15 @@ class InlineVariable:
     @property
     def edits(self) -> tuple[Edit, ...]:
         cursor = self.text_range.start
-        occurrences = sorted(
-            all_occurrences(cursor, graph=self.scope_graph).items()
-        )
+        occurrences = all_occurrences(cursor, graph=self.scope_graph)
 
         last_definition_position = None
         last_occurrence_position = None
-        for position, occurrence in occurrences:
+        for occurrence in occurrences:
             if occurrence.node_type is NodeType.DEFINITION:
-                last_definition_position = position
-            elif position not in self.text_range:
-                last_occurrence_position = position
+                last_definition_position = occurrence.position
+            elif occurrence.position not in self.text_range:
+                last_occurrence_position = occurrence.position
 
         if last_definition_position is None:
             logger.warning("Could not find definition.")
@@ -394,16 +392,16 @@ class InlineVariable:
         name = self.source.get_name_at(cursor)
         if cursor in definition_text_range:
             after_cursor = (
-                (p, o)
-                for p, o in dropwhile(lambda x: x[0] <= cursor, occurrences)
+                o
+                for o in dropwhile(lambda x: x.position <= cursor, occurrences)
             )
             name_ranges: tuple[types.TextRange, ...] = tuple(
-                p.to(p + len(name))
-                for p, o in takewhile(
-                    lambda x: x[1].node_type is not NodeType.DEFINITION,
+                o.position.to(o.position + len(name))
+                for o in takewhile(
+                    lambda x: x.node_type is not NodeType.DEFINITION,
                     after_cursor,
                 )
-                if p > cursor
+                if o.position > cursor
             )
             can_remove_last_definition = True
         else:
