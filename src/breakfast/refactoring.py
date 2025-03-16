@@ -1,6 +1,7 @@
 import ast
 import logging
 from collections.abc import Callable, Iterable, Iterator, Sequence
+from itertools import dropwhile, takewhile
 from textwrap import dedent, indent
 from typing import Protocol
 
@@ -18,7 +19,6 @@ from breakfast.search import (
     find_returns,
     find_statements,
 )
-from breakfast.source import TextRange
 from breakfast.types import Edit, NotFoundError, Position
 
 logger = logging.getLogger(__name__)
@@ -139,10 +139,10 @@ class CodeSelection:
         )
         return (
             Edit(
-                TextRange(insert_position, insert_position),
+                insert_position.as_range,
                 text=f"{NEWLINE}{static_method}{definition_indentation}def {name}({parameters}):{NEWLINE}{extracted}{NEWLINE}",
             ),
-            Edit(TextRange(start, end), text=replace_text),
+            Edit(start.to(end), text=replace_text),
         )
 
     def get_parameter_names(
@@ -223,7 +223,7 @@ class CodeSelection:
             start = start.start_of_line
             end = end.line.next.start if end.line.next else end
 
-        return TextRange(start, end)
+        return start.to(end)
 
     def get_return_values(
         self,
@@ -320,9 +320,9 @@ class ExtractVariable:
             position=self.text_range.start,
         )
         other_edits = [
-            TextRange(
-                (start := self.source.node_position(o)), start + len(extracted)
-            ).replace(self.name)
+            (start := self.source.node_position(o))
+            .to(start + len(extracted))
+            .replace(self.name)
             for o in other_occurrences
         ]
         edits = sorted(
@@ -361,7 +361,7 @@ class ExtractVariable:
         return parsed.body[0].value
 
 
-class InlineVariable2:
+class InlineVariable:
     def __init__(self, code_selection: CodeSelection):
         self.text_range = code_selection.text_range
         self.source = self.text_range.start.source
@@ -369,19 +369,14 @@ class InlineVariable2:
 
     @property
     def edits(self) -> tuple[Edit, ...]:
-        try:
-            occurrences = all_occurrences(
-                self.text_range.start, graph=self.scope_graph
-            )
-        except NotFoundError:
-            logger.exception("Could not find occurrences.")
-            return ()
+        cursor = self.text_range.start
+        occurrences = sorted(
+            all_occurrences(cursor, graph=self.scope_graph).items()
+        )
 
         last_definition_position = None
         last_occurrence_position = None
-        for position, occurrence in sorted(
-            (p, o) for p, o in occurrences.items()
-        ):
+        for position, occurrence in occurrences:
             if occurrence.node_type is NodeType.DEFINITION:
                 last_definition_position = position
             elif position not in self.text_range:
@@ -390,27 +385,39 @@ class InlineVariable2:
         if last_definition_position is None:
             logger.warning("Could not find definition.")
             return ()
-        assignment = TextRange(
-            last_definition_position, last_definition_position
-        ).enclosing_assignment
+        assignment = last_definition_position.as_range.enclosing_assignment
         if assignment is None:
             logger.warning("Could not find definition.")
             return ()
         definition_node, definition_text_range = assignment
 
-        name = self.source.get_name_at(self.text_range.start)
-        edits: tuple[Edit, ...] = (
-            Edit(
-                TextRange(
-                    self.text_range.start, self.text_range.start + len(name)
-                ),
-                text=unparse(definition_node.value),
-            ),
+        name = self.source.get_name_at(cursor)
+        if cursor in definition_text_range:
+            after_cursor = (
+                (p, o)
+                for p, o in dropwhile(lambda x: x[0] <= cursor, occurrences)
+            )
+            name_ranges: tuple[types.TextRange, ...] = tuple(
+                p.to(p + len(name))
+                for p, o in takewhile(
+                    lambda x: x[1].node_type is not NodeType.DEFINITION,
+                    after_cursor,
+                )
+                if p > cursor
+            )
+            can_remove_last_definition = True
+        else:
+            name_ranges = (cursor.to(cursor + len(name)),)
+            can_remove_last_definition = (
+                last_occurrence_position is None
+                or last_occurrence_position < last_definition_position
+            )
+
+        edits: tuple[Edit, ...] = tuple(
+            Edit(name_range, text=unparse(definition_node.value))
+            for name_range in name_ranges
         )
-        can_remove_last_definition = (
-            last_occurrence_position is None
-            or last_occurrence_position < last_definition_position
-        )
+
         if can_remove_last_definition:
             if len(definition_node.targets) == 1:
                 delete = Edit(definition_text_range, text="")
@@ -425,64 +432,8 @@ class InlineVariable2:
                 )
 
             edits = (*edits, delete)
+
         return edits
-
-
-class InlineVariable:
-    def __init__(self, code_selection: CodeSelection):
-        self.text_range = code_selection.text_range
-        self.source = self.text_range.start.source
-        self.scope_graph = code_selection.scope_graph
-        self.enclosing_assignment = (
-            code_selection.text_range.enclosing_assignment
-        )
-
-    @property
-    def edits(self) -> tuple[Edit, ...]:
-        if self.enclosing_assignment is None:
-            logger.warn("No enclosing assignment.")
-            return ()
-
-        assignment, assignment_range = self.enclosing_assignment
-
-        value_range = assignment_range.start.source.node_range(assignment.value)
-        if value_range is None:
-            logger.warn("Could not determine range.")
-            return ()
-
-        position = assignment_range.start
-
-        name = self.source.get_name_at(position)
-        assignment_value = value_range.text
-
-        try:
-            occurrences = all_occurrence_positions(
-                position, graph=self.scope_graph
-            )
-        except NotFoundError:
-            logger.warn("Could not determine range.")
-            return ()
-
-        edits = (
-            Edit(
-                TextRange(occurrence, occurrence + len(name)),
-                text=assignment_value,
-            )
-            for occurrence in occurrences
-            if occurrence != position
-        )
-
-        delete = Edit(
-            TextRange(
-                value_range.start.line.start,
-                value_range.end.line.next.start
-                if value_range.end.line.next
-                else position.line.end,
-            ),
-            text="",
-        )
-
-        return (delete, *edits) if edits else ()
 
 
 class InlineCall:
@@ -551,9 +502,7 @@ class InlineCall:
                 ),
             )
 
-        insert_range = TextRange(
-            self.text_range.start.line.start, self.text_range.start.line.start
-        )
+        insert_range = self.text_range.start.line.start.as_range
 
         return (
             Edit(
@@ -612,7 +561,7 @@ class InlineCall:
         for position in all_occurrence_positions(arg_position):
             if position not in body_range:
                 continue
-            yield Edit(TextRange(position, position + len(def_arg.arg)), value)
+            yield Edit(position.to(position + len(def_arg.arg)), value)
 
 
 def get_return_value(new_lines: Sequence[str]) -> str:
@@ -641,8 +590,8 @@ class SlideStatements:
 
         first, last = self.text_range.start.line, self.text_range.end.line
         insert = target.insert(first.start.through(last.end).text + NEWLINE)
-        delete = TextRange(
-            first.start, last.next.start if last.next else last.end
+        delete = first.start.to(
+            last.next.start if last.next else last.end
         ).replace("")
         return (insert, delete)
 
@@ -652,7 +601,7 @@ class SlideStatements:
             selection.text_range.start.line,
             selection.text_range.end.line,
         )
-        lines = TextRange(first.start, last.end)
+        lines = first.start.to(last.end)
         names_defined_in_range = lines.definitions
         first_usage_after_range = next(
             (
@@ -666,9 +615,7 @@ class SlideStatements:
         if not first_usage_after_range:
             return None
 
-        enclosing_nodes = TextRange(
-            first_usage_after_range, first_usage_after_range
-        ).enclosing_nodes
+        enclosing_nodes = first_usage_after_range.as_range.enclosing_nodes
         origin_nodes = lines.enclosing_nodes
         index = 0
         while (
@@ -702,11 +649,11 @@ class SlideStatements:
         if line == first:
             return None
 
-        scope_before = TextRange(
-            line.start, first.previous.end if first.previous else first.start
+        scope_before = line.start.to(
+            first.previous.end if first.previous else first.start
         )
 
-        text_range = TextRange(first.start, last.end)
+        text_range = first.start.to(last.end)
         names_in_range = {n for n, _, _ in text_range.names}
         target = max(
             [

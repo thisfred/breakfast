@@ -2,7 +2,7 @@ from breakfast.refactoring import (
     CodeSelection,
     Edit,
     InlineCall,
-    InlineVariable2,
+    InlineVariable,
 )
 from breakfast.source import Source, TextRange
 from tests.conftest import assert_refactors_to, dedent, make_source
@@ -958,39 +958,35 @@ def test_inline_call_should_indent_in_new_context():
 
 
 def test_inline_variable_should_replace_variable_with_expression():
-    source = make_source(
-        """
+    assert_refactors_to(
+        refactoring=InlineVariable,
+        target="b",
+        occurrence=1,
+        code="""
         b = f()
         print(b)
-        """
+        """,
+        expected="""
+        print(f())
+        """,
     )
 
-    start = source.position(1, 0)
-    refactor = CodeSelection(TextRange(start, start))
-    *_, edit = refactor.inline_variable()
 
-    assert "f()" == edit.text
-    assert edit.start == source.position(2, 6)
-    assert edit.end == source.position(2, 7)
-
-
-def test_inline_variable_should_delete_definition():
-    source = make_source(
-        """
+def test_inline_variable_should_delete_multiline_definition():
+    assert_refactors_to(
+        refactoring=InlineVariable,
+        target="b",
+        occurrence=1,
+        code="""
         b = f(
             2
         )
         print(b)
-        """
+        """,
+        expected="""
+        print(f(2))
+        """,
     )
-
-    start = source.position(1, 0)
-    refactor = CodeSelection(TextRange(start, start))
-    delete, *_edit = refactor.inline_variable()
-
-    assert "" == delete.text
-    assert delete.start == source.position(1, 0)
-    assert delete.end == source.position(4, 0)
 
 
 def test_extract_function_should_pass_variables_used_as_arguments_on_as_parameters():
@@ -1079,26 +1075,29 @@ def test_extract_variable_should_extract_within_for_loop():
 
 
 def test_inline_variable_should_only_inline_after_definition():
-    source = make_source(
-        """
+    assert_refactors_to(
+        refactoring=InlineVariable,
+        target="extracted",
+        occurrence=2,
+        code="""
         extracted = text_range.text.strip()
         extracted = f"{new_indentation}return {extracted}"
         assignment = ""
 
         return extracted, assignment
-        """
+        """,
+        expected="""
+        extracted = text_range.text.strip()
+        assignment = ""
+
+        return f"{new_indentation}return {extracted}", assignment
+        """,
     )
 
-    start = source.position(2, 5)
-    refactor = CodeSelection(TextRange(start, start))
-    insert, *_edits = refactor.inline_variable()
-    cut_off = source.position(3, 0)
-    assert all(e.text_range.start > cut_off for e in _edits)
 
-
-def test_inline_variable2_should_not_remove_multi_target_assignment():
+def test_inline_variable_should_not_remove_multi_target_assignment():
     assert_refactors_to(
-        refactoring=InlineVariable2,
+        refactoring=InlineVariable,
         target="extracted",
         occurrence=2,
         code="""
@@ -1114,9 +1113,9 @@ def test_inline_variable2_should_not_remove_multi_target_assignment():
     )
 
 
-def test_inline_variable2_should_remove_unused_definition():
+def test_inline_variable_should_remove_unused_definition():
     assert_refactors_to(
-        refactoring=InlineVariable2,
+        refactoring=InlineVariable,
         target="extracted",
         occurrence=2,
         code="""
@@ -1129,9 +1128,9 @@ def test_inline_variable2_should_remove_unused_definition():
     )
 
 
-def test_inline_variable2_should_not_remove_used_definition():
+def test_inline_variable_should_not_remove_used_definition():
     assert_refactors_to(
-        refactoring=InlineVariable2,
+        refactoring=InlineVariable,
         target="extracted",
         occurrence=3,
         code="""
@@ -1147,9 +1146,9 @@ def test_inline_variable2_should_not_remove_used_definition():
     )
 
 
-def test_inline_variable2_should_not_remove_use_after_refactor():
+def test_inline_variable_should_not_remove_use_after_refactor():
     assert_refactors_to(
-        refactoring=InlineVariable2,
+        refactoring=InlineVariable,
         target="extracted",
         occurrence=2,
         code="""
@@ -1165,20 +1164,51 @@ def test_inline_variable2_should_not_remove_use_after_refactor():
     )
 
 
-def test_inline_variable_should_inline_twice():
-    source = make_source(
-        """
+def test_inline_variable_should_inline_twice_from_definition():
+    assert_refactors_to(
+        refactoring=InlineVariable,
+        target="start",
+        occurrence=1,
+        code="""
         start = source.position(1, 0)
         refactor = Refactor(TextRange(start, start))
-        """
+        """,
+        expected="""
+        refactor = Refactor(TextRange(source.position(1, 0), source.position(1, 0)))
+        """,
     )
-    start = source.position(1, 3)
-    refactor = CodeSelection(TextRange(start, start))
-    _, *edits = refactor.inline_variable()
-    assert [
-        ((e.start.row, e.start.column), (e.end.row, e.end.column))
-        for e in edits
-    ] == [((2, 30), (2, 35)), ((2, 37), (2, 42))]
+
+
+def test_inline_variable_should_inline_once_from_first_usage():
+    assert_refactors_to(
+        refactoring=InlineVariable,
+        target="start",
+        occurrence=2,
+        code="""
+        start = source.position(1, 0)
+        refactor = Refactor(TextRange(start, start))
+        """,
+        expected="""
+        start = source.position(1, 0)
+        refactor = Refactor(TextRange(source.position(1, 0), start))
+        """,
+    )
+
+
+def test_inline_variable_should_inline_once_from_second_usage():
+    assert_refactors_to(
+        refactoring=InlineVariable,
+        target="start",
+        occurrence=3,
+        code="""
+        start = source.position(1, 0)
+        refactor = Refactor(TextRange(start, start))
+        """,
+        expected="""
+        start = source.position(1, 0)
+        refactor = Refactor(TextRange(start, source.position(1, 0)))
+        """,
+    )
 
 
 def test_inline_call_should_inline_method_call():

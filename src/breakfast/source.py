@@ -94,12 +94,6 @@ class Position:
         )
         return TextRange(start_position, end_position)
 
-    def through(self, end: types.Position) -> types.TextRange:
-        return TextRange(self, end + 1)
-
-    def _add_offset(self, offset: int) -> types.Position:
-        return replace(self, column=self.column + offset)
-
     @property
     def indentation(self) -> str:
         text = self.source.lines[self.row].text
@@ -110,6 +104,19 @@ class Position:
             return ""
 
         return groups[0]
+
+    @property
+    def as_range(self) -> types.TextRange:
+        return TextRange(self, self)
+
+    def to(self, end: types.Position) -> types.TextRange:
+        return TextRange(self, end)
+
+    def through(self, end: types.Position) -> types.TextRange:
+        return TextRange(self, end + 1)
+
+    def _add_offset(self, offset: int) -> types.Position:
+        return replace(self, column=self.column + offset)
 
     def insert(self, text: str) -> types.Edit:
         return types.Edit(TextRange(start=self, end=self), text=text)
@@ -205,6 +212,8 @@ class TextRange:
                 self.start.row : self.end.row + 1
             ]
         ]
+
+        print(text)
         for substitution in sorted(substitutions, reverse=True):
             if substitution.text_range.end < self.start:
                 continue
@@ -215,8 +224,23 @@ class TextRange:
                 text[row_index][: substitution.text_range.start.column]
                 + substitution.text
                 + text[row_index][substitution.text_range.end.column :]
+                if substitution.text_range.start.row
+                == substitution.text_range.end.row
+                else ""
             )
-
+            if (
+                substitution.text_range.end.row
+                > substitution.text_range.start.row
+            ):
+                size = (
+                    substitution.text_range.end.row
+                    - substitution.text_range.start.row
+                )
+                text[row_index + size] = text[row_index + size][
+                    substitution.text_range.end.column :
+                ]
+                text[row_index + 1 : row_index + size] = []
+        print(text)
         return text
 
     def replace(self, new_text: str) -> types.Edit:
