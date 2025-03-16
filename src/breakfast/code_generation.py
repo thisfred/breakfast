@@ -28,11 +28,23 @@ BINARY_OPERATORS = {
     ast.Add: "+",
     ast.BitAnd: "&",
     ast.BitOr: "|",
+    ast.BitXor: "^",
     ast.Div: "/",
+    ast.FloorDiv: "//",
+    ast.LShift: "<<",
+    ast.MatMult: "@",
+    ast.Mod: "%",
     ast.Mult: "*",
+    ast.Pow: "**",
+    ast.RShift: ">>",
     ast.Sub: "-",
 }
-UNARY_OPERATORS = {ast.USub: "-", ast.Not: "not "}
+UNARY_OPERATORS = {
+    ast.UAdd: "+",
+    ast.USub: "-",
+    ast.Not: "not ",
+    ast.Invert: "~",
+}
 BOOLEAN_OPERATORS = {ast.And: " and ", ast.Or: " or "}
 FORMATTING_CONVERSIONS = {-1: "", 114: "!r"}
 
