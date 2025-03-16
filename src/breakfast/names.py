@@ -29,9 +29,9 @@ from breakfast.types import Position, Source
 
 logger = logging.getLogger(__name__)
 
-CLASS_OFFSET = 6  # len('class ')
-DEF_OFFSET = 4  # len('def ')
-ASYNC_DEF_OFFSET = 10  # len('async def ')
+CLASS_OFFSET = len("class ")
+DEF_OFFSET = len("def ")
+ASYNC_DEF_OFFSET = len("async def ")
 
 
 class Occurrence(Protocol):
@@ -53,18 +53,20 @@ def all_occurrence_positions(
     debug: bool = False,
     graph: ScopeGraph | None = None,
 ) -> list[Position]:
-    return sorted(
-        (
-            o.position
-            for o in all_occurrences(
-                position,
-                sources=sources,
-                debug=debug,
-                graph=graph,
-            )
-        ),
-        reverse=in_reverse_order,
-    )
+    positions = [
+        o.position
+        for o in all_occurrences(
+            position,
+            sources=sources,
+            debug=debug,
+            graph=graph,
+        )
+    ]
+
+    if in_reverse_order:
+        return positions[::-1]
+
+    return positions
 
 
 def all_occurrences(
@@ -89,11 +91,16 @@ def all_occurrences(
             "Should have found at least the original position."
         )
 
-    consolidated = consolidate_occurrences(
-        definitions, found_definition
-    ).items()
-    print(repr(consolidated))
-    return [o for _, o in consolidated if is_occurrence(o)]
+    return sorted(
+        (
+            o
+            for _, o in consolidate_occurrences(
+                definitions, found_definition
+            ).items()
+            if is_occurrence(o)
+        ),
+        key=lambda o: o.position,
+    )
 
 
 def find_definitions(
