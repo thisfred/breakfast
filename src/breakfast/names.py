@@ -9,6 +9,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from functools import singledispatch
+from typing import Protocol
 
 from breakfast.scope_graph import (
     Configuration,
@@ -33,6 +34,13 @@ DEF_OFFSET = 4  # len('def ')
 ASYNC_DEF_OFFSET = 10  # len('async def ')
 
 
+class Occurrence(Protocol):
+    name: str
+    position: Position
+    ast: ast.AST
+    node_type: NodeType
+
+
 def all_occurrence_positions(
     position: Position,
     *,
@@ -47,7 +55,6 @@ def all_occurrence_positions(
             for p in all_occurrences(
                 position,
                 sources=sources,
-                in_reverse_order=in_reverse_order,
                 debug=debug,
                 graph=graph,
             )
@@ -60,7 +67,6 @@ def all_occurrences(
     position: Position,
     *,
     sources: Iterable[Source] | None = None,
-    in_reverse_order: bool = False,
     debug: bool = False,
     graph: ScopeGraph | None = None,
 ) -> dict[Position, ScopeNode]:
