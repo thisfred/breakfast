@@ -33,6 +33,12 @@ class PositionalNode(Protocol):
     end_lineno: int
 
 
+def has_node_type[S: ast.AST, T: ast.AST](
+    nwr: types.NodeWithRange[S], node_type: type[T]
+) -> TypeGuard[types.NodeWithRange[T]]:
+    return isinstance(nwr.node, node_type)
+
+
 def has_position(node: AST) -> TypeGuard[PositionalNode]:
     return (
         hasattr(node, "lineno")
@@ -155,29 +161,30 @@ class TextRange:
             if isinstance(ctx, ast.Store)
         ]
 
-    @cached_property
     def enclosing_scopes(
         self,
     ) -> Sequence[
-        tuple[
-            ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
-            types.TextRange,
-        ]
+        types.NodeWithRange[ast.FunctionDef]
+        | types.NodeWithRange[ast.AsyncFunctionDef]
+        | types.NodeWithRange[ast.ClassDef]
     ]:
-        node_type = ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
-        return [
-            (n, c) for n, c in self.enclosing_nodes if isinstance(n, node_type)
+        result = [
+            n
+            for n in self.enclosing_nodes()
+            if has_node_type(n, ast.FunctionDef)
+            or has_node_type(n, ast.AsyncFunctionDef)
+            or has_node_type(n, ast.ClassDef)
         ]
+        return result
 
     def enclosing_nodes_by_type[T: ast.AST](
         self, node_type: type[T]
-    ) -> Sequence[tuple[T, types.TextRange]]:
+    ) -> Sequence[types.NodeWithRange[T]]:
         return [
-            (n, c) for n, c in self.enclosing_nodes if isinstance(n, node_type)
+            n for n in self.enclosing_nodes() if has_node_type(n, node_type)
         ]
 
-    @cached_property
-    def enclosing_nodes(self) -> Sequence[tuple[ast.AST, types.TextRange]]:
+    def enclosing_nodes(self) -> Sequence[types.NodeWithRange[ast.AST]]:
         source = self.source
         scopes = []
         for node in get_nodes(source.ast):
@@ -187,17 +194,15 @@ class TextRange:
                 if (
                     node_range := source.node_range(node)
                 ) and self in node_range:
-                    scopes.append((node, node_range))
+                    scopes.append(types.NodeWithRange(node, node_range))
 
         return scopes
 
-    @cached_property
-    def enclosing_call(self) -> tuple[ast.Call, types.TextRange] | None:
+    def enclosing_call(self) -> types.NodeWithRange[ast.Call] | None:
         calls = self.enclosing_nodes_by_type(ast.Call)
         return calls[-1] if calls else None
 
-    @cached_property
-    def enclosing_assignment(self) -> tuple[ast.Assign, types.TextRange] | None:
+    def enclosing_assignment(self) -> types.NodeWithRange[ast.Assign] | None:
         types = ast.Assign
         assignments = self.enclosing_nodes_by_type(types)
         return assignments[-1] if assignments else None

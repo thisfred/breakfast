@@ -396,6 +396,7 @@ def type_var(node: ast.TypeVar, level: int) -> Iterator[str]:
 def class_def(node: ast.ClassDef, level: int) -> Iterator[str]:
     yield from render_decorators(node.decorator_list, level)
     yield start_line(f"class {node.name}", level)
+    yield from render_type_parameters(node, level)
 
     if node.bases or node.keywords:
         yield "("
@@ -620,13 +621,12 @@ def render_args(node: ast.arguments, level: int) -> Iterator[str]:
 
 
 def render_type_parameters(
-    node: ast.FunctionDef | ast.AsyncFunctionDef, level: int
+    node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef, level: int
 ) -> Iterator[str]:
     if not node.type_params:
         return
     yield "["
-    for type_parameter in node.type_params:
-        yield from to_source(type_parameter, level)
+    yield from with_separators(node.type_params, level)
     yield "]"
 
 

@@ -1,6 +1,8 @@
 import ast
 import logging
+from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator, Sequence
+from functools import cached_property
 from itertools import dropwhile, takewhile
 from textwrap import dedent, indent
 from typing import Protocol
@@ -8,6 +10,7 @@ from typing import Protocol
 from breakfast import types
 from breakfast.code_generation import unparse
 from breakfast.names import (
+    Occurrence,
     all_occurrence_positions,
     all_occurrences,
     build_graph,
@@ -41,18 +44,26 @@ class CodeSelection:
 
     @property
     def inside_method(self) -> bool:
-        if self.text_range.enclosing_scopes:
-            _, global_scope_range = self.text_range.enclosing_scopes[0]
+        if self.text_range.enclosing_scopes():
+            global_scope = self.text_range.enclosing_scopes()[0]
         else:
-            global_scope_range = None
+            global_scope = None
 
-        if not global_scope_range:
+        if not global_scope:
             return False
 
-        in_method = global_scope_range.start.line.text.strip().startswith(
+        in_method = global_scope.range.start.line.text.strip().startswith(
             "class"
         )
         return in_method
+
+    @property
+    def cursor(self) -> types.Position:
+        return self.text_range.start
+
+    @cached_property
+    def occurrences(self) -> Sequence[Occurrence]:
+        return all_occurrences(self.cursor, graph=self.scope_graph)
 
     def inline_variable(self) -> tuple[Edit, ...]:
         refactoring = InlineVariable(self)
@@ -272,26 +283,26 @@ class CodeSelection:
                 break
 
     def find_start_of_scope(self, start: Position) -> Position:
-        if not self.text_range.enclosing_scopes:
+        if not self.text_range.enclosing_scopes():
             return start.source.position(0, 0)
 
-        node, global_scope_range = self.text_range.enclosing_scopes[0]
+        global_scope = self.text_range.enclosing_scopes()[0]
 
-        return global_scope_range.start
+        return global_scope.range.start
 
     def find_callable_insert_point(
         self, start: Position, is_global: bool = False
     ) -> Position:
-        if not self.text_range.enclosing_scopes:
+        if not self.text_range.enclosing_scopes():
             return start.source.position(start.row, 0)
 
-        node, enclosing = (
-            self.text_range.enclosing_scopes[0]
+        enclosing = (
+            self.text_range.enclosing_scopes()[0]
             if is_global
-            else self.text_range.enclosing_scopes[-1]
+            else self.text_range.enclosing_scopes()[-1]
         )
 
-        return start.source.position(enclosing.end.row + 1, 0)
+        return start.source.position(enclosing.range.end.row + 1, 0)
 
 
 class Refactoring(Protocol):
@@ -364,70 +375,77 @@ class ExtractVariable:
 class InlineVariable:
     def __init__(self, code_selection: CodeSelection):
         self.text_range = code_selection.text_range
+        self.cursor = code_selection.cursor
         self.source = self.text_range.start.source
-        self.scope_graph = code_selection.scope_graph
+        self.code_selection = code_selection
 
     @property
     def edits(self) -> tuple[Edit, ...]:
-        cursor = self.text_range.start
-        occurrences = all_occurrences(cursor, graph=self.scope_graph)
+        grouped: dict[bool, list[Occurrence]] = defaultdict(list)
+        for o in self.code_selection.occurrences:
+            grouped[o.node_type is NodeType.DEFINITION].append(o)
 
-        last_definition_position = None
-        last_occurrence_position = None
-        for occurrence in occurrences:
-            if occurrence.node_type is NodeType.DEFINITION:
-                last_definition_position = occurrence.position
-            elif occurrence.position not in self.text_range:
-                last_occurrence_position = occurrence.position
+        last_definition = grouped.get(True, [None])[-1]
 
-        if last_definition_position is None:
+        if last_definition is None:
             logger.warning("Could not find definition.")
             return ()
-        assignment = last_definition_position.as_range.enclosing_assignment
+        assignment = last_definition.position.as_range.enclosing_assignment()
         if assignment is None:
-            logger.warning("Could not find definition.")
+            logger.warning("Could not find assignment for definition.")
             return ()
-        definition_node, definition_text_range = assignment
 
-        name = self.source.get_name_at(cursor)
-        if cursor in definition_text_range:
+        name = self.source.get_name_at(self.cursor)
+        if self.cursor in assignment.range:
             after_cursor = (
                 o
-                for o in dropwhile(lambda x: x.position <= cursor, occurrences)
+                for o in dropwhile(
+                    lambda x: x.position <= self.cursor,
+                    self.code_selection.occurrences,
+                )
             )
-            name_ranges: tuple[types.TextRange, ...] = tuple(
+            to_replace: tuple[types.TextRange, ...] = tuple(
                 o.position.to(o.position + len(name))
                 for o in takewhile(
                     lambda x: x.node_type is not NodeType.DEFINITION,
                     after_cursor,
                 )
-                if o.position > cursor
+                if o.position > self.cursor
             )
+        else:
+            to_replace = (self.cursor.to(self.cursor + len(name)),)
+
+        if self.cursor in assignment.range:
             can_remove_last_definition = True
         else:
-            name_ranges = (cursor.to(cursor + len(name)),)
+            other_occurrences = [
+                o
+                for o in grouped.get(False, [])
+                if o.position not in self.text_range
+            ]
+            last_occurrence = (
+                other_occurrences[-1] if other_occurrences else None
+            )
             can_remove_last_definition = (
-                last_occurrence_position is None
-                or last_occurrence_position < last_definition_position
+                last_occurrence is None
+                or last_occurrence.position < assignment.range.start
             )
 
         edits: tuple[Edit, ...] = tuple(
-            Edit(name_range, text=unparse(definition_node.value))
-            for name_range in name_ranges
+            Edit(name_range, text=unparse(assignment.node.value))
+            for name_range in to_replace
         )
 
         if can_remove_last_definition:
-            if len(definition_node.targets) == 1:
-                delete = Edit(definition_text_range, text="")
+            if len(assignment.node.targets) == 1:
+                delete = Edit(assignment.range, text="")
             else:
-                definition_node.targets = [
+                assignment.node.targets = [
                     t
-                    for t in definition_node.targets
+                    for t in assignment.node.targets
                     if isinstance(t, ast.Name) and t.id != name
                 ]
-                delete = Edit(
-                    definition_text_range, text=unparse(definition_node)
-                )
+                delete = Edit(assignment.range, text=unparse(assignment.node))
 
             edits = (*edits, delete)
 
@@ -444,19 +462,22 @@ class InlineCall:
 
     @property
     def edits(self) -> tuple[Edit, ...]:
-        if not self.enclosing_call:
+        call = self.enclosing_call()
+        if not call:
             logger.warn("No enclosing call.")
             return ()
 
-        call, call_range = self.enclosing_call
-
-        name_start = call_range.start
-        call_args = call.args
-        if isinstance(call.func, ast.Attribute):
-            call_args = [call.func.value, *call_args]
-            if call.func.value.end_col_offset and call.func.col_offset:
+        name_start = call.range.start
+        call_args = call.node.args
+        if isinstance(call.node.func, ast.Attribute):
+            call_args = [call.node.func.value, *call_args]
+            if (
+                call.node.func.value.end_col_offset
+                and call.node.func.col_offset
+            ):
                 name_start += (
-                    call.func.value.end_col_offset - call.func.col_offset
+                    call.node.func.value.end_col_offset
+                    - call.node.func.col_offset
                 ) + 1
 
         definition = find_definition(self.scope_graph, name_start)
@@ -472,7 +493,7 @@ class InlineCall:
             return ()
 
         new_lines = self.get_new_lines(
-            call=call, body_range=body_range, definition_ast=definition.ast
+            call=call.node, body_range=body_range, definition_ast=definition.ast
         )
 
         return_ranges = [
@@ -495,7 +516,7 @@ class InlineCall:
         if not return_ranges:
             return (
                 Edit(
-                    call_range,
+                    call.range,
                     text=f"{body}",
                 ),
             )
@@ -507,7 +528,7 @@ class InlineCall:
                 insert_range,
                 text=f"{body}",
             ),
-            Edit(call_range, text=self.name),
+            Edit(call.range, text=self.name),
         )
 
     def get_new_lines(
@@ -613,16 +634,16 @@ class SlideStatements:
         if not first_usage_after_range:
             return None
 
-        enclosing_nodes = first_usage_after_range.as_range.enclosing_nodes
-        origin_nodes = lines.enclosing_nodes
+        enclosing_nodes = first_usage_after_range.as_range.enclosing_nodes()
+        origin_nodes = lines.enclosing_nodes()
         index = 0
         while (
             index < len(origin_nodes)
-            and origin_nodes[index][1] == enclosing_nodes[index][1]
+            and origin_nodes[index].range == enclosing_nodes[index].range
         ):
             index += 1
 
-        first_usage_after_range = enclosing_nodes[index][1].start
+        first_usage_after_range = enclosing_nodes[index].range.start
 
         if (
             first_usage_after_range

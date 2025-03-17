@@ -68,27 +68,21 @@ class TextRange(Protocol):
     @property
     def source(self) -> "Source": ...
 
-    @property
     def enclosing_scopes(
         self,
     ) -> Sequence[
-        tuple[
-            ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef, "TextRange"
-        ]
+        "NodeWithRange[ast.FunctionDef] | NodeWithRange[ast.AsyncFunctionDef] | NodeWithRange[ast.ClassDef]"
     ]: ...
 
     def enclosing_nodes_by_type[T: ast.AST](
         self, node_type: type[T]
-    ) -> Sequence[tuple[T, "TextRange"]]: ...
+    ) -> Sequence["NodeWithRange[T]"]: ...
 
-    @property
-    def enclosing_nodes(self) -> Sequence[tuple[ast.AST, "TextRange"]]: ...
+    def enclosing_nodes(self) -> Sequence["NodeWithRange[ast.AST]"]: ...
 
-    @property
-    def enclosing_call(self) -> tuple[ast.Call, "TextRange"] | None: ...
+    def enclosing_call(self) -> "NodeWithRange[ast.Call] | None": ...
 
-    @property
-    def enclosing_assignment(self) -> tuple[ast.Assign, "TextRange"] | None: ...
+    def enclosing_assignment(self) -> "NodeWithRange[ast.Assign] | None": ...
 
     def text_with_substitutions(
         self, substitutions: Sequence["Edit"]
@@ -97,6 +91,12 @@ class TextRange(Protocol):
     def contains_as_argument(self, name: str) -> bool: ...
 
     def replace(self, new_text: str) -> "Edit": ...
+
+
+@dataclass(frozen=True)
+class NodeWithRange[T: ast.AST]:
+    node: T
+    range: "TextRange"
 
 
 @dataclass(order=True, frozen=True)  # pragma: nocover
