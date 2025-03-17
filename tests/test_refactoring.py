@@ -1027,6 +1027,25 @@ def test_refactor_inside_method_is_true_for_range_inside_method():
     assert refactor.inside_method
 
 
+def test_refactor_inside_method_is_false_for_range_outside_clsss():
+    source = make_source(
+        """
+        class C:
+            def f(self, a: list[int]) -> tuple[str, ...]:
+                a += 1
+                return max([a])
+
+        print(C)
+        """
+    )
+
+    start = source.position(6, 0)
+    end = source.position(6, 7)
+
+    refactor = CodeSelection(TextRange(start, end))
+    assert not refactor.inside_method
+
+
 def test_extract_variable_should_include_quotes():
     source = make_source(
         """

@@ -44,17 +44,16 @@ class CodeSelection:
 
     @property
     def inside_method(self) -> bool:
-        if self.text_range.enclosing_scopes():
-            global_scope = self.text_range.enclosing_scopes()[0]
-        else:
-            global_scope = None
+        global_scope = (
+            scopes[0]
+            if (scopes := self.text_range.enclosing_scopes())
+            else None
+        )
 
         if not global_scope:
             return False
 
-        in_method = global_scope.range.start.line.text.strip().startswith(
-            "class"
-        )
+        in_method = isinstance(global_scope.node, ast.ClassDef)
         return in_method
 
     @property
@@ -248,7 +247,7 @@ class CodeSelection:
         ]
         names_used_after = {
             n
-            for n, _ in find_names_used_after_position(
+            for n, _ in self.find_names_used_after_position(
                 [(n, p) for n, p, _ in names_in_range], self.scope_graph, end
             )
         }
@@ -260,6 +259,24 @@ class CodeSelection:
                 return_values.append(name)
 
         return return_values
+
+    def find_names_used_after_position(
+        self,
+        names: Sequence[tuple[str, Position]],
+        scope_graph: ScopeGraph,
+        cutoff: Position,
+    ) -> Iterable[tuple[str, Position]]:
+        for name, position in names:
+            try:
+                occurrences = all_occurrence_positions(
+                    position, graph=scope_graph
+                )
+            except NotFoundError:
+                continue
+            for occurrence in occurrences:
+                if occurrence > cutoff:
+                    yield name, occurrence
+                    break
 
     def find_names_defined_before_range(
         self,
@@ -625,7 +642,7 @@ class SlideStatements:
         first_usage_after_range = next(
             (
                 p
-                for _, p in find_names_used_after_position(
+                for _, p in selection.find_names_used_after_position(
                     names_defined_in_range, selection.scope_graph, last.end
                 )
             ),
@@ -688,19 +705,3 @@ class SlideStatements:
         )
 
         return target
-
-
-def find_names_used_after_position(
-    names: Sequence[tuple[str, Position]],
-    scope_graph: ScopeGraph,
-    cutoff: Position,
-) -> Iterable[tuple[str, Position]]:
-    for name, position in names:
-        try:
-            occurrences = all_occurrence_positions(position, graph=scope_graph)
-        except NotFoundError:
-            continue
-        for occurrence in occurrences:
-            if occurrence > cutoff:
-                yield name, occurrence
-                break
