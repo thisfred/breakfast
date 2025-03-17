@@ -63,9 +63,6 @@ def all_occurrence_positions(
         )
     ]
 
-    if in_reverse_order:
-        return positions[::-1]
-
     return positions
 
 
@@ -73,6 +70,7 @@ def all_occurrences(
     position: Position,
     *,
     sources: Iterable[Source] | None = None,
+    in_reverse_order: bool = False,
     debug: bool = False,
     graph: ScopeGraph | None = None,
 ) -> Sequence[Occurrence]:
@@ -97,15 +95,15 @@ def all_occurrences(
             for _, o in consolidate_occurrences(
                 definitions, found_definition
             ).items()
-            if is_occurrence(o)
         ),
         key=lambda o: o.position,
+        reverse=in_reverse_order,
     )
 
 
 def find_definitions(
     graph: ScopeGraph, position: Position
-) -> tuple[ScopeNode, dict[ScopeNode, set[ScopeNode]]]:
+) -> tuple[Occurrence, dict[Occurrence, set[Occurrence]]]:
     scopes_for_position = graph.positions.get(position)
     if not scopes_for_position:
         raise NotFoundError
@@ -116,10 +114,24 @@ def find_definitions(
             break
     else:
         raise NotFoundError
+    found_definition, definitions = filter_possible_occurrences(
+        position, possible_occurrences, graph
+    )
 
-    definitions: dict[ScopeNode, set[ScopeNode]] = defaultdict(set)
+    return found_definition, definitions
+
+
+def filter_possible_occurrences(
+    position: Position,
+    possible_occurrences: Iterable[ScopeNode],
+    graph: ScopeGraph,
+) -> tuple[Occurrence, dict[Occurrence, set[Occurrence]]]:
+    definitions: dict[Occurrence, set[Occurrence]] = defaultdict(set)
     found_definition = None
-    for occurrence in possible_occurrences:
+    for scope_node in possible_occurrences:
+        occurrence = scope_node
+        if not is_occurrence(occurrence):
+            continue
         if occurrence.node_type is NodeType.DEFINITION:
             definitions[occurrence].add(occurrence)
             if position == occurrence.position:
@@ -127,20 +139,24 @@ def find_definitions(
             continue
 
         try:
-            definition = graph.find_definition(occurrence)
+            prior_definition = graph.find_definition(scope_node)
         except NotFoundError:
             continue
 
-        definitions[definition].add(occurrence)
-        if position in (definition.position, occurrence.position):
-            found_definition = definition
+        if not is_occurrence(prior_definition):
+            continue
+
+        definitions[prior_definition].add(occurrence)
+        if position in (prior_definition.position, occurrence.position):
+            found_definition = prior_definition
+
     if not found_definition:
         raise NotFoundError
 
     return found_definition, definitions
 
 
-def find_definition(graph: ScopeGraph, position: Position) -> ScopeNode | None:
+def find_definition(graph: ScopeGraph, position: Position) -> Occurrence | None:
     try:
         return find_definitions(graph, position)[0]
     except NotFoundError:
@@ -148,14 +164,13 @@ def find_definition(graph: ScopeGraph, position: Position) -> ScopeNode | None:
 
 
 def consolidate_occurrences(
-    definitions: dict[ScopeNode, set[ScopeNode]], found_definition: ScopeNode
-) -> dict[Position, ScopeNode]:
-    groups: list[dict[Position, ScopeNode]] = []
-    found_group: dict[Position, ScopeNode] = {}
+    definitions: dict[Occurrence, set[Occurrence]], found_definition: Occurrence
+) -> dict[Position, Occurrence]:
+    groups: list[dict[Position, Occurrence]] = []
+    found_group: dict[Position, Occurrence] = {}
     for definition, occurrences in definitions.items():
         positions = {o.position: o for o in occurrences if o.position}
-        if definition.position:
-            positions[definition.position] = definition
+        positions[definition.position] = definition
         for group in groups:
             if positions.keys() & group.keys():
                 group.update(positions)
