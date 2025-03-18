@@ -256,7 +256,6 @@ class ExtractFunction:
     def extract_callable(
         self,
         name: str,
-        is_method: bool = False,
     ) -> tuple[Edit, ...]:
         start, end = (
             self.code_selection.text_range.start,
@@ -326,19 +325,18 @@ class ExtractMethod:
 
     @property
     def edits(self) -> tuple[Edit, ...]:
-        return self.extract_callable("method", is_method=True)
+        return self.extract_callable("method")
 
     def extract_callable(
         self,
         name: str,
-        is_method: bool = False,
     ) -> tuple[Edit, ...]:
         start, end = (
             self.code_selection.text_range.start,
             self.code_selection.text_range.end,
         )
         original_indentation = start.indentation
-        new_indentation = original_indentation if is_method else FOUR_SPACES
+        new_indentation = original_indentation
 
         names_in_range = self.code_selection.full_line_range.names
 
@@ -365,7 +363,7 @@ class ExtractMethod:
                 start_of_current_scope=start_of_current_scope,
             )
         )
-        self_name = "self" if is_method else None
+        self_name = "self"
         arguments = ", ".join(
             f"{n}={n}" for n in parameter_names if n != self_name
         )
@@ -387,22 +385,16 @@ class ExtractMethod:
             else parameter_names
         )
 
-        definition_indentation = original_indentation[:-4] if is_method else ""
-        if is_method:
-            if self_name in parameter_names:
-                static_method = ""
-                parameters = ", ".join(parameters_with_self)
-            else:
-                static_method = (
-                    f"{definition_indentation}@staticmethod{NEWLINE}"
-                )
-                parameters = ", ".join(parameter_names)
-        else:
+        definition_indentation = original_indentation[:-4]
+        if self_name in parameter_names:
             static_method = ""
+            parameters = ", ".join(parameters_with_self)
+        else:
+            static_method = f"{definition_indentation}@staticmethod{NEWLINE}"
             parameters = ", ".join(parameter_names)
 
         insert_position = self.code_selection.find_callable_insert_point(
-            start=start, is_global=not is_method
+            start=start, is_global=False
         )
         edits = (
             Edit(
