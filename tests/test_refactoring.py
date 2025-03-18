@@ -1254,6 +1254,34 @@ def test_inline_call_should_inline_method_call():
     assert "result" == edit.text
 
 
+def test_extract_callable_containing_return_statement_should_preserve_it2():
+    class R:
+        def __init__(self, code_selection: CodeSelection):
+            self.code_selection = code_selection
+
+        @property
+        def edits(self) -> tuple[Edit, ...]:
+            return self.code_selection.extract_function("f")
+
+    assert_refactors_to(
+        refactoring=R,
+        target=("range_end = 3 + 2", "return range_end"),
+        code="""
+        def function():
+            range_end = 3 + 2
+            return range_end
+        """,
+        expected="""
+        def function():
+            return f()
+
+        def f():
+            range_end = 3 + 2
+            return range_end
+        """,
+    )
+
+
 def test_extract_callable_containing_return_statement_should_preserve_it():
     source = make_source(
         """

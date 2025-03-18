@@ -224,26 +224,20 @@ class TextRange:
             if substitution.text_range.start > self.end:
                 break
             row_index = substitution.text_range.start.row - row_offset
-            text[row_index] = (
-                text[row_index][: substitution.text_range.start.column]
-                + substitution.text
-                + text[row_index][substitution.text_range.end.column :]
-                if substitution.text_range.start.row
-                == substitution.text_range.end.row
-                else ""
-            )
-            if (
+            size = (
                 substitution.text_range.end.row
-                > substitution.text_range.start.row
-            ):
-                size = (
-                    substitution.text_range.end.row
-                    - substitution.text_range.start.row
-                )
-                text[row_index + size] = text[row_index + size][
-                    substitution.text_range.end.column :
-                ]
-                text[row_index + 1 : row_index + size] = []
+                - substitution.text_range.start.row
+            )
+            new_lines = substitution.text.split("\n")
+            new_lines[0] = (
+                text[row_index][: substitution.text_range.start.column]
+                + new_lines[0]
+            )
+            new_lines[-1] = (
+                new_lines[-1]
+                + text[row_index + size][substitution.text_range.end.column :]
+            )
+            text[row_index : row_index + size + 1] = new_lines
         return text
 
     def replace(self, new_text: str) -> types.Edit:
