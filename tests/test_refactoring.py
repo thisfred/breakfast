@@ -232,8 +232,10 @@ def test_extract_function_should_insert_function_definition():
     extraction_start = source.position(2, 12)
     extraction_end = source.position(2, 27)
 
-    refactor = CodeSelection(TextRange(extraction_start, extraction_end))
-    insert, *_edits = refactor.extract_callable(name="function")
+    refactor = ExtractFunction(
+        CodeSelection(TextRange(extraction_start, extraction_end))
+    )
+    insert, *_edits = refactor.edits
 
     assert insert.text == dedent(
         """
@@ -254,8 +256,10 @@ def test_extract_function_should_insert_function_definition_with_multiple_statem
     extraction_start = source.position(2, 0)
     extraction_end = source.position(3, 21)
 
-    refactor = CodeSelection(TextRange(extraction_start, extraction_end))
-    insert, *_edits = refactor.extract_callable(name="function")
+    refactor = ExtractFunction(
+        CodeSelection(TextRange(extraction_start, extraction_end))
+    )
+    insert, *_edits = refactor.edits
 
     result = dedent(
         """
@@ -281,8 +285,8 @@ def test_extract_function_should_create_arguments_for_local_variables():
     start = source.position(3, 0)
     end = source.position(4, 21)
 
-    refactor = CodeSelection(TextRange(start, end))
-    insert, *_edits = refactor.extract_callable(name="function")
+    refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
+    insert, *_edits = refactor.edits
 
     result = dedent(
         """
@@ -305,8 +309,8 @@ def test_extract_function_should_return_modified_variable_used_after_call():
     )
     start = source.position(2, 0)
     end = source.position(2, 9)
-    refactor = CodeSelection(TextRange(start, end))
-    insert, *_edits = refactor.extract_callable(name="function")
+    refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
+    insert, *_edits = refactor.edits
 
     result = dedent(
         """
@@ -330,8 +334,8 @@ def test_extract_function_should_extract_outside_function():
     )
     start = source.position(3, 0)
     end = source.position(3, 13)
-    refactor = CodeSelection(TextRange(start, end))
-    insert, *_edits = refactor.extract_callable(name="function")
+    refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
+    insert, *_edits = refactor.edits
 
     result = """
 def function(a):
@@ -353,8 +357,8 @@ def test_extract_function_should_extract_after_current_scope():
     )
     start = source.position(3, 0)
     end = source.position(3, 12)
-    refactor = CodeSelection(TextRange(start, end))
-    insert, *_edits = refactor.extract_callable(name="function")
+    refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
+    insert, *_edits = refactor.edits
 
     assert insert.start == source.position(5, 0)
 
@@ -373,8 +377,8 @@ def test_extract_function_should_handle_indented_arguments_of_enclosing_scope():
     )
     start = source.position(6, 0)
     end = source.position(6, 12)
-    refactor = CodeSelection(TextRange(start, end))
-    insert, *_edits = refactor.extract_callable(name="function")
+    refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
+    insert, *_edits = refactor.edits
 
     assert insert.start == source.position(8, 0)
 
@@ -392,8 +396,8 @@ def test_extract_function_should_only_consider_variables_in_scope():
     start = source.position(4, 0)
     end = source.position(4, 12)
 
-    refactor = CodeSelection(TextRange(start, end))
-    insert, replace = refactor.extract_callable(name="function")
+    refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
+    insert, replace = refactor.edits
 
     assert "function(a)" in insert.text
 
@@ -412,8 +416,8 @@ def test_extract_function_should_only_pass_in_variables_defined_in_local_scope()
     start = source.position(5, 0)
     end = source.position(6, 0)
 
-    refactor = CodeSelection(TextRange(start, end))
-    insert, replace = refactor.extract_callable(name="function")
+    refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
+    insert, replace = refactor.edits
 
     assert "function()" in insert.text
 
@@ -430,8 +434,8 @@ def test_extract_function_should_replace_extracted_code_with_function_call():
     start = source.position(3, 0)
     end = source.position(3, 12)
 
-    refactor = CodeSelection(TextRange(start, end))
-    _insert, replace = refactor.extract_callable(name="function")
+    refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
+    _insert, replace = refactor.edits
 
     assert replace.text == "    b = function(a=a)\n"
     assert replace.start == source.position(3, 0)
@@ -450,8 +454,8 @@ def test_extract_function_should_return_multiple_values_where_necessary():
     )
     start = source.position(1, 0)
     end = source.position(3, 0)
-    refactor = CodeSelection(TextRange(start, end))
-    insert, replace = refactor.extract_callable(name="function")
+    refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
+    insert, replace = refactor.edits
 
     assert "a, b = function()" in replace.text
     assert "return a, b" in insert.text
@@ -472,8 +476,8 @@ def f(a):
     )
     start = source.position(4, 0)
     end = source.position(4, 12)
-    refactor = CodeSelection(TextRange(start, end))
-    insert, replace = refactor.extract_callable(name="function")
+    refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
+    insert, replace = refactor.edits
 
     assert "def function(a):" in insert.text
     assert "b = function(a=a)" in replace.text
@@ -517,8 +521,8 @@ def test_extract_method_should_extract_after_current_method():
     start = source.position(4, 8)
     end = source.position(4, 21)
 
-    refactor = CodeSelection(TextRange(start, end))
-    insert, _replace = refactor.extract_callable(name="method", is_method=True)
+    refactor = ExtractMethod(CodeSelection(TextRange(start, end)))
+    insert, _replace = refactor.edits
 
     assert insert.start.row == 6
 
@@ -540,8 +544,8 @@ def test_extract_method_should_not_repeat_return_variables():
     start = source.position(3, 0)
     end = source.position(8, 0)
 
-    refactor = CodeSelection(TextRange(start, end))
-    _insert, replace = refactor.extract_callable(name="method", is_method=True)
+    refactor = ExtractMethod(CodeSelection(TextRange(start, end)))
+    _insert, replace = refactor.edits
 
     assert replace.text.startswith("        start, end =")
 
@@ -559,8 +563,8 @@ def test_extract_method_should_extract_static_method_when_self_not_used():
     start = source.position(4, 0)
     end = source.position(5, 0)
 
-    refactor = CodeSelection(TextRange(start, end))
-    insert, _replace = refactor.extract_callable(name="method", is_method=True)
+    refactor = ExtractMethod(CodeSelection(TextRange(start, end)))
+    insert, _replace = refactor.edits
 
     assert "    @staticmethod\n    def method(start, end):" in insert.text
 
@@ -702,8 +706,8 @@ def test_extract_function_should_extract_to_global_scope():
 
     start = source.position(4, 0)
     end = source.position(5, 0)
-    refactor = CodeSelection(TextRange(start, end))
-    insert, _ = refactor.extract_callable(name="function")
+    refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
+    insert, _ = refactor.edits
 
     assert insert.start.row == 6
 
@@ -720,10 +724,10 @@ def test_extract_function_should_consider_function_scope():
 
     start = source.position(3, 0)
     end = source.position(4, 0)
-    refactor = CodeSelection(TextRange(start, end))
-    insert, _ = refactor.extract_callable(name="g")
+    refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
+    insert, _ = refactor.edits
 
-    assert "def g(p):" in insert.text
+    assert "def function(p):" in insert.text
 
 
 def test_extract_method_should_extract_part_of_a_line():
@@ -737,17 +741,17 @@ def test_extract_method_should_extract_part_of_a_line():
     start = source.position(2, 16)
     end = source.position(2, 49)
 
-    refactor = CodeSelection(TextRange(start, end))
-    insert, edit = refactor.extract_callable("f", is_method=True)
+    refactor = ExtractMethod(CodeSelection(TextRange(start, end)))
+    insert, edit = refactor.edits
 
     assert dedent(
         """
-        def f(self):
+        def method(self):
             return self.text_range.start + 2
         """
     ) == dedent(insert.text)
 
-    assert edit.text == "self.f()"
+    assert edit.text == "self.method()"
 
 
 def test_inline_call_should_replace_call_with_function_return_value():
@@ -1013,8 +1017,8 @@ def test_extract_function_should_pass_variables_used_as_arguments_on_as_paramete
 
     start = source.position(8, 4)
     end = source.position(8, 16)
-    refactor = CodeSelection(TextRange(start, end))
-    insert, _ = refactor.extract_callable(name="function")
+    refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
+    insert, _ = refactor.edits
     assert "def function(f):" in insert.text
 
 
@@ -1267,15 +1271,15 @@ def test_extract_callable_containing_return_statement_should_preserve_it():
         refactoring=ExtractFunction,
         target=("range_end = 3 + 2", "return range_end"),
         code="""
-        def function():
+        def f():
             range_end = 3 + 2
             return range_end
         """,
         expected="""
-        def function():
-            return f()
-
         def f():
+            return function()
+
+        def function():
             range_end = 3 + 2
             return range_end
         """,

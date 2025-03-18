@@ -72,84 +72,6 @@ class CodeSelection:
         refactoring = InlineCall(self, name)
         return refactoring.edits
 
-    def extract_callable(
-        self,
-        name: str,
-        is_method: bool = False,
-    ) -> tuple[Edit, ...]:
-        start, end = self.text_range.start, self.text_range.end
-        original_indentation = start.indentation
-        new_indentation = original_indentation if is_method else FOUR_SPACES
-
-        names_in_range = self.full_line_range.names
-
-        extracting_partial_line = start.row == end.row and start.column != 0
-        if extracting_partial_line:
-            extraction_range = self.text_range
-            extractor = self.extract_expression
-        else:
-            extraction_range = self.full_line_range
-            extractor = self.extract_statements
-
-        extracted, assignment_or_return = extractor(
-            text_range=extraction_range,
-            names_in_range=names_in_range,
-            new_indentation=new_indentation,
-        )
-        start_of_current_scope = self.find_start_of_scope(start=start)
-        parameter_names: Sequence[str] = self.get_parameter_names(
-            names_in_range=names_in_range,
-            text_range=self.full_line_range,
-            start_of_current_scope=start_of_current_scope,
-        )
-        self_name = "self" if is_method else None
-        arguments = ", ".join(
-            f"{n}={n}" for n in parameter_names if n != self_name
-        )
-        self_prefix = (self_name + ".") if self_name else ""
-
-        call = f"{self_prefix}{name}({arguments})"
-        replace_text = (
-            call
-            if extracting_partial_line
-            else f"{original_indentation}{assignment_or_return}{call}{NEWLINE}"
-        )
-
-        parameters_with_self = (
-            [
-                self_name,
-                *(n for n in parameter_names if n != self_name),
-            ]
-            if self_name
-            else parameter_names
-        )
-
-        definition_indentation = original_indentation[:-4] if is_method else ""
-        if is_method:
-            if self_name in parameter_names:
-                static_method = ""
-                parameters = ", ".join(parameters_with_self)
-            else:
-                static_method = (
-                    f"{definition_indentation}@staticmethod{NEWLINE}"
-                )
-                parameters = ", ".join(parameter_names)
-        else:
-            static_method = ""
-            parameters = ", ".join(parameter_names)
-
-        insert_position = self.find_callable_insert_point(
-            start=start, is_global=not is_method
-        )
-        edits = (
-            Edit(
-                insert_position.as_range,
-                text=f"{NEWLINE}{static_method}{definition_indentation}def {name}({parameters}):{NEWLINE}{extracted}{NEWLINE}",
-            ),
-            Edit(start.to(end), text=replace_text),
-        )
-        return edits
-
     def get_parameter_names(
         self,
         names_in_range: Sequence[tuple[str, Position, ast.expr_context]],
@@ -329,7 +251,73 @@ class ExtractFunction:
 
     @property
     def edits(self) -> tuple[Edit, ...]:
-        return self.code_selection.extract_callable("f")
+        return self.extract_callable("function")
+
+    def extract_callable(
+        self,
+        name: str,
+        is_method: bool = False,
+    ) -> tuple[Edit, ...]:
+        start, end = (
+            self.code_selection.text_range.start,
+            self.code_selection.text_range.end,
+        )
+        original_indentation = start.indentation
+        new_indentation = FOUR_SPACES
+
+        names_in_range = self.code_selection.full_line_range.names
+
+        extracting_partial_line = start.row == end.row and start.column != 0
+        if extracting_partial_line:
+            extraction_range = self.code_selection.text_range
+            extractor = self.code_selection.extract_expression
+        else:
+            extraction_range = self.code_selection.full_line_range
+            extractor = self.code_selection.extract_statements
+
+        extracted, assignment_or_return = extractor(
+            text_range=extraction_range,
+            names_in_range=names_in_range,
+            new_indentation=new_indentation,
+        )
+        start_of_current_scope = self.code_selection.find_start_of_scope(
+            start=start
+        )
+        parameter_names: Sequence[str] = (
+            self.code_selection.get_parameter_names(
+                names_in_range=names_in_range,
+                text_range=self.code_selection.full_line_range,
+                start_of_current_scope=start_of_current_scope,
+            )
+        )
+        self_name = None
+        arguments = ", ".join(
+            f"{n}={n}" for n in parameter_names if n != self_name
+        )
+        self_prefix = (self_name + ".") if self_name else ""
+
+        call = f"{self_prefix}{name}({arguments})"
+        replace_text = (
+            call
+            if extracting_partial_line
+            else f"{original_indentation}{assignment_or_return}{call}{NEWLINE}"
+        )
+
+        definition_indentation = ""
+        static_method = ""
+        parameters = ", ".join(parameter_names)
+
+        insert_position = self.code_selection.find_callable_insert_point(
+            start=start, is_global=True
+        )
+        edits = (
+            Edit(
+                insert_position.as_range,
+                text=f"{NEWLINE}{static_method}{definition_indentation}def {name}({parameters}):{NEWLINE}{extracted}{NEWLINE}",
+            ),
+            Edit(start.to(end), text=replace_text),
+        )
+        return edits
 
 
 class ExtractMethod:
@@ -338,7 +326,92 @@ class ExtractMethod:
 
     @property
     def edits(self) -> tuple[Edit, ...]:
-        return self.code_selection.extract_callable("m", is_method=True)
+        return self.extract_callable("method", is_method=True)
+
+    def extract_callable(
+        self,
+        name: str,
+        is_method: bool = False,
+    ) -> tuple[Edit, ...]:
+        start, end = (
+            self.code_selection.text_range.start,
+            self.code_selection.text_range.end,
+        )
+        original_indentation = start.indentation
+        new_indentation = original_indentation if is_method else FOUR_SPACES
+
+        names_in_range = self.code_selection.full_line_range.names
+
+        extracting_partial_line = start.row == end.row and start.column != 0
+        if extracting_partial_line:
+            extraction_range = self.code_selection.text_range
+            extractor = self.code_selection.extract_expression
+        else:
+            extraction_range = self.code_selection.full_line_range
+            extractor = self.code_selection.extract_statements
+
+        extracted, assignment_or_return = extractor(
+            text_range=extraction_range,
+            names_in_range=names_in_range,
+            new_indentation=new_indentation,
+        )
+        start_of_current_scope = self.code_selection.find_start_of_scope(
+            start=start
+        )
+        parameter_names: Sequence[str] = (
+            self.code_selection.get_parameter_names(
+                names_in_range=names_in_range,
+                text_range=self.code_selection.full_line_range,
+                start_of_current_scope=start_of_current_scope,
+            )
+        )
+        self_name = "self" if is_method else None
+        arguments = ", ".join(
+            f"{n}={n}" for n in parameter_names if n != self_name
+        )
+        self_prefix = (self_name + ".") if self_name else ""
+
+        call = f"{self_prefix}{name}({arguments})"
+        replace_text = (
+            call
+            if extracting_partial_line
+            else f"{original_indentation}{assignment_or_return}{call}{NEWLINE}"
+        )
+
+        parameters_with_self = (
+            [
+                self_name,
+                *(n for n in parameter_names if n != self_name),
+            ]
+            if self_name
+            else parameter_names
+        )
+
+        definition_indentation = original_indentation[:-4] if is_method else ""
+        if is_method:
+            if self_name in parameter_names:
+                static_method = ""
+                parameters = ", ".join(parameters_with_self)
+            else:
+                static_method = (
+                    f"{definition_indentation}@staticmethod{NEWLINE}"
+                )
+                parameters = ", ".join(parameter_names)
+        else:
+            static_method = ""
+            parameters = ", ".join(parameter_names)
+
+        insert_position = self.code_selection.find_callable_insert_point(
+            start=start, is_global=not is_method
+        )
+        edits = (
+            Edit(
+                insert_position.as_range,
+                text=f"{NEWLINE}{static_method}{definition_indentation}def {name}({parameters}):{NEWLINE}{extracted}{NEWLINE}",
+            ),
+            Edit(start.to(end), text=replace_text),
+        )
+        return edits
 
 
 class ExtractVariable:
