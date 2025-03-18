@@ -64,6 +64,7 @@ def apply_edits(source: types.Source, edits: Sequence[types.Edit]):
 
     new_text = "\n".join(full_range.text_with_substitutions(edits))
 
+    print(new_text)
     return new_text
 
 

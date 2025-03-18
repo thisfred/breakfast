@@ -224,7 +224,7 @@ class TextRange:
             if substitution.text_range.start > self.end:
                 break
             row_index = substitution.text_range.start.row - row_offset
-            size = (
+            rows = (
                 substitution.text_range.end.row
                 - substitution.text_range.start.row
             )
@@ -235,9 +235,9 @@ class TextRange:
             )
             new_lines[-1] = (
                 new_lines[-1]
-                + text[row_index + size][substitution.text_range.end.column :]
+                + text[row_index + rows][substitution.text_range.end.column :]
             )
-            text[row_index : row_index + size + 1] = new_lines
+            text[row_index : row_index + rows + 1] = new_lines
         return text
 
     def replace(self, new_text: str) -> types.Edit:

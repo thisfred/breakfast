@@ -72,12 +72,6 @@ class CodeSelection:
         refactoring = InlineCall(self, name)
         return refactoring.edits
 
-    def extract_method(self, name: str) -> tuple[Edit, ...]:
-        return self.extract_callable(name=name, is_method=True)
-
-    def extract_function(self, name: str) -> tuple[Edit, ...]:
-        return self.extract_callable(name=name)
-
     def extract_callable(
         self,
         name: str,
@@ -147,13 +141,14 @@ class CodeSelection:
         insert_position = self.find_callable_insert_point(
             start=start, is_global=not is_method
         )
-        return (
+        edits = (
             Edit(
                 insert_position.as_range,
                 text=f"{NEWLINE}{static_method}{definition_indentation}def {name}({parameters}):{NEWLINE}{extracted}{NEWLINE}",
             ),
             Edit(start.to(end), text=replace_text),
         )
+        return edits
 
     def get_parameter_names(
         self,
@@ -326,6 +321,24 @@ class Refactoring(Protocol):
     def __init__(self, selection: CodeSelection): ...
     @property
     def edits(self) -> tuple[Edit, ...]: ...
+
+
+class ExtractFunction:
+    def __init__(self, code_selection: CodeSelection):
+        self.code_selection = code_selection
+
+    @property
+    def edits(self) -> tuple[Edit, ...]:
+        return self.code_selection.extract_callable("f")
+
+
+class ExtractMethod:
+    def __init__(self, code_selection: CodeSelection):
+        self.code_selection = code_selection
+
+    @property
+    def edits(self) -> tuple[Edit, ...]:
+        return self.code_selection.extract_callable("m", is_method=True)
 
 
 class ExtractVariable:
