@@ -327,6 +327,7 @@ class StatementsExtractor:
         return return_values
 
 
+@register
 class ExtractFunction(ExtractCallable):
     name = "extract function"
 
@@ -388,6 +389,7 @@ class ExtractFunction(ExtractCallable):
         return edits
 
 
+@register
 class ExtractMethod(ExtractCallable):
     name = "extract method"
 
@@ -528,6 +530,7 @@ class ExtractVariable:
         return parsed.body[0].value
 
 
+@register
 class InlineVariable:
     name = "inline variable"
 
@@ -610,6 +613,7 @@ class InlineVariable:
         return edits
 
 
+@register
 class InlineCall:
     name = "inline call"
 
@@ -754,7 +758,10 @@ def get_return_value(new_lines: Sequence[str]) -> str:
     raise NotFoundError("No return found")
 
 
+@register
 class SlideStatementsUp:
+    name = "slide statements up"
+
     def __init__(
         self,
         code_selection: CodeSelection,
@@ -811,7 +818,10 @@ class SlideStatementsUp:
         return target
 
 
+@register
 class SlideStatementsDown:
+    name = "slide statements down"
+
     def __init__(
         self,
         code_selection: CodeSelection,
