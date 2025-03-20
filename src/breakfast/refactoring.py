@@ -111,13 +111,15 @@ class CodeSelection:
 
     def find_names_used_after_position(
         self,
-        names: Sequence[tuple[str, Position]],
+        names: Sequence[Occurrence],
         scope_graph: ScopeGraph,
         cutoff: Position,
     ) -> Iterator[Occurrence]:
-        for _, position in names:
+        for name_occurrence in names:
             try:
-                occurrences = all_occurrences(position, graph=scope_graph)
+                occurrences = all_occurrences(
+                    name_occurrence.position, graph=scope_graph
+                )
             except NotFoundError:
                 continue
             for occurrence in occurrences:
@@ -290,12 +292,7 @@ class StatementsExtractor:
         names_used_after = {
             occurrence.name
             for occurrence in self.code_selection.find_names_used_after_position(
-                [
-                    (occurrence.name, occurrence.position)
-                    for occurrence in names_in_range
-                ],
-                self.code_selection.scope_graph,
-                end,
+                names_in_range, self.code_selection.scope_graph, end
             )
         }
         seen = set()
