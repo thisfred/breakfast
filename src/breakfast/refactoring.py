@@ -48,15 +48,31 @@ class CodeSelection:
         cls._refactorings[refactoring.name] = refactoring
 
     def extract_variable(self) -> tuple[Edit, ...]:
-        refactoring = ExtractVariable(self)
+        refactoring = self._refactorings["extract variable"](self)
         return refactoring.edits
 
     def extract_function(self) -> tuple[Edit, ...]:
-        refactoring = ExtractFunction(self)
+        refactoring = self._refactorings["extract function"](self)
         return refactoring.edits
 
     def extract_method(self) -> tuple[Edit, ...]:
-        refactoring = ExtractMethod(self)
+        refactoring = self._refactorings["extract method"](self)
+        return refactoring.edits
+
+    def inline_variable(self) -> tuple[Edit, ...]:
+        refactoring = self._refactorings["inline variable"](self)
+        return refactoring.edits
+
+    def inline_call(self) -> tuple[Edit, ...]:
+        refactoring = self._refactorings["inline call"](self)
+        return refactoring.edits
+
+    def slide_statements_down(self) -> tuple[Edit, ...]:
+        refactoring = self._refactorings["slide statements down"](self)
+        return refactoring.edits
+
+    def slide_statements_up(self) -> tuple[Edit, ...]:
+        refactoring = self._refactorings["slide statements up"](self)
         return refactoring.edits
 
     @property
@@ -81,22 +97,6 @@ class CodeSelection:
         self, position: Position
     ) -> Sequence[Occurrence]:
         return all_occurrences(position, graph=self.scope_graph)
-
-    def inline_variable(self) -> tuple[Edit, ...]:
-        refactoring = InlineVariable(self)
-        return refactoring.edits
-
-    def inline_call(self) -> tuple[Edit, ...]:
-        refactoring = InlineCall(self)
-        return refactoring.edits
-
-    def slide_statements_down(self) -> tuple[Edit, ...]:
-        refactoring = SlideStatementsDown(self)
-        return refactoring.edits
-
-    def slide_statements_up(self) -> tuple[Edit, ...]:
-        refactoring = SlideStatementsUp(self)
-        return refactoring.edits
 
     @property
     def full_line_range(self) -> types.TextRange:
