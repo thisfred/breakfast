@@ -1,10 +1,10 @@
 import ast
 import logging
 from collections import defaultdict
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from itertools import dropwhile, takewhile
 from textwrap import dedent, indent
-from typing import Protocol
+from typing import ClassVar, Protocol
 
 from breakfast import types
 from breakfast.code_generation import to_source, unparse
@@ -28,7 +28,14 @@ FOUR_SPACES = "    "
 NEWLINE = "\n"
 
 
+def register(refactoring: "type[Refactoring]") -> "type[Refactoring]":
+    CodeSelection.register_refactoring(refactoring)
+    return refactoring
+
+
 class CodeSelection:
+    _refactorings: ClassVar[dict[str, "type[Refactoring]"]] = {}
+
     def __init__(self, text_range: types.TextRange):
         self.text_range = text_range
         self.source = self.text_range.source
@@ -36,8 +43,20 @@ class CodeSelection:
             [self.source], follow_redefinitions=False
         )
 
-    def extract_variable(self, name: str) -> tuple[Edit, ...]:
-        refactoring = ExtractVariable(self, name)
+    @classmethod
+    def register_refactoring(cls, refactoring: "type[Refactoring]") -> None:
+        cls._refactorings[refactoring.name] = refactoring
+
+    def extract_variable(self) -> tuple[Edit, ...]:
+        refactoring = ExtractVariable(self)
+        return refactoring.edits
+
+    def extract_function(self) -> tuple[Edit, ...]:
+        refactoring = ExtractFunction(self)
+        return refactoring.edits
+
+    def extract_method(self) -> tuple[Edit, ...]:
+        refactoring = ExtractMethod(self)
         return refactoring.edits
 
     @property
@@ -67,20 +86,16 @@ class CodeSelection:
         refactoring = InlineVariable(self)
         return refactoring.edits
 
-    def inline_call(self, name: str = "result") -> tuple[Edit, ...]:
-        refactoring = InlineCall(self, name)
+    def inline_call(self) -> tuple[Edit, ...]:
+        refactoring = InlineCall(self)
         return refactoring.edits
 
     def slide_statements_down(self) -> tuple[Edit, ...]:
-        refactoring = SlideStatements(
-            self, SlideStatements.find_slide_target_after
-        )
+        refactoring = SlideStatementsDown(self)
         return refactoring.edits
 
     def slide_statements_up(self) -> tuple[Edit, ...]:
-        refactoring = SlideStatements(
-            self, SlideStatements.find_slide_target_before
-        )
+        refactoring = SlideStatementsUp(self)
         return refactoring.edits
 
     @property
@@ -129,6 +144,8 @@ class CodeSelection:
 
 
 class Refactoring(Protocol):
+    name: str
+
     def __init__(self, selection: CodeSelection): ...
     @property
     def edits(self) -> tuple[Edit, ...]: ...
@@ -240,7 +257,7 @@ class ExpressionExtractor:
                     ]
                     assignment = " = ".join(non_attribute_vars)
                     extracted = "".join(to_source(module, level))
-                    extracted = f"{self.new_indentation}{extracted}\n{self.new_indentation}return {non_attribute_vars[0]}"
+                    extracted = f"{extracted}\n{self.new_indentation}return {non_attribute_vars[0]}"
             case _:
                 extracted = f"{self.new_indentation}result = {extracted}\n{self.new_indentation}return result"
 
@@ -311,6 +328,8 @@ class StatementsExtractor:
 
 
 class ExtractFunction(ExtractCallable):
+    name = "extract function"
+
     @property
     def edits(self) -> tuple[Edit, ...]:
         return self.extract_callable("function")
@@ -370,6 +389,8 @@ class ExtractFunction(ExtractCallable):
 
 
 class ExtractMethod(ExtractCallable):
+    name = "extract method"
+
     @property
     def edits(self) -> tuple[Edit, ...]:
         return self.extract_callable("method")
@@ -443,14 +464,17 @@ class ExtractMethod(ExtractCallable):
         return edits
 
 
+@register
 class ExtractVariable:
-    def __init__(self, code_selection: CodeSelection, name: str):
+    name = "extract variable"
+
+    def __init__(self, code_selection: CodeSelection):
         self.text_range = code_selection.text_range
-        self.name = name
         self.source = self.text_range.start.source
 
     @property
     def edits(self) -> tuple[Edit, ...]:
+        name = "result"
         extracted = self.text_range.text
 
         if not (expression := self.get_single_expression_value(extracted)):
@@ -465,12 +489,12 @@ class ExtractVariable:
         other_edits = [
             (start := self.source.node_position(o))
             .to(start + len(extracted))
-            .replace(self.name)
+            .replace(name)
             for o in other_occurrences
         ]
         edits = sorted(
             [
-                Edit(text_range=self.text_range, text=self.name),
+                Edit(text_range=self.text_range, text=name),
                 *other_edits,
             ]
         )
@@ -487,7 +511,7 @@ class ExtractVariable:
 
         insert_point = statement_start or first_edit_position.start_of_line
         indentation = " " * insert_point.column
-        definition = f"{self.name} = {extracted}{NEWLINE}{indentation}"
+        definition = f"{name} = {extracted}{NEWLINE}{indentation}"
         insert = insert_point.insert(definition)
         return (insert, *edits)
 
@@ -505,6 +529,8 @@ class ExtractVariable:
 
 
 class InlineVariable:
+    name = "inline variable"
+
     def __init__(self, code_selection: CodeSelection):
         self.text_range = code_selection.text_range
         self.cursor = code_selection.cursor
@@ -585,12 +611,13 @@ class InlineVariable:
 
 
 class InlineCall:
-    def __init__(self, code_selection: CodeSelection, name: str = "result"):
+    name = "inline call"
+
+    def __init__(self, code_selection: CodeSelection):
         self.text_range = code_selection.text_range
         self.source = self.text_range.start.source
         self.scope_graph = code_selection.scope_graph
         self.enclosing_call = code_selection.text_range.enclosing_call
-        self.name = name
 
     @property
     def edits(self) -> tuple[Edit, ...]:
@@ -636,10 +663,11 @@ class InlineCall:
         ]
 
         indentation = self.text_range.start.indentation
+        name = "result"
         for return_range in return_ranges:
             offset = return_range.start.row - body_range.start.row
             new_lines[offset] = new_lines[offset].replace(
-                "return ", f"{self.name} = ", 1
+                "return ", f"{name} = ", 1
             )
         body = indent(
             dedent(NEWLINE.join(new_lines) + NEWLINE),
@@ -660,7 +688,7 @@ class InlineCall:
                 insert_range,
                 text=f"{body}",
             ),
-            Edit(call.range, text=self.name),
+            Edit(call.range, text=name),
         )
 
     def get_new_lines(
@@ -726,19 +754,17 @@ def get_return_value(new_lines: Sequence[str]) -> str:
     raise NotFoundError("No return found")
 
 
-class SlideStatements:
+class SlideStatementsUp:
     def __init__(
         self,
         code_selection: CodeSelection,
-        find_target: Callable[[CodeSelection], Position | None],
     ):
         self.text_range = code_selection.text_range
         self.code_selection = code_selection
-        self.find_target = find_target
 
     @property
     def edits(self) -> tuple[Edit, ...]:
-        target = self.find_target(self.code_selection)
+        target = self.find_slide_target_before()
         if target is None:
             return ()
 
@@ -749,50 +775,10 @@ class SlideStatements:
         ).replace("")
         return (insert, delete)
 
-    @staticmethod
-    def find_slide_target_after(selection: CodeSelection) -> Position | None:
+    def find_slide_target_before(self) -> Position | None:
         first, last = (
-            selection.text_range.start.line,
-            selection.text_range.end.line,
-        )
-        lines = first.start.to(last.end)
-        names_defined_in_range = lines.definitions
-        first_usage_after_range = next(
-            (
-                o.position
-                for o in selection.find_names_used_after_position(
-                    names_defined_in_range, selection.scope_graph, last.end
-                )
-            ),
-            None,
-        )
-        if not first_usage_after_range:
-            return None
-
-        enclosing_nodes = first_usage_after_range.as_range.enclosing_nodes()
-        origin_nodes = lines.enclosing_nodes()
-        index = 0
-        while (
-            index < len(origin_nodes)
-            and origin_nodes[index].range == enclosing_nodes[index].range
-        ):
-            index += 1
-
-        first_usage_after_range = enclosing_nodes[index].range.start
-
-        if (
-            first_usage_after_range
-            and first_usage_after_range.row > last.row + 1
-        ):
-            return first_usage_after_range.start_of_line
-
-        return None
-
-    @staticmethod
-    def find_slide_target_before(selection: CodeSelection) -> Position | None:
-        first, last = (
-            selection.text_range.start.line,
-            selection.text_range.end.line,
+            self.code_selection.text_range.start.line,
+            self.code_selection.text_range.end.line,
         )
         original_indentation = first.start.indentation
         line = first
@@ -823,3 +809,65 @@ class SlideStatements:
         )
 
         return target
+
+
+class SlideStatementsDown:
+    def __init__(
+        self,
+        code_selection: CodeSelection,
+    ):
+        self.text_range = code_selection.text_range
+        self.code_selection = code_selection
+
+    @property
+    def edits(self) -> tuple[Edit, ...]:
+        target = self.find_slide_target_after()
+        if target is None:
+            return ()
+
+        first, last = self.text_range.start.line, self.text_range.end.line
+        insert = target.insert(first.start.through(last.end).text + NEWLINE)
+        delete = first.start.to(
+            last.next.start if last.next else last.end
+        ).replace("")
+        return (insert, delete)
+
+    def find_slide_target_after(self) -> Position | None:
+        first, last = (
+            self.code_selection.text_range.start.line,
+            self.code_selection.text_range.end.line,
+        )
+        lines = first.start.to(last.end)
+        names_defined_in_range = lines.definitions
+        first_usage_after_range = next(
+            (
+                o.position
+                for o in self.code_selection.find_names_used_after_position(
+                    names_defined_in_range,
+                    self.code_selection.scope_graph,
+                    last.end,
+                )
+            ),
+            None,
+        )
+        if not first_usage_after_range:
+            return None
+
+        enclosing_nodes = first_usage_after_range.as_range.enclosing_nodes()
+        origin_nodes = lines.enclosing_nodes()
+        index = 0
+        while (
+            index < len(origin_nodes)
+            and origin_nodes[index].range == enclosing_nodes[index].range
+        ):
+            index += 1
+
+        first_usage_after_range = enclosing_nodes[index].range.start
+
+        if (
+            first_usage_after_range
+            and first_usage_after_range.row > last.row + 1
+        ):
+            return first_usage_after_range.start_of_line
+
+        return None

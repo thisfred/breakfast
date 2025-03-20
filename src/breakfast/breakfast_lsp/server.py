@@ -4,7 +4,6 @@ from collections.abc import Iterable, Mapping, Sequence
 from functools import partial
 from itertools import groupby
 from pathlib import Path
-from time import time
 from typing import Any
 
 from lsprotocol.types import (
@@ -52,10 +51,6 @@ LSP_SERVER = LanguageServer(
     version=__version__,
     max_workers=MAX_WORKERS,
 )
-
-
-def timestamp() -> str:
-    return str(time()).replace(".", "_")
 
 
 def find_identifier_range_at(
@@ -388,7 +383,7 @@ async def _extract_function(
     version: None,
 ) -> WorkspaceEdit:
     """Extract function."""
-    edits = refactor.extract_function(name=f"extracted_function_{timestamp()}")
+    edits = refactor.extract_function()
 
     text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
     document_changes: list[
@@ -410,7 +405,7 @@ async def _extract_method(
     version: None,
 ) -> WorkspaceEdit | None:
     """Extract method."""
-    edits = refactor.extract_method(name=f"extracted_method_{timestamp()}")
+    edits = refactor.extract_method()
 
     text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
     document_changes: list[
@@ -432,9 +427,7 @@ async def _extract_variable(
     version: None,
 ) -> WorkspaceEdit:
     """Extract variable."""
-    edits = refactor.extract_variable(
-        name=f"extracted_variable_{timestamp()}",
-    )
+    edits = refactor.extract_variable()
 
     text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
     document_changes: list[
@@ -519,7 +512,7 @@ async def _inline_call(
     version: None,
 ) -> WorkspaceEdit:
     """Inline function/method call."""
-    edits = refactor.inline_call("result")
+    edits = refactor.inline_call()
     text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
     document_changes: list[
         TextDocumentEdit | CreateFile | RenameFile | DeleteFile
