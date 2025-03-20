@@ -1,5 +1,3 @@
-from pytest import mark
-
 from breakfast.refactoring import (
     CodeSelection,
     Edit,
@@ -240,110 +238,99 @@ def test_extract_function_should_insert_function_definition():
     assert insert.text == dedent(
         """
         def function(value):
-            return abs(value + 8)
+            result = abs(value + 8)
+            return result
         """
     )
 
 
 def test_extract_function_should_insert_function_definition_with_multiple_statements():
-    source = make_source(
-        """
+    assert_refactors_to(
+        refactoring=ExtractFunction,
+        target=("print(value + 20)", "print(max(value, 0))"),
+        code="""
         value = 0
         print(value + 20)
         print(max(value, 0))
-        """
-    )
-    extraction_start = source.position(2, 0)
-    extraction_end = source.position(3, 21)
+        """,
+        expected="""
+        value = 0
 
-    refactor = ExtractFunction(
-        CodeSelection(TextRange(extraction_start, extraction_end))
-    )
-    insert, *_edits = refactor.edits
-
-    result = dedent(
-        """
         def function(value):
             print(value + 20)
             print(max(value, 0))
-        """
-    )
 
-    assert insert.text.rstrip() == result.rstrip()
+        function(value=value)
+        """,
+    )
 
 
 def test_extract_function_should_create_arguments_for_local_variables():
-    source = make_source(
-        """
+    assert_refactors_to(
+        refactoring=ExtractFunction,
+        target=("print(value + 20)", "print(max(other_value, value))"),
+        code="""
         value = 0
         other_value = 1
         print(value + 20)
         print(max(other_value, value))
-        """
-    )
+        """,
+        expected="""
+        value = 0
+        other_value = 1
 
-    start = source.position(3, 0)
-    end = source.position(4, 21)
-
-    refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
-    insert, *_edits = refactor.edits
-
-    result = dedent(
-        """
         def function(value, other_value):
             print(value + 20)
             print(max(other_value, value))
-        """
-    )
 
-    assert insert.text.rstrip() == result.rstrip()
+        function(value=value, other_value=other_value)
+        """,
+    )
 
 
 def test_extract_function_should_return_modified_variable_used_after_call():
-    source = make_source(
-        """
+    assert_refactors_to(
+        refactoring=ExtractFunction,
+        target="b = a + 2",
+        code="""
         a = 1
         b = a + 2
         print(b)
-        """
-    )
-    start = source.position(2, 0)
-    end = source.position(2, 9)
-    refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
-    insert, *_edits = refactor.edits
+        """,
+        expected="""
+        a = 1
 
-    result = dedent(
-        """
         def function(a):
             b = a + 2
             return b
-        """
-    )
 
-    assert insert.text.rstrip() == result.rstrip()
+        b = function(a=a)
+        print(b)
+        """,
+    )
 
 
 def test_extract_function_should_extract_outside_function():
-    source = make_source(
-        """
+    assert_refactors_to(
+        refactoring=ExtractFunction,
+        target="a + 2",
+        code="""
         def f():
             a = 1
             b = a + 2
             print(b)
-        """
+        """,
+        expected="""
+        def f():
+            a = 1
+            b = function(a=a)
+            print(b)
+
+        def function(a):
+            result = a + 2
+            return result
+        """,
     )
-    start = source.position(3, 0)
-    end = source.position(3, 13)
-    refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
-    insert, *_edits = refactor.edits
-
-    result = """
-def function(a):
-    b = a + 2
-    return b
-"""
-
-    assert insert.text.rstrip() == result.rstrip()
 
 
 def test_extract_function_should_extract_after_current_scope():
@@ -483,7 +470,6 @@ def f(a):
     assert "b = function(a=a)" in replace.text
 
 
-@mark.xfail
 def test_extract_method_should_replace_extracted_code_with_method_call():
     assert_refactors_to(
         refactoring=ExtractMethod,
@@ -493,19 +479,44 @@ def test_extract_method_should_replace_extracted_code_with_method_call():
             def f(self):
                 a = 1
                 self.b = a + 2
-                print(b)
+                print(self.b)
         """,
         expected="""
         class A:
             def f(self):
                 a = 1
-                self.m(a=a)
-                print(b)
+                self.method(a=a)
+                print(self.b)
 
-            def m(self, a):
+            def method(self, a):
                 self.b = a + 2
         """,
     )
+
+
+# def test_extract_method_should_handle_multitarget_assignment():
+#     assert_refactors_to(
+#         refactoring=ExtractMethod,
+#         target="self.b = c = a + 2",
+#         code="""
+#         class A:
+#             def f(self):
+#                 a = 1
+#                 self.b = c = a + 2
+#                 print(c)
+#         """,
+#         expected="""
+#         class A:
+#             def f(self):
+#                 a = 1
+#                 c = self.method(a=a)
+#                 print(c)
+
+#             def method(self, a):
+#                 self.b = c = a + 2
+#                 return c
+#         """,
+#     )
 
 
 def test_extract_method_should_extract_after_current_method():
@@ -747,7 +758,8 @@ def test_extract_method_should_extract_part_of_a_line():
     assert dedent(
         """
         def method(self):
-            return self.text_range.start + 2
+            result = self.text_range.start + 2
+            return result
         """
     ) == dedent(insert.text)
 
@@ -1039,7 +1051,7 @@ def test_refactor_inside_method_is_true_for_range_inside_method():
     assert refactor.inside_method
 
 
-def test_refactor_inside_method_is_false_for_range_outside_clsss():
+def test_refactor_inside_method_is_false_for_range_outside_class():
     source = make_source(
         """
         class C:

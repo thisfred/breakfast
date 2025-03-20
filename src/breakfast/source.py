@@ -4,7 +4,7 @@ import os
 import re
 import sys
 from ast import AST, parse
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import InitVar, dataclass, replace
 from functools import cached_property
 from typing import Protocol, TypeGuard
@@ -206,6 +206,31 @@ class TextRange:
         types = ast.Assign
         assignments = self.enclosing_nodes_by_type(types)
         return assignments[-1] if assignments else None
+
+    @cached_property
+    def statements(self) -> Iterable[ast.stmt]:
+        if self.end.column == 0 and self.end.line.previous is not None:
+            text_range = self.start.to(self.end.line.previous.end)
+        else:
+            text_range = self
+        enclosing_scopes = text_range.enclosing_scopes()
+        if enclosing_scopes:
+            parent: ast.AST = enclosing_scopes[-1].node
+        else:
+            parent = self.source.ast
+
+        if not isinstance(
+            parent,
+            ast.Module | ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
+        ):
+            return
+
+        for node in parent.body:
+            if self.source.node_position(node) < text_range.start:
+                continue
+            if self.source.node_position(node) > text_range.end:
+                break
+            yield node
 
     def text_with_substitutions(
         self, substitutions: Sequence[types.Edit]

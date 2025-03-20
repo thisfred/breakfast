@@ -304,7 +304,6 @@ def list_comp(node: ast.ListComp, level: int) -> Iterator[str]:
 
 @to_source.register
 def dict_comp(node: ast.DictComp, level: int) -> Iterator[str]:
-    print(ast.dump(node))
     yield "{"
     yield from to_source(node.key, level)
     yield ": "
@@ -362,7 +361,6 @@ def await_node(node: ast.Await, level: int) -> Iterator[str]:
 
 @to_source.register
 def lambda_node(node: ast.Lambda, level: int) -> Iterator[str]:
-    print(ast.dump(node))
     yield "lambda "
     yield from to_source(node.args, level)
     yield ": "
@@ -485,12 +483,30 @@ def match_as(node: ast.MatchAs, level: int) -> Iterator[str]:
 
 @to_source.register
 def match_class(node: ast.MatchClass, level: int) -> Iterator[str]:
+    print(ast.dump(node))
     yield from to_source(node.cls, level)
     yield "("
-    for pattern in node.patterns:
-        yield from to_source(pattern, level)
-        yield ", "
+    yield from with_separators(
+        node.patterns, level, include_final_separator=bool(node.kwd_attrs)
+    )
+    for keyword_attribute, keyword_pattern, comma in zip(
+        node.kwd_attrs,
+        node.kwd_patterns,
+        separators(node.kwd_attrs),
+        strict=True,
+    ):
+        yield f"{keyword_attribute}="
+        yield from to_source(keyword_pattern, level)
+        yield comma
     yield ")"
+
+
+@to_source.register
+def match_sequence(node: ast.MatchSequence, level: int) -> Iterator[str]:
+    yield "["
+    yield from with_separators(node.patterns, level)
+    yield "]"
+    yield from ()
 
 
 @to_source.register

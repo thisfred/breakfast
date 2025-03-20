@@ -6,7 +6,7 @@ fine. Changing types or signatures of existing fields or methods is not.
 
 import ast
 from ast import AST
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -83,6 +83,9 @@ class TextRange(Protocol):
     def enclosing_call(self) -> "NodeWithRange[ast.Call] | None": ...
 
     def enclosing_assignment(self) -> "NodeWithRange[ast.Assign] | None": ...
+
+    @property
+    def statements(self) -> Iterable[ast.stmt]: ...
 
     def text_with_substitutions(
         self, substitutions: Sequence["Edit"]
