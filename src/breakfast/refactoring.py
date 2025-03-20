@@ -2,7 +2,6 @@ import ast
 import logging
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator, Sequence
-from functools import cached_property
 from itertools import dropwhile, takewhile
 from textwrap import dedent, indent
 from typing import Protocol
@@ -59,9 +58,10 @@ class CodeSelection:
     def cursor(self) -> types.Position:
         return self.text_range.start
 
-    @cached_property
-    def occurrences(self) -> Sequence[Occurrence]:
-        return all_occurrences(self.cursor, graph=self.scope_graph)
+    def occurrences_of_name_at(
+        self, position: Position
+    ) -> Sequence[Occurrence]:
+        return all_occurrences(position, graph=self.scope_graph)
 
     def inline_variable(self) -> tuple[Edit, ...]:
         refactoring = InlineVariable(self)
@@ -93,12 +93,28 @@ class CodeSelection:
 
         return start.to(end)
 
+    def find_usages_after_position(
+        self,
+        occurrences: Sequence[Occurrence],
+        scope_graph: ScopeGraph,
+        cutoff: Position,
+    ) -> Iterator[Occurrence]:
+        for occurrence in occurrences:
+            try:
+                usages = all_occurrences(occurrence.position, graph=scope_graph)
+            except NotFoundError:
+                continue
+            for usage in usages:
+                if usage.position > cutoff:
+                    yield usage
+                    break
+
     def find_names_used_after_position(
         self,
         names: Sequence[tuple[str, Position]],
         scope_graph: ScopeGraph,
         cutoff: Position,
-    ) -> Iterable[Occurrence]:
+    ) -> Iterator[Occurrence]:
         for _, position in names:
             try:
                 occurrences = all_occurrences(position, graph=scope_graph)
@@ -144,41 +160,42 @@ class ExtractCallable:
 
     def get_parameter_names(
         self,
-        names_in_range: Sequence[tuple[str, Position, ast.expr_context]],
+        names_in_range: Sequence[Occurrence],
         text_range: types.TextRange,
         start_of_current_scope: Position,
     ) -> list[str]:
         return [
-            name
-            for occurrence, name in self.find_names_defined_before_range(
+            occurrence.name
+            for occurrence in self.find_names_defined_before_range(
                 names_in_range, text_range
             )
             if occurrence.position >= start_of_current_scope
             # If we are extracting code that passes a name as an argument to a another
             # function, it is very likely that we want to receive that as an argument as
             # well, rather than close over it or get it from the global scope:
-            or text_range.contains_as_argument(name)
+            or text_range.contains_as_argument(occurrence.name)
         ]
 
     def find_names_defined_before_range(
         self,
-        names: Sequence[tuple[str, Position, ast.expr_context]],
+        names: Sequence[Occurrence],
         text_range: types.TextRange,
-    ) -> Iterable[tuple[Occurrence, str]]:
+    ) -> Iterable[Occurrence]:
         found = set()
-        for name, position, _ in names:
-            if name in found:
+        for name_occurrence in names:
+            if name_occurrence.name in found:
                 continue
             try:
                 occurrences = all_occurrences(
-                    position, graph=self.code_selection.scope_graph
+                    name_occurrence.position,
+                    graph=self.code_selection.scope_graph,
                 )
             except NotFoundError:
                 continue
             for occurrence in occurrences:
                 if occurrence.position < text_range.start:
-                    found.add(name)
-                    yield occurrence, name
+                    found.add(name_occurrence.name)
+                    yield occurrence
                 break
 
 
@@ -267,13 +284,16 @@ class StatementsExtractor:
 
     def get_return_values(
         self,
-        names_in_range: Sequence[tuple[str, Position, ast.expr_context]],
+        names_in_range: Sequence[Occurrence],
         end: Position,
     ) -> list[str]:
         names_used_after = {
             occurrence.name
             for occurrence in self.code_selection.find_names_used_after_position(
-                [(n, p) for n, p, _ in names_in_range],
+                [
+                    (occurrence.name, occurrence.position)
+                    for occurrence in names_in_range
+                ],
                 self.code_selection.scope_graph,
                 end,
             )
@@ -281,9 +301,9 @@ class StatementsExtractor:
         seen = set()
         return_values = []
         names_modified_in_body = [
-            name
-            for name, _, ctx in names_in_range
-            if isinstance(ctx, ast.Store)
+            occurrence.name
+            for occurrence in names_in_range
+            if occurrence.node_type is NodeType.DEFINITION
         ]
         for name in names_modified_in_body:
             if name in names_used_after and name not in seen:
@@ -382,7 +402,7 @@ class ExtractMethod(ExtractCallable):
 
         start_of_current_scope = self.find_start_of_scope(start=start)
         names_in_range = self.code_selection.full_line_range.names
-        parameter_names: Sequence[str] = self.get_parameter_names(
+        parameter_names = self.get_parameter_names(
             names_in_range=names_in_range,
             text_range=self.code_selection.full_line_range,
             start_of_current_scope=start_of_current_scope,
@@ -497,7 +517,7 @@ class InlineVariable:
     @property
     def edits(self) -> tuple[Edit, ...]:
         grouped: dict[bool, list[Occurrence]] = defaultdict(list)
-        for o in self.code_selection.occurrences:
+        for o in self.code_selection.occurrences_of_name_at(self.cursor):
             grouped[o.node_type is NodeType.DEFINITION].append(o)
 
         last_definition = grouped.get(True, [None])[-1]
@@ -516,7 +536,7 @@ class InlineVariable:
                 o
                 for o in dropwhile(
                     lambda x: x.position <= self.cursor,
-                    self.code_selection.occurrences,
+                    self.code_selection.occurrences_of_name_at(self.cursor),
                 )
             )
             to_replace: tuple[types.TextRange, ...] = tuple(
@@ -791,16 +811,16 @@ class SlideStatements:
         )
 
         text_range = first.start.to(last.end)
-        names_in_range = {n for n, _, _ in text_range.names}
+        names_in_range = {occurrence.name for occurrence in text_range.names}
         target = max(
             [
                 line.start,
                 *(
-                    position.line.next.start
-                    if position.line.next
-                    else position.line.end
-                    for name, position, _ in scope_before.names
-                    if name in names_in_range
+                    occurrence.position.line.next.start
+                    if occurrence.position.line.next
+                    else occurrence.position.line.end
+                    for occurrence in scope_before.names
+                    if occurrence.name in names_in_range
                 ),
             ]
         )

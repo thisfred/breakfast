@@ -8,6 +8,7 @@ import ast
 from ast import AST
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from enum import Enum, auto
 from typing import Protocol
 
 
@@ -60,7 +61,7 @@ class TextRange(Protocol):
     def text(self) -> str: ...
 
     @property
-    def names(self) -> Sequence[tuple[str, Position, ast.expr_context]]: ...
+    def names(self) -> Sequence["Occurrence"]: ...
 
     @property
     def definitions(self) -> list[tuple[str, "Position"]]: ...
@@ -168,3 +169,20 @@ class Edit:
     @property
     def end(self) -> Position:
         return self.text_range.end
+
+
+class NodeType(Enum):
+    SCOPE = auto()
+    MODULE_SCOPE = auto()
+    DEFINITION = auto()
+    REFERENCE = auto()
+    INSTANCE = auto()
+    CLASS = auto()
+
+
+@dataclass(frozen=True)
+class Occurrence(Protocol):
+    name: str
+    position: Position
+    ast: ast.AST | None
+    node_type: NodeType

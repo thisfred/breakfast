@@ -142,23 +142,23 @@ class TextRange:
         return self.start.source
 
     @cached_property
-    def names(self) -> Sequence[tuple[str, types.Position, ast.expr_context]]:
+    def names(self) -> Sequence[types.Occurrence]:
         names = []
-        for name, position, context in find_names(self.source.ast, self.source):
-            if position < self.start:
+        for occurrence in find_names(self.source.ast, self.source):
+            if occurrence.position < self.start:
                 continue
-            if position > self.end:
+            if occurrence.position > self.end:
                 break
-            names.append((name, position, context))
+            names.append(occurrence)
 
         return names
 
     @cached_property
     def definitions(self) -> list[tuple[str, types.Position]]:
         return [
-            (name, position)
-            for name, position, ctx in self.names
-            if isinstance(ctx, ast.Store)
+            (occurrence.name, occurrence.position)
+            for occurrence in self.names
+            if occurrence.node_type is types.NodeType.DEFINITION
         ]
 
     def enclosing_scopes(

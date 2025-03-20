@@ -1,10 +1,19 @@
 import ast
 from collections.abc import Iterator
+from dataclasses import dataclass
 from functools import singledispatch
 from typing import Any, Protocol
 
-from breakfast.types import Position, Source, TextRange
+from breakfast.types import NodeType, Position, Source, TextRange
 from breakfast.visitor import generic_visit
+
+
+@dataclass(frozen=True)
+class Occurrence:
+    name: str
+    position: Position
+    ast: ast.AST | None
+    node_type: NodeType
 
 
 @singledispatch
@@ -141,28 +150,32 @@ def is_structurally_identical(node: ast.AST, other_node: Any) -> bool:
 
 
 @singledispatch
-def find_names(
-    node: ast.AST, source: Source
-) -> Iterator[tuple[str, Position, ast.expr_context]]:
+def find_names(node: ast.AST, source: Source) -> Iterator[Occurrence]:
     yield from generic_visit(find_names, node, source)
 
 
 @find_names.register
-def find_names_in_name(
-    node: ast.Name, source: Source
-) -> Iterator[tuple[str, Position, ast.expr_context]]:
-    yield node.id, source.node_position(node), node.ctx
+def find_names_in_name(node: ast.Name, source: Source) -> Iterator[Occurrence]:
+    yield Occurrence(
+        name=node.id,
+        position=source.node_position(node),
+        ast=node,
+        node_type=NodeType.DEFINITION
+        if isinstance(node.ctx, ast.Store)
+        else NodeType.REFERENCE,
+    )
 
 
 @find_names.register
 def find_names_in_function(
     node: ast.FunctionDef | ast.AsyncFunctionDef, source: Source
-) -> Iterator[tuple[str, Position, ast.expr_context]]:
+) -> Iterator[Occurrence]:
     for arg in node.args.args:
-        yield (
-            arg.arg,
-            source.position(arg.lineno - 1, arg.col_offset),
-            ast.Store(),
+        yield Occurrence(
+            name=arg.arg,
+            position=source.position(arg.lineno - 1, arg.col_offset),
+            ast=arg,
+            node_type=NodeType.DEFINITION,
         )
     yield from generic_visit(find_names, node, source)
 
@@ -170,7 +183,7 @@ def find_names_in_function(
 @find_names.register
 def find_names_in_attribute(
     node: ast.Attribute, source: Source
-) -> Iterator[tuple[str, Position, ast.expr_context]]:
+) -> Iterator[Occurrence]:
     yield from find_names(node.value, source)
 
 

@@ -4,10 +4,9 @@ from collections import defaultdict, deque
 from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from enum import Enum, auto
 from typing import Protocol
 
-from breakfast.types import NotFoundError, Position
+from breakfast.types import NodeType, NotFoundError, Position
 
 logger = logging.getLogger(__name__)
 
@@ -38,15 +37,6 @@ class Edge:
 
 class Rule(Protocol):
     def __call__(self, edge: Edge) -> bool: ...
-
-
-class NodeType(Enum):
-    SCOPE = auto()
-    MODULE_SCOPE = auto()
-    DEFINITION = auto()
-    REFERENCE = auto()
-    INSTANCE = auto()
-    CLASS = auto()
 
 
 @dataclass(frozen=True)

@@ -9,14 +9,13 @@ from collections import defaultdict
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from functools import singledispatch
-from typing import Protocol, TypeGuard
+from typing import TypeGuard
 
 from breakfast.scope_graph import (
     Configuration,
     Fragment,
     Gadget,
     IncompleteFragment,
-    NodeType,
     NotFoundError,
     Path,
     ScopeGraph,
@@ -25,20 +24,13 @@ from breakfast.scope_graph import (
     no_lookup_in_enclosing_scope,
 )
 from breakfast.source import SubSource
-from breakfast.types import Position, Source
+from breakfast.types import NodeType, Occurrence, Position, Source
 
 logger = logging.getLogger(__name__)
 
 CLASS_OFFSET = len("class ")
 DEF_OFFSET = len("def ")
 ASYNC_DEF_OFFSET = len("async def ")
-
-
-class Occurrence(Protocol):
-    name: str
-    position: Position
-    ast: ast.AST | None
-    node_type: NodeType
 
 
 def is_occurrence(node: ScopeNode) -> TypeGuard[Occurrence]:
