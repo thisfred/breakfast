@@ -47,33 +47,9 @@ class CodeSelection:
     def register_refactoring(cls, refactoring: "type[Refactoring]") -> None:
         cls._refactorings[refactoring.name] = refactoring
 
-    def extract_variable(self) -> tuple[Edit, ...]:
-        refactoring = self._refactorings["extract variable"](self)
-        return refactoring.edits
-
-    def extract_function(self) -> tuple[Edit, ...]:
-        refactoring = self._refactorings["extract function"](self)
-        return refactoring.edits
-
-    def extract_method(self) -> tuple[Edit, ...]:
-        refactoring = self._refactorings["extract method"](self)
-        return refactoring.edits
-
-    def inline_variable(self) -> tuple[Edit, ...]:
-        refactoring = self._refactorings["inline variable"](self)
-        return refactoring.edits
-
-    def inline_call(self) -> tuple[Edit, ...]:
-        refactoring = self._refactorings["inline call"](self)
-        return refactoring.edits
-
-    def slide_statements_down(self) -> tuple[Edit, ...]:
-        refactoring = self._refactorings["slide statements down"](self)
-        return refactoring.edits
-
-    def slide_statements_up(self) -> tuple[Edit, ...]:
-        refactoring = self._refactorings["slide statements up"](self)
-        return refactoring.edits
+    @property
+    def refactorings(self) -> Iterable["type[Refactoring]"]:
+        return self._refactorings.values()
 
     @property
     def inside_method(self) -> bool:

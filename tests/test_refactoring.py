@@ -3,8 +3,11 @@ from breakfast.refactoring import (
     Edit,
     ExtractFunction,
     ExtractMethod,
+    ExtractVariable,
     InlineCall,
     InlineVariable,
+    SlideStatementsDown,
+    SlideStatementsUp,
 )
 from breakfast.source import Source, TextRange
 from tests.conftest import assert_refactors_to, dedent, make_source
@@ -19,8 +22,10 @@ def test_extract_variable_should_insert_name_definition():
     extraction_start = source.position(1, 4)
     extraction_end = source.position(1, 9)
 
-    refactor = CodeSelection(TextRange(extraction_start, extraction_end))
-    insert, *_ = refactor.extract_variable()
+    refactor = ExtractVariable(
+        CodeSelection(TextRange(extraction_start, extraction_end))
+    )
+    insert, *_ = refactor.edits
     assert insert.text == "result = a + 3\n"
 
 
@@ -33,8 +38,10 @@ def test_extract_variable_should_replace_extracted_test_with_result():
     extraction_start = source.position(1, 4)
     extraction_end = source.position(1, 9)
 
-    refactor = CodeSelection(TextRange(extraction_start, extraction_end))
-    _, replace = refactor.extract_variable()
+    refactor = ExtractVariable(
+        CodeSelection(TextRange(extraction_start, extraction_end))
+    )
+    _, replace = refactor.edits
     assert replace == Edit(
         TextRange(start=extraction_start, end=extraction_end), text="result"
     )
@@ -49,8 +56,10 @@ def test_extract_variable_should_insert_name_definition_before_extraction_point(
     extraction_start = source.position(1, 4)
     extraction_end = source.position(1, 9)
 
-    refactor = CodeSelection(TextRange(extraction_start, extraction_end))
-    insert, *_ = refactor.extract_variable()
+    refactor = ExtractVariable(
+        CodeSelection(TextRange(extraction_start, extraction_end))
+    )
+    insert, *_ = refactor.edits
 
     assert insert.start < extraction_start
 
@@ -64,8 +73,10 @@ def test_extract_variable_should_replace_code_with_variable():
 
     extraction_start = source.position(1, 4)
     extraction_end = source.position(1, 22)
-    refactor = CodeSelection(TextRange(extraction_start, extraction_end))
-    edits = refactor.extract_variable()
+    refactor = ExtractVariable(
+        CodeSelection(TextRange(extraction_start, extraction_end))
+    )
+    edits = refactor.edits
 
     assert edits == (
         Edit(
@@ -85,8 +96,10 @@ def test_extract_variable_will_not_extract_partial_expression():
 
     extraction_start = source.position(1, 4)
     extraction_end = source.position(1, 21)
-    refactor = CodeSelection(TextRange(extraction_start, extraction_end))
-    edits = refactor.extract_variable()
+    refactor = ExtractVariable(
+        CodeSelection(TextRange(extraction_start, extraction_end))
+    )
+    edits = refactor.edits
     assert not edits
 
 
@@ -102,8 +115,10 @@ def test_extract_variable_should_move_definition_before_current_statement():
     )
     extraction_start = source.position(3, 4)
     extraction_end = source.position(3, 22)
-    refactor = CodeSelection(TextRange(extraction_start, extraction_end))
-    insert, _ = refactor.extract_variable()
+    refactor = ExtractVariable(
+        CodeSelection(TextRange(extraction_start, extraction_end))
+    )
+    insert, _ = refactor.edits
     assert insert.start.row == 1
 
 
@@ -116,8 +131,10 @@ def test_extract_variable_should_extract_value_in_index_position():
     )
     extraction_start = source.position(2, 33)
     extraction_end = source.position(2, 48)
-    refactor = CodeSelection(TextRange(extraction_start, extraction_end))
-    insert, _ = refactor.extract_variable()
+    refactor = ExtractVariable(
+        CodeSelection(TextRange(extraction_start, extraction_end))
+    )
+    insert, _ = refactor.edits
     assert insert.start.row == 2
 
 
@@ -134,8 +151,10 @@ def test_extract_variable_should_retain_indentation_level():
     )
     extraction_start = source.position(4, 8)
     extraction_end = source.position(4, 26)
-    refactor = CodeSelection(TextRange(extraction_start, extraction_end))
-    insert, *_ = refactor.extract_variable()
+    refactor = ExtractVariable(
+        CodeSelection(TextRange(extraction_start, extraction_end))
+    )
+    insert, *_ = refactor.edits
     assert insert.start == source.position(2, 4)
 
 
@@ -154,8 +173,10 @@ def test_extract_variable_should_extract_all_identical_nodes_in_the_same_scope()
     extraction_start = source.position(1, 4)
     extraction_end = source.position(1, 26)
 
-    refactor = CodeSelection(TextRange(extraction_start, extraction_end))
-    _, *edits = refactor.extract_variable()
+    refactor = ExtractVariable(
+        CodeSelection(TextRange(extraction_start, extraction_end))
+    )
+    _, *edits = refactor.edits
 
     assert len(edits) == 3
 
@@ -175,8 +196,10 @@ def test_extract_variable_should_extract_before_first_occurrence():
     extraction_start = source.position(4, 4)
     extraction_end = source.position(4, 26)
 
-    refactor = CodeSelection(TextRange(extraction_start, extraction_end))
-    insert, *edits = refactor.extract_variable()
+    refactor = ExtractVariable(
+        CodeSelection(TextRange(extraction_start, extraction_end))
+    )
+    insert, *edits = refactor.edits
 
     assert insert.start.row == 1
     assert insert.start.column == 0
@@ -194,8 +217,10 @@ def test_extract_variable_should_not_extract_occurrences_in_other_function():
     )
     extraction_start = source.position(2, 8)
     extraction_end = source.position(2, 30)
-    refactor = CodeSelection(TextRange(extraction_start, extraction_end))
-    _insert, *edits = refactor.extract_variable()
+    refactor = ExtractVariable(
+        CodeSelection(TextRange(extraction_start, extraction_end))
+    )
+    _insert, *edits = refactor.edits
 
     assert len(edits) == 1
 
@@ -214,8 +239,10 @@ def test_extract_variable_should_not_extract_occurrences_in_other_method_of_the_
     )
     extraction_start = source.position(3, 12)
     extraction_end = source.position(3, 34)
-    refactor = CodeSelection(TextRange(extraction_start, extraction_end))
-    _insert, *edits = refactor.extract_variable()
+    refactor = ExtractVariable(
+        CodeSelection(TextRange(extraction_start, extraction_end))
+    )
+    _insert, *edits = refactor.edits
 
     assert len(edits) == 1
 
@@ -591,8 +618,10 @@ def test_slide_statements_should_not_slide_beyond_first_usage():
     first = source.lines[1]
     last = source.lines[1]
 
-    refactor = CodeSelection(TextRange(first.start, last.end))
-    edits = refactor.slide_statements_down()
+    refactor = SlideStatementsDown(
+        CodeSelection(TextRange(first.start, last.end))
+    )
+    edits = refactor.edits
 
     assert not edits
 
@@ -609,8 +638,10 @@ def test_slide_statements_should_not_slide_into_nested_scopes():
     first = source.lines[1]
     last = source.lines[1]
 
-    refactor = CodeSelection(TextRange(first.start, last.end))
-    edits = refactor.slide_statements_down()
+    refactor = SlideStatementsDown(
+        CodeSelection(TextRange(first.start, last.end))
+    )
+    edits = refactor.edits
     assert not edits
 
 
@@ -635,8 +666,10 @@ def test_slide_statements_should_not_slide_inside_if_else():
     first = source.lines[2]
     last = source.lines[2]
 
-    refactor = CodeSelection(TextRange(first.start, last.end))
-    edits = refactor.slide_statements_down()
+    refactor = SlideStatementsDown(
+        CodeSelection(TextRange(first.start, last.end))
+    )
+    edits = refactor.edits
     assert edits[0].start.row == 7
 
 
@@ -652,8 +685,10 @@ def test_slide_statements_should_slide_past_irrelevant_statements():
     first = source.lines[1]
     last = source.lines[1]
 
-    refactor = CodeSelection(TextRange(first.start, last.end))
-    insert, delete = refactor.slide_statements_down()
+    refactor = SlideStatementsDown(
+        CodeSelection(TextRange(first.start, last.end))
+    )
+    insert, delete = refactor.edits
 
     assert insert.start.row == 3
     assert delete.start.row == 1
@@ -673,8 +708,10 @@ def test_slide_statements_should_slide_multiple_lines():
     first = source.lines[1]
     last = source.lines[2]
 
-    refactor = CodeSelection(TextRange(first.start, last.end))
-    insert, delete = refactor.slide_statements_down()
+    refactor = SlideStatementsDown(
+        CodeSelection(TextRange(first.start, last.end))
+    )
+    insert, delete = refactor.edits
 
     assert insert.start.row == 5
     assert insert.text == dedent(
@@ -697,8 +734,10 @@ def test_slide_statements_up_should_slide_past_irrelevant_statements():
     first = source.lines[3]
     last = source.lines[3]
 
-    refactor = CodeSelection(TextRange(first.start, last.end))
-    insert, delete = refactor.slide_statements_up()
+    refactor = SlideStatementsUp(
+        CodeSelection(TextRange(first.start, last.end))
+    )
+    insert, delete = refactor.edits
 
     assert insert.start.row == 2
     assert delete.start.row == 3
@@ -778,8 +817,8 @@ def test_inline_call_should_replace_call_with_function_return_value():
 
     start = source.position(4, 4)
     end = source.position(4, 7)
-    refactor = CodeSelection(TextRange(start, end))
-    insert, edit = refactor.inline_call()
+    refactor = InlineCall(CodeSelection(TextRange(start, end)))
+    insert, edit = refactor.edits
 
     assert "result = 2" in insert.text
     assert "result" == edit.text
@@ -799,8 +838,8 @@ def test_inline_call_should_work_without_return_value():
     )
     start = source.position(5, 0)
     end = source.position(5, 0)
-    refactor = CodeSelection(TextRange(start, end))
-    edit, *_ = refactor.inline_call()
+    refactor = InlineCall(CodeSelection(TextRange(start, end)))
+    edit, *_ = refactor.edits
 
     assert "b.append(2)" in edit.text
     assert edit.start == start
@@ -819,8 +858,8 @@ def test_inline_call_should_work_when_given_position_within_called_name():
     )
     start = source.position(5, 3)
     end = source.position(5, 3)
-    refactor = CodeSelection(TextRange(start, end))
-    edit, *_ = refactor.inline_call()
+    refactor = InlineCall(CodeSelection(TextRange(start, end)))
+    edit, *_ = refactor.edits
 
     assert "b.append(2)" in edit.text
     assert edit.start == source.position(5, 0)
@@ -844,8 +883,8 @@ def test_inline_call_should_work_inside_branches():
     )
     start = source.position(8, 4)
     end = source.position(8, 4)
-    refactor = CodeSelection(TextRange(start, end))
-    edit, *_ = refactor.inline_call()
+    refactor = InlineCall(CodeSelection(TextRange(start, end)))
+    edit, *_ = refactor.edits
     assert edit.start == source.position(8, 4)
     assert edit.end == source.position(8, 11)
 
@@ -861,8 +900,8 @@ def test_inline_call_should_work_when_cursor_is_in_call():
     )
 
     start = source.position(4, 4)
-    refactor = CodeSelection(TextRange(start, start))
-    insert, edit = refactor.inline_call()
+    refactor = InlineCall(CodeSelection(TextRange(start, start)))
+    insert, edit = refactor.edits
 
     assert "result = 2" in insert.text
     assert "result" == edit.text
@@ -883,8 +922,8 @@ def test_inline_call_should_extract_body_before_assignment():
 
     start = source.position(5, 4)
     end = source.position(5, 6)
-    refactor = CodeSelection(TextRange(start, end))
-    insert, edit = refactor.inline_call()
+    refactor = InlineCall(CodeSelection(TextRange(start, end)))
+    insert, edit = refactor.edits
 
     assert "a = 2\nresult = a" in insert.text
 
@@ -929,8 +968,8 @@ def test_inline_call_should_substitute_parameters_in_attribute():
 
     start = source.position(6, 4)
     end = source.position(6, 7)
-    refactor = CodeSelection(TextRange(start, end))
-    insert, edit = refactor.inline_call()
+    refactor = InlineCall(CodeSelection(TextRange(start, end)))
+    insert, edit = refactor.edits
 
     assert "text = a.source.lines[a.row].text" in insert.text
 
@@ -975,8 +1014,8 @@ def test_inline_call_should_indent_in_new_context():
 
     start = source.position(6, 8)
     end = source.position(6, 10)
-    refactor = CodeSelection(TextRange(start, end))
-    insert, edit = refactor.inline_call()
+    refactor = InlineCall(CodeSelection(TextRange(start, end)))
+    insert, edit = refactor.edits
 
     assert "    a = 2\n    result = a" in insert.text
 
@@ -1092,8 +1131,8 @@ def test_extract_variable_should_include_quotes():
     start = source.position(4, 21)
     end = source.position(4, 26)
 
-    refactor = CodeSelection(TextRange(start, end))
-    edits = refactor.extract_variable()
+    refactor = ExtractVariable(CodeSelection(TextRange(start, end)))
+    edits = refactor.edits
     for edit in edits[1:]:
         assert edit.text_range.text == '"foo"'
 
@@ -1110,8 +1149,10 @@ def test_extract_variable_should_extract_within_for_loop():
     extraction_start = source.position(4, 10)
     extraction_end = source.position(4, 58)
 
-    refactor = CodeSelection(TextRange(extraction_start, extraction_end))
-    insert, *_ = refactor.extract_variable()
+    refactor = ExtractVariable(
+        CodeSelection(TextRange(extraction_start, extraction_end))
+    )
+    insert, *_ = refactor.edits
 
     assert insert.text_range.start.row == 4
     assert insert.text_range.start.column == 4

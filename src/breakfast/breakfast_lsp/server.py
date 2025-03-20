@@ -1,10 +1,8 @@
 import logging
 import os
-from collections.abc import Iterable, Mapping, Sequence
-from functools import partial
+from collections.abc import Iterable
 from itertools import groupby
 from pathlib import Path
-from typing import Any
 
 from lsprotocol.types import (
     INITIALIZE,
@@ -35,7 +33,7 @@ from pygls.server import LanguageServer
 
 import breakfast
 from breakfast import __version__
-from breakfast.refactoring import CodeSelection
+from breakfast.refactoring import CodeSelection, Refactoring
 from breakfast.source import TextRange
 from breakfast.types import Edit
 
@@ -265,127 +263,32 @@ async def code_action(
             row=extraction_range.end.line,
             column=max(extraction_range.end.character, 0),
         )
-        refactor = CodeSelection(text_range=TextRange(start, end))
-        code_action = partial(
-            make_code_action,
-            refactor=refactor,
-            document_uri=document_uri,
-            version=version,
-        )
-        if start < end:
-            extract_code_action = partial(
-                code_action, kind=CodeActionKind.RefactorExtract
-            )
-            extractors = (_extract_variable, _extract_function)
-            for extractor in extractors:
-                actions.append(await extract_code_action(action=extractor))
-            if refactor.inside_method:
-                actions.append(
-                    await extract_code_action(action=_extract_method)
-                )
+        selection = CodeSelection(text_range=TextRange(start, end))
 
-        refactor_code_action = partial(
-            code_action, kind=CodeActionKind.Refactor
-        )
-        refactorings = (
-            _slide_statements_down,
-            _slide_statements_up,
-            _inline_variable,
-            _inline_call,
-        )
-        for refactoring in refactorings:
-            actions.append(await refactor_code_action(action=refactoring))
+        for new_refactoring in selection.refactorings:
+            actions.append(
+                CodeAction(
+                    title=f"breakfast: {new_refactoring.name}",
+                    kind=CodeActionKind.RefactorExtract
+                    if "extract" in new_refactoring.name
+                    else CodeActionKind.Refactor,
+                    data=document_uri,
+                    edit=await get_edits(
+                        new_refactoring(selection), document_uri, version
+                    ),
+                    diagnostics=[],
+                )
+            )
 
     return actions
 
 
-async def make_code_action(
-    *,
-    refactor: CodeSelection,
-    action: Any,
-    kind: CodeActionKind,
-    document_uri: str,
-    version: None,
-) -> CodeAction:
-    edit = await action(refactor, document_uri=document_uri, version=version)
-    return CodeAction(
-        title=f"breakfast: {action.__doc__}",
-        kind=kind,
-        data=document_uri,
-        edit=edit,
-        diagnostics=[],
-    )
-
-
-@LSP_SERVER.command("breakfast.slideStatementsDown")
-async def slide_statements_down(
-    server: LanguageServer, arguments: Sequence[Mapping[str, Any]]
-) -> None:
-    document_uri = arguments[0]["uri"]
-    line = arguments[0]["line"] - 1
-    document = server.workspace.get_text_document(document_uri)
-
-    source_lines = tuple(document.source.split("\n"))
-    project_root = server.workspace.root_uri[len("file://") :]
-    source = get_source(
-        uri=document_uri, project_root=project_root, lines=source_lines
-    )
-    start = source.position(row=line, column=0)
-    end = source.position(row=line, column=0)
-    refactor = CodeSelection(text_range=TextRange(start, end))
-
-    client_documents = server.workspace.text_documents
-    version = (
-        versioned.version
-        if (versioned := client_documents.get(document_uri))
-        else None
-    )
-    workspace_edit = await _slide_statements_down(
-        refactor, document_uri, version
-    )
-    if workspace_edit is None:
-        return
-    server.apply_edit(workspace_edit, "breakfast: slide statement")
-
-
-@LSP_SERVER.command("breakfast.slideStatementsUp")
-async def slide_statements_up(
-    server: LanguageServer, arguments: Sequence[Mapping[str, Any]]
-) -> None:
-    document_uri = arguments[0]["uri"]
-    line = arguments[0]["line"] - 1
-    document = server.workspace.get_text_document(document_uri)
-
-    source_lines = tuple(document.source.split("\n"))
-    project_root = server.workspace.root_uri[len("file://") :]
-    source = get_source(
-        uri=document_uri, project_root=project_root, lines=source_lines
-    )
-    start = source.position(row=line, column=0)
-    end = source.position(row=line, column=0)
-    refactor = CodeSelection(text_range=TextRange(start, end))
-
-    client_documents = server.workspace.text_documents
-    version = (
-        versioned.version
-        if (versioned := client_documents.get(document_uri))
-        else None
-    )
-    workspace_edit = await _slide_statements_up(refactor, document_uri, version)
-    if workspace_edit is None:
-        return
-    server.apply_edit(workspace_edit, "breakfast: slide statement")
-
-
-async def _extract_function(
-    refactor: CodeSelection,
-    document_uri: str,
-    version: None,
+async def get_edits(
+    refactoring: Refactoring, document_uri: str, version: None
 ) -> WorkspaceEdit:
-    """Extract function."""
-    edits = refactor.extract_function()
-
-    text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
+    text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(
+        refactoring.edits
+    )
     document_changes: list[
         TextDocumentEdit | CreateFile | RenameFile | DeleteFile
     ] = [
@@ -399,132 +302,66 @@ async def _extract_function(
     return WorkspaceEdit(document_changes=document_changes)
 
 
-async def _extract_method(
-    refactor: CodeSelection,
-    document_uri: str,
-    version: None,
-) -> WorkspaceEdit | None:
-    """Extract method."""
-    edits = refactor.extract_method()
+# @LSP_SERVER.command("breakfast.slideStatementsDown")
+# async def slide_statements_down(
+#     server: LanguageServer, arguments: Sequence[Mapping[str, Any]]
+# ) -> None:
+#     document_uri = arguments[0]["uri"]
+#     line = arguments[0]["line"] - 1
+#     document = server.workspace.get_text_document(document_uri)
 
-    text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
-    document_changes: list[
-        TextDocumentEdit | CreateFile | RenameFile | DeleteFile
-    ] = [
-        TextDocumentEdit(
-            text_document=OptionalVersionedTextDocumentIdentifier(
-                uri=document_uri, version=version
-            ),
-            edits=text_edits,
-        )
-    ]
-    return WorkspaceEdit(document_changes=document_changes)
+#     source_lines = tuple(document.source.split("\n"))
+#     project_root = server.workspace.root_uri[len("file://") :]
+#     source = get_source(
+#         uri=document_uri, project_root=project_root, lines=source_lines
+#     )
+#     start = source.position(row=line, column=0)
+#     end = source.position(row=line, column=0)
+#     selection = CodeSelection(text_range=TextRange(start, end))
 
-
-async def _extract_variable(
-    refactor: CodeSelection,
-    document_uri: str,
-    version: None,
-) -> WorkspaceEdit:
-    """Extract variable."""
-    edits = refactor.extract_variable()
-
-    text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
-    document_changes: list[
-        TextDocumentEdit | CreateFile | RenameFile | DeleteFile
-    ] = [
-        TextDocumentEdit(
-            text_document=OptionalVersionedTextDocumentIdentifier(
-                uri=document_uri, version=version
-            ),
-            edits=text_edits,
-        )
-    ]
-    return WorkspaceEdit(document_changes=document_changes)
+#     client_documents = server.workspace.text_documents
+#     version = (
+#         versioned.version
+#         if (versioned := client_documents.get(document_uri))
+#         else None
+#     )
+#     workspace_edit = await _slide_statements_down(
+#         selection, document_uri, version
+#     )
+#     if workspace_edit is None:
+#         return
+#     server.apply_edit(workspace_edit, "breakfast: slide statement")
 
 
-async def _slide_statements_down(
-    refactor: CodeSelection,
-    document_uri: str,
-    version: None,
-) -> WorkspaceEdit:
-    """Slide statements down."""
-    edits = refactor.slide_statements_down()
-    text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
-    document_changes: list[
-        TextDocumentEdit | CreateFile | RenameFile | DeleteFile
-    ] = [
-        TextDocumentEdit(
-            text_document=OptionalVersionedTextDocumentIdentifier(
-                uri=document_uri, version=version
-            ),
-            edits=text_edits,
-        )
-    ]
-    return WorkspaceEdit(document_changes=document_changes)
+# @LSP_SERVER.command("breakfast.slideStatementsUp")
+# async def slide_statements_up(
+#     server: LanguageServer, arguments: Sequence[Mapping[str, Any]]
+# ) -> None:
+#     document_uri = arguments[0]["uri"]
+#     line = arguments[0]["line"] - 1
+#     document = server.workspace.get_text_document(document_uri)
 
+#     source_lines = tuple(document.source.split("\n"))
+#     project_root = server.workspace.root_uri[len("file://") :]
+#     source = get_source(
+#         uri=document_uri, project_root=project_root, lines=source_lines
+#     )
+#     start = source.position(row=line, column=0)
+#     end = source.position(row=line, column=0)
+#     selection = CodeSelection(text_range=TextRange(start, end))
 
-async def _slide_statements_up(
-    refactor: CodeSelection,
-    document_uri: str,
-    version: None,
-) -> WorkspaceEdit:
-    """Slide statements up."""
-    edits = refactor.slide_statements_up()
-    text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
-    document_changes: list[
-        TextDocumentEdit | CreateFile | RenameFile | DeleteFile
-    ] = [
-        TextDocumentEdit(
-            text_document=OptionalVersionedTextDocumentIdentifier(
-                uri=document_uri, version=version
-            ),
-            edits=text_edits,
-        )
-    ]
-    return WorkspaceEdit(document_changes=document_changes)
-
-
-async def _inline_variable(
-    refactor: CodeSelection,
-    document_uri: str,
-    version: None,
-) -> WorkspaceEdit:
-    """Inline variable."""
-    edits = refactor.inline_variable()
-    text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
-    document_changes: list[
-        TextDocumentEdit | CreateFile | RenameFile | DeleteFile
-    ] = [
-        TextDocumentEdit(
-            text_document=OptionalVersionedTextDocumentIdentifier(
-                uri=document_uri, version=version
-            ),
-            edits=text_edits,
-        )
-    ]
-    return WorkspaceEdit(document_changes=document_changes)
-
-
-async def _inline_call(
-    refactor: CodeSelection,
-    document_uri: str,
-    version: None,
-) -> WorkspaceEdit:
-    """Inline function/method call."""
-    edits = refactor.inline_call()
-    text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(edits)
-    document_changes: list[
-        TextDocumentEdit | CreateFile | RenameFile | DeleteFile
-    ] = [
-        TextDocumentEdit(
-            text_document=OptionalVersionedTextDocumentIdentifier(
-                uri=document_uri, version=version
-            ),
-            edits=text_edits,
-        )
-    ]
-    return WorkspaceEdit(document_changes=document_changes)
+#     client_documents = server.workspace.text_documents
+#     version = (
+#         versioned.version
+#         if (versioned := client_documents.get(document_uri))
+#         else None
+#     )
+#     workspace_edit = await _slide_statements_up(
+#         selection, document_uri, version
+#     )
+#     if workspace_edit is None:
+#         return
+#     server.apply_edit(workspace_edit, "breakfast: slide statement")
 
 
 def show_message(message: str) -> None:
