@@ -35,36 +35,5 @@ end
 lspconfig.breakfast.setup {
   on_attach = on_attach,
   root_dir = lspconfig.util.root_pattern('.git'),
-  commands = {
-      BreakfastSlideDown = {
-          function()
-              local line, column = unpack(vim.api.nvim_win_get_cursor(0))
-              lsp_client("breakfast").request("workspace/executeCommand",{
-                  command = "breakfast.slideStatementsDown",
-                  arguments = {
-                    {
-                      uri = vim.uri_from_bufnr(0),
-                      line = line,
-                    },
-                  },
-              })
-          end,
-          description = "ruff: organize imports",
-      },
-      BreakfastSlideUp = {
-          function()
-              local line, column = unpack(vim.api.nvim_win_get_cursor(0))
-              lsp_client("breakfast").request("workspace/executeCommand",{
-                  command = "breakfast.slideStatementsUp",
-                  arguments = {
-                    {
-                      uri = vim.uri_from_bufnr(0),
-                      line = line,
-                    },
-                  },
-              })
-          end,
-          description = "ruff: organize imports",
-      },
-  },
+  commands = {},
 }

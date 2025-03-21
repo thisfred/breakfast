@@ -1,4 +1,5 @@
 version = 1
+revision = 1
 requires-python = ">=3.12"
 
 [[package]]
@@ -33,7 +34,7 @@ wheels = [
 
 [[package]]
 name = "breakfast"
-version = "0.2.0"
+version = "2025.3.20.1"
 source = { editable = "." }
 dependencies = [
     { name = "lsprotocol" },

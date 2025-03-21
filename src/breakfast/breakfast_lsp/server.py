@@ -31,10 +31,10 @@ from lsprotocol.types import (
 )
 from pygls.server import LanguageServer
 
-import breakfast
 from breakfast import __version__
+from breakfast.project import Project
 from breakfast.refactoring import CodeSelection, Refactoring
-from breakfast.source import TextRange
+from breakfast.source import Source, TextRange
 from breakfast.types import Edit
 
 logger = logging.getLogger(__name__)
@@ -135,10 +135,8 @@ async def prepare_rename(
     )
 
 
-def get_source(
-    uri: str, project_root: str, lines: Iterable[str]
-) -> breakfast.Source:
-    return breakfast.Source(
+def get_source(uri: str, project_root: str, lines: Iterable[str]) -> Source:
+    return Source(
         input_lines=tuple(line for line in lines),
         path=uri[len("file://") :],
         project_root=project_root,
@@ -163,7 +161,7 @@ async def rename(
         project_root=project_root,
         lines=source_lines,
     )
-    project = breakfast.Project(source=source, root=project_root)
+    project = Project(source=source, root=project_root)
     position = source.position(row=params.position.line, column=start)
     occurrences = project.get_occurrences(position)
     if not occurrences:
