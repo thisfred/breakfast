@@ -2,6 +2,7 @@ import ast
 import logging
 from collections import defaultdict
 from collections.abc import Iterable, Iterator, Sequence
+from functools import cached_property
 from itertools import dropwhile, takewhile
 from textwrap import dedent, indent
 from typing import ClassVar, Protocol
@@ -49,9 +50,13 @@ class CodeSelection:
 
     @property
     def refactorings(self) -> Iterable["type[Refactoring]"]:
-        return self._refactorings.values()
+        return [
+            refactoring
+            for refactoring in self._refactorings.values()
+            if refactoring.applies_to(self)
+        ]
 
-    @property
+    @cached_property
     def inside_method(self) -> bool:
         global_scope = (
             scopes[0]
@@ -65,16 +70,22 @@ class CodeSelection:
         in_method = isinstance(global_scope.node, ast.ClassDef)
         return in_method
 
-    @property
+    @cached_property
+    def name_at_cursor(self) -> str | None:
+        return self.source.get_name_at(self.cursor)
+
+    @cached_property
     def cursor(self) -> types.Position:
         return self.text_range.start
 
-    def occurrences_of_name_at(
-        self, position: Position
-    ) -> Sequence[Occurrence]:
-        return all_occurrences(position, graph=self.scope_graph)
+    @cached_property
+    def occurrences_of_name_at_cursor(self) -> Sequence[Occurrence]:
+        try:
+            return all_occurrences(self.cursor, graph=self.scope_graph)
+        except NotFoundError:
+            return ()
 
-    @property
+    @cached_property
     def full_line_range(self) -> types.TextRange:
         start = self.text_range.start
         end = self.text_range.end
@@ -123,6 +134,9 @@ class Refactoring(Protocol):
     name: str
 
     def __init__(self, selection: CodeSelection): ...
+    @classmethod
+    def applies_to(cls, selection: CodeSelection) -> bool: ...
+
     @property
     def edits(self) -> tuple[Edit, ...]: ...
 
@@ -311,6 +325,10 @@ class ExtractFunction(ExtractCallable):
     def edits(self) -> tuple[Edit, ...]:
         return self.extract_callable("function")
 
+    @classmethod
+    def applies_to(cls, selection: CodeSelection) -> bool:
+        return selection.text_range.end > selection.text_range.start
+
     def extract_callable(
         self,
         name: str,
@@ -372,6 +390,10 @@ class ExtractMethod(ExtractCallable):
     @property
     def edits(self) -> tuple[Edit, ...]:
         return self.extract_callable("method")
+
+    @classmethod
+    def applies_to(cls, selection: CodeSelection) -> bool:
+        return selection.text_range.end > selection.text_range.start
 
     def extract_callable(
         self,
@@ -450,6 +472,10 @@ class ExtractVariable:
         self.text_range = code_selection.text_range
         self.source = self.text_range.start.source
 
+    @classmethod
+    def applies_to(cls, selection: CodeSelection) -> bool:
+        return selection.text_range.end > selection.text_range.start
+
     @property
     def edits(self) -> tuple[Edit, ...]:
         name = "result"
@@ -516,10 +542,14 @@ class InlineVariable:
         self.source = self.text_range.start.source
         self.code_selection = code_selection
 
+    @classmethod
+    def applies_to(cls, selection: CodeSelection) -> bool:
+        return selection.name_at_cursor is not None
+
     @property
     def edits(self) -> tuple[Edit, ...]:
         grouped: dict[bool, list[Occurrence]] = defaultdict(list)
-        for o in self.code_selection.occurrences_of_name_at(self.cursor):
+        for o in self.code_selection.occurrences_of_name_at_cursor:
             grouped[o.node_type is NodeType.DEFINITION].append(o)
 
         last_definition = grouped.get(True, [None])[-1]
@@ -532,13 +562,15 @@ class InlineVariable:
             logger.warning("Could not find assignment for definition.")
             return ()
 
-        name = self.source.get_name_at(self.cursor)
+        name = self.code_selection.name_at_cursor
+        if name is None:
+            return ()
         if self.cursor in assignment.range:
             after_cursor = (
                 o
                 for o in dropwhile(
                     lambda x: x.position <= self.cursor,
-                    self.code_selection.occurrences_of_name_at(self.cursor),
+                    self.code_selection.occurrences_of_name_at_cursor,
                 )
             )
             to_replace: tuple[types.TextRange, ...] = tuple(
@@ -598,6 +630,10 @@ class InlineCall:
         self.source = self.text_range.start.source
         self.scope_graph = code_selection.scope_graph
         self.enclosing_call = code_selection.text_range.enclosing_call
+
+    @classmethod
+    def applies_to(cls, selection: CodeSelection) -> bool:
+        return True
 
     @property
     def edits(self) -> tuple[Edit, ...]:
@@ -745,6 +781,10 @@ class SlideStatementsUp:
         self.text_range = code_selection.text_range
         self.code_selection = code_selection
 
+    @classmethod
+    def applies_to(cls, selection: CodeSelection) -> bool:
+        return True
+
     @property
     def edits(self) -> tuple[Edit, ...]:
         target = self.find_slide_target_before()
@@ -804,6 +844,10 @@ class SlideStatementsDown:
     ):
         self.text_range = code_selection.text_range
         self.code_selection = code_selection
+
+    @classmethod
+    def applies_to(cls, selection: CodeSelection) -> bool:
+        return True
 
     @property
     def edits(self) -> tuple[Edit, ...]:

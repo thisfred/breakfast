@@ -25,7 +25,7 @@ if not configs.breakfast then
     configs.breakfast = {
         default_config = {
             name = 'breakfast',
-            cmd = {'breakfast-lsp'},
+            cmd = {'lsp-devtools', 'agent', '--', 'breakfast-lsp'},
             filetypes = { 'python' },
         },
     }

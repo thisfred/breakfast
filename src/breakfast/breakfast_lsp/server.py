@@ -169,6 +169,8 @@ async def rename(
 
     logger.debug(f"found {len(occurrences)} occurrences to rename.")
     old_identifier = source.get_name_at(position)
+    if old_identifier is None:
+        return None
     document_changes: list[
         TextDocumentEdit | CreateFile | RenameFile | DeleteFile
     ] = []
@@ -229,6 +231,7 @@ def edits_to_text_edits(
     CodeActionOptions(
         code_action_kinds=[
             CodeActionKind.RefactorExtract,
+            CodeActionKind.Refactor,
         ],
         resolve_provider=True,
     ),

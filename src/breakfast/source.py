@@ -135,6 +135,8 @@ class TextRange:
 
     @cached_property
     def text(self) -> str:
+        if self.start >= self.end:
+            return ""
         return self.start.source.get_text(start=self.start, end=self.end)
 
     @property
@@ -351,10 +353,10 @@ class Source:
     def position(self, row: int, column: int) -> types.Position:
         return Position(source=self, row=row, column=column)
 
-    def get_name_at(self, position: types.Position) -> str:
+    def get_name_at(self, position: types.Position) -> str | None:
         match = WORD.search(self.get_string_starting_at(position))
         if not match:
-            raise AssertionError("no match found")
+            return None
         return match.group()
 
     def get_text(self, *, start: types.Position, end: types.Position) -> str:
@@ -565,5 +567,5 @@ class SubSource:
         start = self.node_position(node)
         return TextRange(start, end)
 
-    def get_name_at(self, position: types.Position) -> str:
+    def get_name_at(self, position: types.Position) -> str | None:
         return self.parent_source.get_name_at(position)
