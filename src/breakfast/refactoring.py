@@ -353,8 +353,11 @@ class ExtractMethod:
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
-        # TODO: check we're in a (non static) method
-        return selection.text_range.end > selection.text_range.start
+        return (
+            selection.text_range.end > selection.text_range.start
+            and selection.in_method
+            and not selection.in_static_method
+        )
 
     @property
     def edits(self) -> tuple[Edit, ...]:
@@ -588,13 +591,20 @@ class ExtractVariable:
         first_edit_position = edits[0].start
 
         statement_start = None
-        for statement in find_statements(self.source.ast):
-            if (
-                statement_position := self.source.node_position(statement)
-            ) < first_edit_position:
-                statement_start = statement_position
-            else:
-                break
+        preceding_statement_positions = list(
+            takewhile(
+                lambda p: p < first_edit_position,
+                (
+                    self.source.node_position(s)
+                    for s in find_statements(self.source.ast)
+                ),
+            )
+        )
+        statement_start = (
+            preceding_statement_positions[-1]
+            if preceding_statement_positions
+            else None
+        )
 
         insert_point = statement_start or first_edit_position.start_of_line
         indentation = " " * insert_point.column
