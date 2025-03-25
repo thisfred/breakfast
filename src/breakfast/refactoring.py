@@ -117,6 +117,79 @@ class CodeSelection:
                     break
 
 
+class UsageCollector:
+    def __init__(
+        self,
+        code_selection: CodeSelection,
+        enclosing_scope: types.NodeWithRange[ast.FunctionDef]
+        | types.NodeWithRange[ast.AsyncFunctionDef]
+        | types.NodeWithRange[ast.ClassDef]
+        | types.NodeWithRange[ast.Module],
+    ) -> None:
+        self.code_selection = code_selection
+        self.enclosing_scope = enclosing_scope
+        self._defined_before_extraction: dict[str, list[Occurrence]] = (
+            defaultdict(list)
+        )
+        self._used_in_extraction: dict[str, list[Occurrence]] = defaultdict(
+            list
+        )
+        self._modified_in_extraction: dict[str, list[Occurrence]] = defaultdict(
+            list
+        )
+        self._used_after_extraction: dict[str, list[Occurrence]] = defaultdict(
+            list
+        )
+
+    @property
+    def defined_before_extraction(self) -> Mapping[str, Sequence[Occurrence]]:
+        if not self._defined_before_extraction:
+            self._collect()
+
+        return self._defined_before_extraction or {}
+
+    @property
+    def used_in_extraction(self) -> Mapping[str, Sequence[Occurrence]]:
+        if not self._used_in_extraction:
+            self._collect()
+
+        return self._used_in_extraction or {}
+
+    @property
+    def modified_in_extraction(self) -> Mapping[str, Sequence[Occurrence]]:
+        if not self._modified_in_extraction:
+            self._collect()
+
+        return self._modified_in_extraction or {}
+
+    @property
+    def used_after_extraction(self) -> Mapping[str, Sequence[Occurrence]]:
+        if not self._used_after_extraction:
+            self._collect()
+
+        return self._used_after_extraction or {}
+
+    def _collect(self) -> None:
+        for occurrence in find_names(
+            self.enclosing_scope.node, self.code_selection.source
+        ):
+            if (
+                occurrence.position < self.code_selection.text_range.start
+                and occurrence.node_type is NodeType.DEFINITION
+            ):
+                self._defined_before_extraction[occurrence.name].append(
+                    occurrence
+                )
+            if occurrence.position in self.code_selection.text_range:
+                self._used_in_extraction[occurrence.name].append(occurrence)
+                if occurrence.node_type is NodeType.DEFINITION:
+                    self._modified_in_extraction[occurrence.name].append(
+                        occurrence
+                    )
+            if occurrence.position > self.code_selection.text_range.end:
+                self._used_after_extraction[occurrence.name].append(occurrence)
+
+
 class Refactoring(Protocol):
     name: str
 
@@ -140,7 +213,7 @@ class ExtractFunction:
         return selection.text_range.end > selection.text_range.start
 
     @property
-    def edits(self) -> tuple[Edit, ...]:  # noqa: C901
+    def edits(self) -> tuple[Edit, ...]:
         enclosing_scope = self.code_selection.text_range.enclosing_scopes()[-1]
 
         start_of_scope = enclosing_scope.range.start
@@ -149,27 +222,10 @@ class ExtractFunction:
         has_returns = any(
             found for node in nodes for found in find_returns(node)
         )
-        defined_before_extraction = defaultdict(list)
-        used_in_extraction = defaultdict(list)
-        modified_in_extraction = defaultdict(list)
-        used_after_extraction = defaultdict(list)
-        for occurrence in find_names(
-            enclosing_scope.node, self.code_selection.source
-        ):
-            if (
-                occurrence.position < self.code_selection.text_range.start
-                and occurrence.node_type is NodeType.DEFINITION
-            ):
-                defined_before_extraction[occurrence.name].append(occurrence)
-            if occurrence.position in self.code_selection.text_range:
-                used_in_extraction[occurrence.name].append(occurrence)
-                if occurrence.node_type is NodeType.DEFINITION:
-                    modified_in_extraction[occurrence.name].append(occurrence)
-            if occurrence.position > self.code_selection.text_range.end:
-                used_after_extraction[occurrence.name].append(occurrence)
+        usages = UsageCollector(self.code_selection, enclosing_scope)
 
         arguments = make_arguments(
-            defined_before_extraction, used_in_extraction
+            usages.defined_before_extraction, usages.used_in_extraction
         )
         if not nodes:
             if (
@@ -191,7 +247,7 @@ class ExtractFunction:
                 nodes = [enclosing_returns[-1].node]
 
         return_node = make_return_node(
-            modified_in_extraction, used_after_extraction
+            usages.modified_in_extraction, usages.used_after_extraction
         )
         if return_node:
             nodes.append(return_node)
@@ -264,7 +320,7 @@ class ExtractMethod:
         return selection.text_range.end > selection.text_range.start
 
     @property
-    def edits(self) -> tuple[Edit, ...]:  # noqa: C901
+    def edits(self) -> tuple[Edit, ...]:
         enclosing_scope = (
             self.code_selection.text_range.enclosing_nodes_by_type(
                 ast.FunctionDef
@@ -281,10 +337,7 @@ class ExtractMethod:
         has_returns = any(
             found for node in nodes for found in find_returns(node)
         )
-        defined_before_extraction = defaultdict(list)
-        used_in_extraction = defaultdict(list)
-        modified_in_extraction = defaultdict(list)
-        used_after_extraction = defaultdict(list)
+        usages = UsageCollector(self.code_selection, enclosing_scope)
         self_occurrence = None
         for i, occurrence in enumerate(
             find_names(enclosing_scope.node, self.code_selection.source)
@@ -295,16 +348,10 @@ class ExtractMethod:
             ):
                 if i == 0 and not (in_class_method or in_static_method):
                     self_occurrence = occurrence
-                defined_before_extraction[occurrence.name].append(occurrence)
-            if occurrence.position in self.code_selection.text_range:
-                used_in_extraction[occurrence.name].append(occurrence)
-                if occurrence.node_type is NodeType.DEFINITION:
-                    modified_in_extraction[occurrence.name].append(occurrence)
-            if occurrence.position > self.code_selection.text_range.end:
-                used_after_extraction[occurrence.name].append(occurrence)
+                    break
 
         arguments = make_arguments(
-            defined_before_extraction, used_in_extraction
+            usages.defined_before_extraction, usages.used_in_extraction
         )
         if not nodes and (
             enclosing_assignment
@@ -318,12 +365,15 @@ class ExtractMethod:
             nodes = [enclosing_assignment.node, ast.Return(value=value)]
 
         return_node = make_return_node(
-            modified_in_extraction, used_after_extraction
+            usages.modified_in_extraction, usages.used_after_extraction
         )
         if return_node:
             nodes.append(return_node)
 
-        if self_occurrence and self_occurrence.name not in used_in_extraction:
+        if (
+            self_occurrence
+            and self_occurrence.name not in usages.used_in_extraction
+        ):
             decorator_list: list[ast.expr] = [ast.Name("staticmethod")]
         else:
             decorator_list = []
