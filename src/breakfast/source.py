@@ -163,6 +163,7 @@ class TextRange:
             if occurrence.node_type is types.NodeType.DEFINITION
         ]
 
+    @cached_property
     def enclosing_scopes(
         self,
     ) -> Sequence[
@@ -173,7 +174,7 @@ class TextRange:
     ]:
         result = [
             n
-            for n in self.enclosing_nodes()
+            for n in self.enclosing_nodes
             if has_node_type(n, ast.FunctionDef)
             or has_node_type(n, ast.AsyncFunctionDef)
             or has_node_type(n, ast.ClassDef)
@@ -184,10 +185,9 @@ class TextRange:
     def enclosing_nodes_by_type[T: ast.AST](
         self, node_type: type[T]
     ) -> Sequence[types.NodeWithRange[T]]:
-        return [
-            n for n in self.enclosing_nodes() if has_node_type(n, node_type)
-        ]
+        return [n for n in self.enclosing_nodes if has_node_type(n, node_type)]
 
+    @cached_property
     def enclosing_nodes(self) -> Sequence[types.NodeWithRange[ast.AST]]:
         source = self.source
         scopes = []
@@ -212,10 +212,12 @@ class TextRange:
 
         return scopes
 
+    @property
     def enclosing_call(self) -> types.NodeWithRange[ast.Call] | None:
         calls = self.enclosing_nodes_by_type(ast.Call)
         return calls[-1] if calls else None
 
+    @property
     def enclosing_assignment(self) -> types.NodeWithRange[ast.Assign] | None:
         types = ast.Assign
         assignments = self.enclosing_nodes_by_type(types)
@@ -227,7 +229,7 @@ class TextRange:
             text_range = self.start.to(self.end.line.previous.end)
         else:
             text_range = self
-        enclosing_scopes = text_range.enclosing_scopes()
+        enclosing_scopes = text_range.enclosing_scopes
         if enclosing_scopes:
             parent: ast.AST = enclosing_scopes[-1].node
         else:

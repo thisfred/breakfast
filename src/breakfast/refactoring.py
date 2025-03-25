@@ -58,6 +58,18 @@ class CodeSelection:
         ]
 
     @cached_property
+    def in_method(self) -> bool:
+        return False
+
+    @cached_property
+    def in_static_method(self) -> bool:
+        return self.in_method and False
+
+    @cached_property
+    def in_class_method(self) -> bool:
+        return self.in_method and False
+
+    @cached_property
     def name_at_cursor(self) -> str | None:
         return self.source.get_name_at(self.cursor)
 
@@ -214,7 +226,7 @@ class ExtractFunction:
 
     @property
     def edits(self) -> tuple[Edit, ...]:
-        enclosing_scope = self.code_selection.text_range.enclosing_scopes()[-1]
+        enclosing_scope = self.code_selection.text_range.enclosing_scopes[-1]
 
         start_of_scope = enclosing_scope.range.start
         new_level = start_of_scope.column // 4
@@ -230,7 +242,7 @@ class ExtractFunction:
         if not nodes:
             if (
                 enclosing_assignment
-                := self.code_selection.text_range.enclosing_assignment()
+                := self.code_selection.text_range.enclosing_assignment
             ):
                 targets = enclosing_assignment.node.targets
                 if len(targets) > 1:
@@ -262,7 +274,7 @@ class ExtractFunction:
         if isinstance(enclosing_scope.node, ast.Module):
             insert_position = self.code_selection.text_range.start.line.start
         else:
-            match self.code_selection.text_range.enclosing_scopes():
+            match self.code_selection.text_range.enclosing_scopes:
                 case (
                     [
                         types.NodeWithRange(node=ast.Module()),
@@ -273,11 +285,9 @@ class ExtractFunction:
                     last_line = matched[1].range.end.line
                     new_level = 0
                 case _:
-                    last_line = (
-                        self.code_selection.text_range.enclosing_scopes()[
-                            -1
-                        ].range.end.line
-                    )
+                    last_line = self.code_selection.text_range.enclosing_scopes[
+                        -1
+                    ].range.end.line
             if next_line := last_line.next:
                 insert_position = next_line.start
             else:
@@ -326,10 +336,6 @@ class ExtractMethod:
                 ast.FunctionDef
             )[-1]
         )
-        # TODO: handle classmethod
-        # TODO: handle staticmethod
-        in_static_method = False
-        in_class_method = False
 
         start_of_scope = enclosing_scope.range.start
         new_level = start_of_scope.column // 4
@@ -338,7 +344,7 @@ class ExtractMethod:
             found for node in nodes for found in find_returns(node)
         )
         usages = UsageCollector(self.code_selection, enclosing_scope)
-        self_occurrence = None
+        self_or_cls = None
         for i, occurrence in enumerate(
             find_names(enclosing_scope.node, self.code_selection.source)
         ):
@@ -346,8 +352,11 @@ class ExtractMethod:
                 occurrence.position < self.code_selection.text_range.start
                 and occurrence.node_type is NodeType.DEFINITION
             ):
-                if i == 0 and not (in_class_method or in_static_method):
-                    self_occurrence = occurrence
+                if i == 0 and not (
+                    self.code_selection.in_class_method
+                    or self.code_selection.in_static_method
+                ):
+                    self_or_cls = occurrence
                     break
 
         arguments = make_arguments(
@@ -355,7 +364,7 @@ class ExtractMethod:
         )
         if not nodes and (
             enclosing_assignment
-            := self.code_selection.text_range.enclosing_assignment()
+            := self.code_selection.text_range.enclosing_assignment
         ):
             targets = enclosing_assignment.node.targets
             if len(targets) > 1:
@@ -370,10 +379,7 @@ class ExtractMethod:
         if return_node:
             nodes.append(return_node)
 
-        if (
-            self_occurrence
-            and self_occurrence.name not in usages.used_in_extraction
-        ):
+        if self_or_cls and self_or_cls.name not in usages.used_in_extraction:
             decorator_list: list[ast.expr] = [ast.Name("staticmethod")]
         else:
             decorator_list = []
@@ -391,13 +397,13 @@ class ExtractMethod:
             f"{NEWLINE}{"".join(to_source(method, level=new_level))}{NEWLINE}"
         )
 
-        if not self_occurrence:
+        if not self_or_cls:
             logger.error("Couldn't detect self parameter.")
             return ()
 
         calling_statement = make_method_call(
             return_node=return_node,
-            self_name=self_occurrence.name,
+            self_name=self_or_cls.name,
             method_name="m",
             arguments=arguments,
             has_returns=has_returns,
@@ -617,7 +623,7 @@ class InlineVariable:
         if last_definition is None:
             logger.warning("Could not find definition.")
             return ()
-        assignment = last_definition.position.as_range.enclosing_assignment()
+        assignment = last_definition.position.as_range.enclosing_assignment
         if assignment is None:
             logger.warning("Could not find assignment for definition.")
             return ()
@@ -697,7 +703,7 @@ class InlineCall:
 
     @property
     def edits(self) -> tuple[Edit, ...]:
-        call = self.enclosing_call()
+        call = self.enclosing_call
         if not call:
             logger.warn("No enclosing call.")
             return ()
@@ -935,8 +941,8 @@ class SlideStatementsDown:
         if not first_usage_after_range:
             return None
 
-        enclosing_nodes = first_usage_after_range.as_range.enclosing_nodes()
-        origin_nodes = lines.enclosing_nodes()
+        enclosing_nodes = first_usage_after_range.as_range.enclosing_nodes
+        origin_nodes = lines.enclosing_nodes
         index = 0
         while (
             index < len(origin_nodes)

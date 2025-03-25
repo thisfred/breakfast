@@ -69,24 +69,28 @@ class TextRange(Protocol):
     @property
     def source(self) -> "Source": ...
 
+    @property
     def enclosing_scopes(
         self,
     ) -> Sequence[
         "NodeWithRange[ast.FunctionDef] | NodeWithRange[ast.AsyncFunctionDef] | NodeWithRange[ast.ClassDef] | NodeWithRange[ast.Module]"
     ]: ...
 
-    def enclosing_nodes_by_type[T: ast.AST](
-        self, node_type: type[T]
-    ) -> Sequence["NodeWithRange[T]"]: ...
-
+    @property
     def enclosing_nodes(self) -> Sequence["NodeWithRange[ast.AST]"]: ...
 
+    @property
     def enclosing_call(self) -> "NodeWithRange[ast.Call] | None": ...
 
+    @property
     def enclosing_assignment(self) -> "NodeWithRange[ast.Assign] | None": ...
 
     @property
     def statements(self) -> Iterable[ast.stmt]: ...
+
+    def enclosing_nodes_by_type[T: ast.AST](
+        self, node_type: type[T]
+    ) -> Sequence["NodeWithRange[T]"]: ...
 
     def text_with_substitutions(
         self, substitutions: Sequence["Edit"]
