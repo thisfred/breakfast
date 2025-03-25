@@ -483,7 +483,6 @@ def match_as(node: ast.MatchAs, level: int) -> Iterator[str]:
 
 @to_source.register
 def match_class(node: ast.MatchClass, level: int) -> Iterator[str]:
-    print(ast.dump(node))
     yield from to_source(node.cls, level)
     yield "("
     yield from with_separators(
@@ -499,6 +498,11 @@ def match_class(node: ast.MatchClass, level: int) -> Iterator[str]:
         yield from to_source(keyword_pattern, level)
         yield comma
     yield ")"
+
+
+@to_source.register
+def match_star(node: ast.MatchStar, level: int) -> Iterator[str]:
+    yield "*_"
 
 
 @to_source.register

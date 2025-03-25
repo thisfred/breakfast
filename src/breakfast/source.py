@@ -169,6 +169,7 @@ class TextRange:
         types.NodeWithRange[ast.FunctionDef]
         | types.NodeWithRange[ast.AsyncFunctionDef]
         | types.NodeWithRange[ast.ClassDef]
+        | types.NodeWithRange[ast.Module]
     ]:
         result = [
             n
@@ -176,6 +177,7 @@ class TextRange:
             if has_node_type(n, ast.FunctionDef)
             or has_node_type(n, ast.AsyncFunctionDef)
             or has_node_type(n, ast.ClassDef)
+            or has_node_type(n, ast.Module)
         ]
         return result
 
@@ -197,6 +199,16 @@ class TextRange:
                     node_range := source.node_range(node)
                 ) and self in node_range:
                     scopes.append(types.NodeWithRange(node, node_range))
+            elif isinstance(node, ast.Module):
+                scopes.append(
+                    types.NodeWithRange(
+                        node,
+                        TextRange(
+                            source.position(0, 0),
+                            source.lines[-1].end,
+                        ),
+                    )
+                )
 
         return scopes
 

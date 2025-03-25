@@ -248,26 +248,22 @@ def test_extract_variable_should_not_extract_occurrences_in_other_method_of_the_
 
 
 def test_extract_function_should_insert_function_definition():
-    source = make_source(
-        """
+    assert_refactors_to(
+        refactoring=ExtractFunction,
+        target="abs(value + 8)",
+        code="""
         value = 0
         something = abs(value + 8)
-        """
-    )
-    extraction_start = source.position(2, 12)
-    extraction_end = source.position(2, 27)
+        """,
+        expected="""
+        value = 0
 
-    refactor = ExtractFunction(
-        CodeSelection(TextRange(extraction_start, extraction_end))
-    )
-    insert, *_edits = refactor.edits
+        def f(value):
+            something = abs(value + 8)
+            return something
 
-    assert insert.text == dedent(
-        """
-        def function(value):
-            result = abs(value + 8)
-            return result
-        """
+        something = f(value=value)
+        """,
     )
 
 
@@ -283,11 +279,11 @@ def test_extract_function_should_insert_function_definition_with_multiple_statem
         expected="""
         value = 0
 
-        def function(value):
+        def f(value):
             print(value + 20)
             print(max(value, 0))
 
-        function(value=value)
+        f(value=value)
         """,
     )
 
@@ -306,11 +302,11 @@ def test_extract_function_should_create_arguments_for_local_variables():
         value = 0
         other_value = 1
 
-        def function(value, other_value):
+        def f(value, other_value):
             print(value + 20)
             print(max(other_value, value))
 
-        function(value=value, other_value=other_value)
+        f(value=value, other_value=other_value)
         """,
     )
 
@@ -327,11 +323,11 @@ def test_extract_function_should_return_modified_variable_used_after_call():
         expected="""
         a = 1
 
-        def function(a):
+        def f(a):
             b = a + 2
             return b
 
-        b = function(a=a)
+        b = f(a=a)
         print(b)
         """,
     )
@@ -350,12 +346,12 @@ def test_extract_function_should_extract_outside_function():
         expected="""
         def f():
             a = 1
-            b = function(a=a)
+            b = f(a=a)
             print(b)
 
-        def function(a):
-            result = a + 2
-            return result
+        def f(a):
+            b = a + 2
+            return b
         """,
     )
 
@@ -378,23 +374,32 @@ def test_extract_function_should_extract_after_current_scope():
 
 
 def test_extract_function_should_handle_indented_arguments_of_enclosing_scope():
-    source = make_source(
-        """
-        def f(
+    assert_refactors_to(
+        refactoring=ExtractFunction,
+        target="b = a + 2",
+        code="""
+        def function(
             i,
             j,
         ):
             a = 1
             b = a + 2
             print(b)
-        """
-    )
-    start = source.position(6, 0)
-    end = source.position(6, 12)
-    refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
-    insert, *_edits = refactor.edits
+        """,
+        expected="""
+        def function(
+            i,
+            j,
+        ):
+            a = 1
+            b = f(a=a)
+            print(b)
 
-    assert insert.start == source.position(8, 0)
+        def f(a):
+            b = a + 2
+            return b
+        """,
+    )
 
 
 def test_extract_function_should_only_consider_variables_in_scope():
@@ -413,7 +418,7 @@ def test_extract_function_should_only_consider_variables_in_scope():
     refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
     insert, replace = refactor.edits
 
-    assert "function(a)" in insert.text
+    assert "f(a)" in insert.text
 
 
 def test_extract_function_should_only_pass_in_variables_defined_in_local_scope():
@@ -433,53 +438,61 @@ def test_extract_function_should_only_pass_in_variables_defined_in_local_scope()
     refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
     insert, replace = refactor.edits
 
-    assert "function()" in insert.text
+    assert "f()" in insert.text
 
 
 def test_extract_function_should_replace_extracted_code_with_function_call():
-    source = make_source(
-        """
-        def f():
+    assert_refactors_to(
+        refactoring=ExtractFunction,
+        target="b = a + 2",
+        code="""
+        def function():
             a = 1
             b = a + 2
             print(b)
-        """
+        """,
+        expected="""
+        def function():
+            a = 1
+            b = f(a=a)
+            print(b)
+
+        def f(a):
+            b = a + 2
+            return b
+        """,
     )
-    start = source.position(3, 0)
-    end = source.position(3, 12)
-
-    refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
-    _insert, replace = refactor.edits
-
-    assert replace.text == "    b = function(a=a)\n"
-    assert replace.start == source.position(3, 0)
-    assert replace.end == source.position(3, 12)
 
 
 def test_extract_function_should_return_multiple_values_where_necessary():
-    source = make_source(
-        """
+    assert_refactors_to(
+        refactoring=ExtractFunction,
+        target=("a = 1", "b = a + 2"),
+        code="""
         a = 1
         b = a + 2
 
         print(a)
         print(b)
-        """
-    )
-    start = source.position(1, 0)
-    end = source.position(3, 0)
-    refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
-    insert, replace = refactor.edits
+        """,
+        expected="""
+        def f():
+            a = 1
+            b = a + 2
+            return a, b
 
-    assert "a, b = function()" in replace.text
-    assert "return a, b" in insert.text
+        a, b = f()
+        print(a)
+        print(b)
+        """,
+    )
 
 
 def test_extract_function_should_handle_empty_lines():
     code = """\
 b = 1
 
-def f(a):
+def function(a):
 
     b = a + 2
     print(b)"""
@@ -493,8 +506,8 @@ def f(a):
     refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
     insert, replace = refactor.edits
 
-    assert "def function(a):" in insert.text
-    assert "b = function(a=a)" in replace.text
+    assert "def f(a):" in insert.text
+    assert "b = f(a=a)" in replace.text
 
 
 def test_extract_method_should_replace_extracted_code_with_method_call():
@@ -512,38 +525,38 @@ def test_extract_method_should_replace_extracted_code_with_method_call():
         class A:
             def f(self):
                 a = 1
-                self.method(a=a)
+                self.m(a=a)
                 print(self.b)
 
-            def method(self, a):
+            def m(self, a):
                 self.b = a + 2
         """,
     )
 
 
-# def test_extract_method_should_handle_multitarget_assignment():
-#     assert_refactors_to(
-#         refactoring=ExtractMethod,
-#         target="self.b = c = a + 2",
-#         code="""
-#         class A:
-#             def f(self):
-#                 a = 1
-#                 self.b = c = a + 2
-#                 print(c)
-#         """,
-#         expected="""
-#         class A:
-#             def f(self):
-#                 a = 1
-#                 c = self.method(a=a)
-#                 print(c)
+def test_extract_method_should_handle_multitarget_assignment():
+    assert_refactors_to(
+        refactoring=ExtractMethod,
+        target="self.b = c = a + 2",
+        code="""
+        class A:
+            def f(self):
+                a = 1
+                self.b = c = a + 2
+                print(c)
+        """,
+        expected="""
+        class A:
+            def f(self):
+                a = 1
+                c = self.m(a=a)
+                print(c)
 
-#             def method(self, a):
-#                 self.b = c = a + 2
-#                 return c
-#         """,
-#     )
+            def m(self, a):
+                self.b = c = a + 2
+                return c
+        """,
+    )
 
 
 def test_extract_method_should_extract_after_current_method():
@@ -566,8 +579,10 @@ def test_extract_method_should_extract_after_current_method():
 
 
 def test_extract_method_should_not_repeat_return_variables():
-    source = make_source(
-        """
+    assert_refactors_to(
+        refactoring=ExtractMethod,
+        target=("start = ", "else end"),
+        code="""
         class A:
             def extract_method(self, name: str) -> tuple[Edit, ...]:
                 start = self.text_range.start
@@ -577,34 +592,49 @@ def test_extract_method_should_not_repeat_return_variables():
                     end = end.line.next.start if end.line.next else end
 
                 print(start, end)
-        """
+        """,
+        expected="""
+        class A:
+            def extract_method(self, name: str) -> tuple[Edit, ...]:
+                start, end = self.m()
+
+                print(start, end)
+
+            def m(self):
+                start = self.text_range.start
+                end = self.text_range.end
+                if start.row < end.row:
+                    start = start.start_of_line
+                    end = end.line.next.start if end.line.next else end
+                return start, end
+        """,
     )
-    start = source.position(3, 0)
-    end = source.position(8, 0)
-
-    refactor = ExtractMethod(CodeSelection(TextRange(start, end)))
-    _insert, replace = refactor.edits
-
-    assert replace.text.startswith("        start, end =")
 
 
 def test_extract_method_should_extract_static_method_when_self_not_used():
-    source = make_source(
-        """
+    assert_refactors_to(
+        refactoring=ExtractMethod,
+        target="text = start.through(end).text",
+        code="""
         class C:
-            def m(self):
+            def m1(self):
                 start, end = self.extended_range
                 text = start.through(end).text
-        """
+                print(text)
+        """,
+        expected="""
+        class C:
+            def m1(self):
+                start, end = self.extended_range
+                text = self.m(start=start, end=end)
+                print(text)
+
+            @staticmethod
+            def m(start, end):
+                text = start.through(end).text
+                return text
+        """,
     )
-
-    start = source.position(4, 0)
-    end = source.position(5, 0)
-
-    refactor = ExtractMethod(CodeSelection(TextRange(start, end)))
-    insert, _replace = refactor.edits
-
-    assert "    @staticmethod\n    def method(start, end):" in insert.text
 
 
 def test_slide_statements_should_not_slide_beyond_first_usage():
@@ -744,28 +774,37 @@ def test_slide_statements_up_should_slide_past_irrelevant_statements():
 
 
 def test_extract_function_should_extract_to_global_scope():
-    source = make_source(
-        """
+    assert_refactors_to(
+        refactoring=ExtractFunction,
+        target="a += 1",
+        code="""
         class C:
+            @staticmethod
             def m():
                 a = 1
                 a += 1
                 return a
-        """
+        """,
+        expected="""
+
+        class C:
+            @staticmethod
+            def m():
+                a = 1
+                a = f(a=a)
+                return a
+
+        def f(a):
+            a += 1
+            return a
+        """,
     )
-
-    start = source.position(4, 0)
-    end = source.position(5, 0)
-    refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
-    insert, _ = refactor.edits
-
-    assert insert.start.row == 6
 
 
 def test_extract_function_should_consider_function_scope():
     source = make_source(
         """
-        def f(p):
+        def function(p):
             if True:
                 d = c(p)
                 return d
@@ -777,32 +816,26 @@ def test_extract_function_should_consider_function_scope():
     refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
     insert, _ = refactor.edits
 
-    assert "def function(p):" in insert.text
+    assert "def f(p):" in insert.text
 
 
 def test_extract_method_should_extract_part_of_a_line():
-    source = make_source(
-        """
+    assert_refactors_to(
+        refactoring=ExtractMethod,
+        target="self.text_range.start + 2",
+        code="""
         def inline_call(self) -> tuple[Edit, ...]:
             range_end = self.text_range.start + 2
-        """
+        """,
+        expected="""
+        def inline_call(self) -> tuple[Edit, ...]:
+            range_end = self.m()
+
+        def m(self):
+            range_end = self.text_range.start + 2
+            return range_end
+        """,
     )
-
-    start = source.position(2, 16)
-    end = source.position(2, 49)
-
-    refactor = ExtractMethod(CodeSelection(TextRange(start, end)))
-    insert, edit = refactor.edits
-
-    assert dedent(
-        """
-        def method(self):
-            result = self.text_range.start + 2
-            return result
-        """
-    ) == dedent(insert.text)
-
-    assert edit.text == "self.method()"
 
 
 def test_inline_call_should_replace_call_with_function_return_value():
@@ -1053,60 +1086,33 @@ def test_inline_variable_should_delete_multiline_definition():
 
 
 def test_extract_function_should_pass_variables_used_as_arguments_on_as_parameters():
-    source = make_source(
-        """
-        def f():
+    assert_refactors_to(
+        refactoring=ExtractFunction,
+        target="g(c=function)",
+        code="""
+        def function():
             return 2
 
-        def g(f):
-            return abs(f())
+        def g(c):
+            return abs(c())
 
         def h():
-            return g(f=f)
-        """
+            return g(c=function)
+        """,
+        expected="""
+        def function():
+            return 2
+
+        def g(c):
+            return abs(c())
+
+        def h():
+            return f()
+
+        def f():
+            return g(c=function)
+        """,
     )
-
-    start = source.position(8, 4)
-    end = source.position(8, 16)
-    refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
-    insert, _ = refactor.edits
-    assert "def function(f):" in insert.text
-
-
-def test_refactor_inside_method_is_true_for_range_inside_method():
-    source = make_source(
-        """
-        class C:
-            def f(self, a: list[int]) -> tuple[str, ...]:
-                a += 1
-                return max([a])
-        """
-    )
-
-    start = source.position(3, 0)
-    end = source.position(4, 0)
-
-    refactor = CodeSelection(TextRange(start, end))
-    assert refactor.inside_method
-
-
-def test_refactor_inside_method_is_false_for_range_outside_class():
-    source = make_source(
-        """
-        class C:
-            def f(self, a: list[int]) -> tuple[str, ...]:
-                a += 1
-                return max([a])
-
-        print(C)
-        """
-    )
-
-    start = source.position(6, 0)
-    end = source.position(6, 7)
-
-    refactor = CodeSelection(TextRange(start, end))
-    assert not refactor.inside_method
 
 
 def test_extract_variable_should_include_quotes():
@@ -1324,15 +1330,15 @@ def test_extract_callable_containing_return_statement_should_preserve_it():
         refactoring=ExtractFunction,
         target=("range_end = 3 + 2", "return range_end"),
         code="""
-        def f():
+        def function():
             range_end = 3 + 2
             return range_end
         """,
         expected="""
-        def f():
-            return function()
-
         def function():
+            return f()
+
+        def f():
             range_end = 3 + 2
             return range_end
         """,

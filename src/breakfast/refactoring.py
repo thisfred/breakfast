@@ -1,7 +1,7 @@
 import ast
 import logging
 from collections import defaultdict
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from functools import cached_property
 from itertools import dropwhile, takewhile
 from textwrap import dedent, indent
@@ -17,6 +17,7 @@ from breakfast.names import (
 )
 from breakfast.scope_graph import NodeType, ScopeGraph
 from breakfast.search import (
+    find_names,
     find_other_occurrences,
     find_returns,
     find_statements,
@@ -55,20 +56,6 @@ class CodeSelection:
             for refactoring in self._refactorings.values()
             if refactoring.applies_to(self)
         ]
-
-    @cached_property
-    def inside_method(self) -> bool:
-        global_scope = (
-            scopes[0]
-            if (scopes := self.text_range.enclosing_scopes())
-            else None
-        )
-
-        if not global_scope:
-            return False
-
-        in_method = isinstance(global_scope.node, ast.ClassDef)
-        return in_method
 
     @cached_property
     def name_at_cursor(self) -> str | None:
@@ -141,327 +128,350 @@ class Refactoring(Protocol):
     def edits(self) -> tuple[Edit, ...]: ...
 
 
-class ExtractCallable:
+@register
+class ExtractFunction:
+    name = "extract function"
+
     def __init__(self, code_selection: CodeSelection):
         self.code_selection = code_selection
 
-    def find_callable_insert_point(
-        self, start: Position, is_global: bool = False
-    ) -> Position:
-        if not self.code_selection.text_range.enclosing_scopes():
-            return start.source.position(start.row, 0)
+    @classmethod
+    def applies_to(cls, selection: CodeSelection) -> bool:
+        return selection.text_range.end > selection.text_range.start
 
-        enclosing = (
-            self.code_selection.text_range.enclosing_scopes()[0]
-            if is_global
-            else self.code_selection.text_range.enclosing_scopes()[-1]
-        )
+    @property
+    def edits(self) -> tuple[Edit, ...]:  # noqa: C901
+        enclosing_scope = self.code_selection.text_range.enclosing_scopes()[-1]
 
-        return start.source.position(enclosing.range.end.row + 1, 0)
-
-    def find_start_of_scope(self, start: Position) -> Position:
-        if not self.code_selection.text_range.enclosing_scopes():
-            return start.source.position(0, 0)
-
-        global_scope = self.code_selection.text_range.enclosing_scopes()[0]
-
-        return global_scope.range.start
-
-    def get_parameter_names(
-        self,
-        names_in_range: Sequence[Occurrence],
-        text_range: types.TextRange,
-        start_of_current_scope: Position,
-    ) -> list[str]:
-        return [
-            occurrence.name
-            for occurrence in self.find_names_defined_before_range(
-                names_in_range, text_range
-            )
-            if occurrence.position >= start_of_current_scope
-            # If we are extracting code that passes a name as an argument to a another
-            # function, it is very likely that we want to receive that as an argument as
-            # well, rather than close over it or get it from the global scope:
-            or text_range.contains_as_argument(occurrence.name)
-        ]
-
-    def find_names_defined_before_range(
-        self,
-        names: Sequence[Occurrence],
-        text_range: types.TextRange,
-    ) -> Iterable[Occurrence]:
-        found = set()
-        for name_occurrence in names:
-            if name_occurrence.name in found:
-                continue
-            try:
-                occurrences = all_occurrences(
-                    name_occurrence.position,
-                    graph=self.code_selection.scope_graph,
-                )
-            except NotFoundError:
-                continue
-            for occurrence in occurrences:
-                if occurrence.position < text_range.start:
-                    found.add(name_occurrence.name)
-                    yield occurrence
-                break
-
-
-class Extractor(Protocol):
-    def __init__(
-        self,
-        code_selection: CodeSelection,
-        new_indentation: str,
-    ): ...
-
-    def extract(self) -> tuple[str, str]: ...
-
-
-class ExpressionExtractor:
-    def __init__(
-        self,
-        code_selection: CodeSelection,
-        new_indentation: str,
-    ):
-        self.code_selection = code_selection
-        self.text_range = code_selection.text_range
-        self.names_in_range = self.code_selection.full_line_range.names
-        self.new_indentation = new_indentation
-
-    def extract(self) -> tuple[str, str]:
-        extracted = self.text_range.text.strip()
-        nodes = list(self.text_range.statements)
-        assignment = ""
-        match nodes:
-            case [ast.Assign(targets=targets)]:
-                level = len(self.new_indentation) // 4
-                module = ast.Module(body=nodes, type_ignores=[])
-                if all(isinstance(t, ast.Attribute) for t in targets):
-                    extracted = "".join(to_source(module, level))
-                else:
-                    non_attribute_vars = [
-                        unparse(t)
-                        for t in targets
-                        if not isinstance(t, ast.Attribute)
-                    ]
-                    assignment = " = ".join(non_attribute_vars)
-                    extracted = "".join(to_source(module, level))
-                    extracted = f"{extracted}\n{self.new_indentation}return {non_attribute_vars[0]}"
-            case _:
-                extracted = f"{self.new_indentation}result = {extracted}\n{self.new_indentation}return result"
-
-        return extracted, assignment
-
-
-class StatementsExtractor:
-    def __init__(
-        self,
-        code_selection: CodeSelection,
-        new_indentation: str,
-    ):
-        self.code_selection = code_selection
-        self.text_range = code_selection.full_line_range
-        self.names_in_range = self.code_selection.full_line_range.names
-        self.new_indentation = new_indentation
-
-    def extract(self) -> tuple[str, str]:
-        return_values = self.get_return_values(
-            names_in_range=self.names_in_range, end=self.text_range.end
-        )
-
-        nodes = list(self.text_range.statements)
+        start_of_scope = enclosing_scope.range.start
+        new_level = start_of_scope.column // 4
+        nodes = list(self.code_selection.text_range.statements)
         has_returns = any(
             found for node in nodes for found in find_returns(node)
         )
+        defined_before_extraction = defaultdict(list)
+        used_in_extraction = defaultdict(list)
+        modified_in_extraction = defaultdict(list)
+        used_after_extraction = defaultdict(list)
+        for occurrence in find_names(
+            enclosing_scope.node, self.code_selection.source
+        ):
+            if (
+                occurrence.position < self.code_selection.text_range.start
+                and occurrence.node_type is NodeType.DEFINITION
+            ):
+                defined_before_extraction[occurrence.name].append(occurrence)
+            if occurrence.position in self.code_selection.text_range:
+                used_in_extraction[occurrence.name].append(occurrence)
+                if occurrence.node_type is NodeType.DEFINITION:
+                    modified_in_extraction[occurrence.name].append(occurrence)
+            if occurrence.position > self.code_selection.text_range.end:
+                used_after_extraction[occurrence.name].append(occurrence)
 
-        level = len(self.new_indentation) // 4
-        module = ast.Module(body=nodes, type_ignores=[])
+        arguments = make_arguments(
+            defined_before_extraction, used_in_extraction
+        )
+        if not nodes:
+            if (
+                enclosing_assignment
+                := self.code_selection.text_range.enclosing_assignment()
+            ):
+                targets = enclosing_assignment.node.targets
+                if len(targets) > 1:
+                    value: ast.expr | ast.Tuple = ast.Tuple(targets)
+                else:
+                    value = targets[0]
+                nodes = [enclosing_assignment.node, ast.Return(value=value)]
+            elif (
+                enclosing_returns
+                := self.code_selection.text_range.enclosing_nodes_by_type(
+                    ast.Return
+                )
+            ):
+                nodes = [enclosing_returns[-1].node]
 
-        extracted = "".join(to_source(module, level))
+        return_node = make_return_node(
+            modified_in_extraction, used_after_extraction
+        )
+        if return_node:
+            nodes.append(return_node)
 
-        if return_values:
-            return_values_as_string = f'{", ".join(return_values)}'
-            extracted += f"{NEWLINE}{self.new_indentation}return {return_values_as_string}"
-            assignment_or_return = f"{return_values_as_string} = "
-        elif has_returns:
-            assignment_or_return = "return "
+        function = make_function(
+            decorator_list=[],
+            name="f",
+            nodes=nodes,
+            arguments=arguments,
+        )
+
+        if isinstance(enclosing_scope.node, ast.Module):
+            insert_position = self.code_selection.text_range.start.line.start
         else:
-            assignment_or_return = ""
+            match self.code_selection.text_range.enclosing_scopes():
+                case (
+                    [
+                        types.NodeWithRange(node=ast.Module()),
+                        types.NodeWithRange(node=ast.ClassDef()),
+                        *_,
+                    ] as matched
+                ):
+                    last_line = matched[1].range.end.line
+                    new_level = 0
+                case _:
+                    last_line = (
+                        self.code_selection.text_range.enclosing_scopes()[
+                            -1
+                        ].range.end.line
+                    )
+            if next_line := last_line.next:
+                insert_position = next_line.start
+            else:
+                insert_position = last_line.end
 
-        return extracted, assignment_or_return
-
-    def get_return_values(
-        self,
-        names_in_range: Sequence[Occurrence],
-        end: Position,
-    ) -> list[str]:
-        names_used_after = {
-            occurrence.name
-            for occurrence in self.code_selection.find_names_used_after_position(
-                names_in_range, self.code_selection.scope_graph, end
-            )
-        }
-        seen = set()
-        return_values = []
-        names_modified_in_body = [
-            occurrence.name
-            for occurrence in names_in_range
-            if occurrence.node_type is NodeType.DEFINITION
-        ]
-        for name in names_modified_in_body:
-            if name in names_used_after and name not in seen:
-                seen.add(name)
-                return_values.append(name)
-
-        return return_values
-
-
-@register
-class ExtractFunction(ExtractCallable):
-    name = "extract function"
-
-    @property
-    def edits(self) -> tuple[Edit, ...]:
-        return self.extract_callable("function")
-
-    @classmethod
-    def applies_to(cls, selection: CodeSelection) -> bool:
-        return selection.text_range.end > selection.text_range.start
-
-    def extract_callable(
-        self,
-        name: str,
-    ) -> tuple[Edit, ...]:
-        start, end = (
-            self.code_selection.text_range.start,
-            self.code_selection.text_range.end,
-        )
-        original_indentation = start.indentation
-        new_indentation = FOUR_SPACES
-
-        extracting_partial_line = start.row == end.row and start.column != 0
-        extractor = (
-            ExpressionExtractor
-            if extracting_partial_line
-            else StatementsExtractor
+        definition_text = (
+            f"{NEWLINE}{"".join(to_source(function, level=new_level))}{NEWLINE}"
         )
 
-        extracted, assignment_or_return = extractor(
-            code_selection=self.code_selection,
-            new_indentation=new_indentation,
-        ).extract()
-
-        start_of_current_scope = self.find_start_of_scope(start=start)
-        names_in_range = self.code_selection.full_line_range.names
-        parameter_names: Sequence[str] = self.get_parameter_names(
-            names_in_range=names_in_range,
-            text_range=self.code_selection.full_line_range,
-            start_of_current_scope=start_of_current_scope,
+        calling_statement = make_function_call(
+            return_node=return_node,
+            function_name="f",
+            arguments=arguments,
+            has_returns=has_returns,
         )
+        call_text = "".join(to_source(calling_statement, level=new_level))
 
-        arguments = ", ".join(f"{n}={n}" for n in parameter_names)
-        call = f"{name}({arguments})"
-        replace_text = (
-            call
-            if extracting_partial_line
-            else f"{original_indentation}{assignment_or_return}{call}{NEWLINE}"
-        )
-
-        parameters = ", ".join(parameter_names)
-
-        insert_position = self.find_callable_insert_point(
-            start=start, is_global=True
-        )
         edits = (
+            Edit(insert_position.as_range, text=definition_text),
             Edit(
-                insert_position.as_range,
-                text=f"{NEWLINE}def {name}({parameters}):{NEWLINE}{extracted}{NEWLINE}",
+                self.code_selection.text_range.start.to(
+                    self.code_selection.text_range.end
+                ),
+                text=call_text,
             ),
-            Edit(start.to(end), text=replace_text),
         )
         return edits
 
 
 @register
-class ExtractMethod(ExtractCallable):
+class ExtractMethod:
     name = "extract method"
 
-    @property
-    def edits(self) -> tuple[Edit, ...]:
-        return self.extract_callable("method")
+    def __init__(self, code_selection: CodeSelection):
+        self.code_selection = code_selection
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
+        # TODO: check we're in a method
         return selection.text_range.end > selection.text_range.start
 
-    def extract_callable(
-        self,
-        name: str,
-    ) -> tuple[Edit, ...]:
-        start, end = (
-            self.code_selection.text_range.start,
-            self.code_selection.text_range.end,
+    @property
+    def edits(self) -> tuple[Edit, ...]:  # noqa: C901
+        enclosing_scope = (
+            self.code_selection.text_range.enclosing_nodes_by_type(
+                ast.FunctionDef
+            )[-1]
         )
-        original_indentation = start.indentation
-        new_indentation = original_indentation
+        # TODO: handle classmethod
+        # TODO: handle staticmethod
+        in_static_method = False
+        in_class_method = False
 
-        extracting_partial_line = start.row == end.row and start.column != 0
-        extractor = (
-            ExpressionExtractor
-            if extracting_partial_line
-            else StatementsExtractor
+        start_of_scope = enclosing_scope.range.start
+        new_level = start_of_scope.column // 4
+        nodes = list(self.code_selection.text_range.statements)
+        has_returns = any(
+            found for node in nodes for found in find_returns(node)
         )
+        defined_before_extraction = defaultdict(list)
+        used_in_extraction = defaultdict(list)
+        modified_in_extraction = defaultdict(list)
+        used_after_extraction = defaultdict(list)
+        self_occurrence = None
+        for i, occurrence in enumerate(
+            find_names(enclosing_scope.node, self.code_selection.source)
+        ):
+            if (
+                occurrence.position < self.code_selection.text_range.start
+                and occurrence.node_type is NodeType.DEFINITION
+            ):
+                if i == 0 and not (in_class_method or in_static_method):
+                    self_occurrence = occurrence
+                defined_before_extraction[occurrence.name].append(occurrence)
+            if occurrence.position in self.code_selection.text_range:
+                used_in_extraction[occurrence.name].append(occurrence)
+                if occurrence.node_type is NodeType.DEFINITION:
+                    modified_in_extraction[occurrence.name].append(occurrence)
+            if occurrence.position > self.code_selection.text_range.end:
+                used_after_extraction[occurrence.name].append(occurrence)
 
-        extracted, assignment_or_return = extractor(
-            code_selection=self.code_selection,
-            new_indentation=new_indentation,
-        ).extract()
-
-        start_of_current_scope = self.find_start_of_scope(start=start)
-        names_in_range = self.code_selection.full_line_range.names
-        parameter_names = self.get_parameter_names(
-            names_in_range=names_in_range,
-            text_range=self.code_selection.full_line_range,
-            start_of_current_scope=start_of_current_scope,
+        arguments = make_arguments(
+            defined_before_extraction, used_in_extraction
         )
-        self_name = "self"
-        arguments = ", ".join(
-            f"{n}={n}" for n in parameter_names if n != self_name
+        if not nodes and (
+            enclosing_assignment
+            := self.code_selection.text_range.enclosing_assignment()
+        ):
+            targets = enclosing_assignment.node.targets
+            if len(targets) > 1:
+                value: ast.expr | ast.Tuple = ast.Tuple(targets)
+            else:
+                value = targets[0]
+            nodes = [enclosing_assignment.node, ast.Return(value=value)]
+
+        return_node = make_return_node(
+            modified_in_extraction, used_after_extraction
         )
-        self_prefix = self_name + "."
+        if return_node:
+            nodes.append(return_node)
 
-        call = f"{self_prefix}{name}({arguments})"
-        replace_text = (
-            call
-            if extracting_partial_line
-            else f"{original_indentation}{assignment_or_return}{call}{NEWLINE}"
-        )
-
-        parameters_with_self = [
-            self_name,
-            *(n for n in parameter_names if n != self_name),
-        ]
-
-        definition_indentation = original_indentation[:-4]
-        if self_name in parameter_names:
-            static_method = ""
-            parameters = ", ".join(parameters_with_self)
+        if self_occurrence and self_occurrence.name not in used_in_extraction:
+            decorator_list: list[ast.expr] = [ast.Name("staticmethod")]
         else:
-            static_method = f"{definition_indentation}@staticmethod{NEWLINE}"
-            parameters = ", ".join(parameter_names)
-
-        insert_position = self.find_callable_insert_point(
-            start=start, is_global=False
+            decorator_list = []
+        method = make_function(
+            decorator_list=decorator_list,
+            name="m",
+            nodes=nodes,
+            arguments=arguments,
         )
+        if enclosing_scope.range.end.line.next:
+            insert_position = enclosing_scope.range.end.line.next.start
+        else:
+            insert_position = enclosing_scope.range.end.line.end
+        definition_text = (
+            f"{NEWLINE}{"".join(to_source(method, level=new_level))}{NEWLINE}"
+        )
+
+        if not self_occurrence:
+            logger.error("Couldn't detect self parameter.")
+            return ()
+
+        calling_statement = make_method_call(
+            return_node=return_node,
+            self_name=self_occurrence.name,
+            method_name="m",
+            arguments=arguments,
+            has_returns=has_returns,
+        )
+        call_text = "".join(to_source(calling_statement, level=new_level))
+
         edits = (
+            Edit(insert_position.as_range, text=definition_text),
             Edit(
-                insert_position.as_range,
-                text=f"{NEWLINE}{static_method}{definition_indentation}def {name}({parameters}):{NEWLINE}{extracted}{NEWLINE}",
+                self.code_selection.text_range.start.to(
+                    self.code_selection.text_range.end
+                ),
+                text=call_text,
             ),
-            Edit(start.to(end), text=replace_text),
         )
         return edits
+
+
+def make_function(
+    *,
+    decorator_list: list[ast.expr],
+    name: str,
+    arguments: Sequence[Occurrence],
+    nodes: Iterable[ast.stmt],
+) -> ast.FunctionDef:
+    args = ast.arguments(
+        posonlyargs=[],
+        args=[make_argument(o) for o in arguments],
+        vararg=None,
+        kwonlyargs=[],
+        kw_defaults=[],
+        kwarg=None,
+        defaults=[],
+    )
+    return ast.FunctionDef(
+        name=name,
+        args=args,
+        body=list(nodes),
+        decorator_list=decorator_list,
+        returns=None,
+        type_params=[],
+    )
+
+
+def make_method_call(
+    *,
+    return_node: ast.Return | None,
+    self_name: str,
+    method_name: str,
+    arguments: Sequence[Occurrence],
+    has_returns: bool,
+) -> ast.Call | ast.Assign | ast.Return:
+    arguments = [o for o in arguments if o.name != self_name]
+    func = ast.Attribute(value=ast.Name(id=self_name), attr=method_name)
+    return make_call(return_node, func, arguments, has_returns)
+
+
+def make_function_call(
+    *,
+    return_node: ast.Return | None,
+    function_name: str,
+    arguments: Sequence[Occurrence],
+    has_returns: bool,
+) -> ast.Call | ast.Assign | ast.Return:
+    func = ast.Name(id=function_name)
+    return make_call(return_node, func, arguments, has_returns)
+
+
+def make_call(
+    return_node: ast.Return | None,
+    func: ast.Name | ast.Attribute,
+    arguments: Sequence[Occurrence],
+    has_returns: bool,
+) -> ast.Call | ast.Assign | ast.Return:
+    call = ast.Call(
+        func=func,
+        args=[],
+        keywords=[
+            ast.keyword(arg=o.name, value=ast.Name(o.name)) for o in arguments
+        ],
+    )
+    if return_node:
+        if isinstance(return_node.value, ast.expr):
+            return ast.Assign(targets=[return_node.value], value=call)
+    elif has_returns:
+        return ast.Return(value=call)
+    return call
+
+
+def make_return_node(
+    modified_in_extraction: Mapping[str, Sequence[Occurrence]],
+    used_after_extraction: Mapping[str, Sequence[Occurrence]],
+) -> ast.Return | None:
+    returns = []
+    for name, occurrences in modified_in_extraction.items():
+        if name in used_after_extraction:
+            returns.append(occurrences[0])
+    if not returns:
+        return None
+    if len(returns) > 1:
+        value: ast.expr | ast.Tuple = ast.Tuple(
+            [o.ast for o in returns if isinstance(o.ast, ast.expr)]
+        )
+    elif isinstance(returns[0].ast, ast.expr):
+        value = returns[0].ast
+
+    return_node = ast.Return(value)
+    return return_node
+
+
+def make_arguments(
+    defined_before_extraction: Mapping[str, Sequence[Occurrence]],
+    used_in_extraction: Mapping[str, Sequence[Occurrence]],
+) -> Sequence[Occurrence]:
+    arguments = []
+    for name, occurrences in defined_before_extraction.items():
+        if name in used_in_extraction:
+            arguments.append(occurrences[0])
+
+    return arguments
+
+
+def make_argument(occurrence: Occurrence) -> ast.arg:
+    return ast.arg(arg=occurrence.name)
 
 
 @register
@@ -760,14 +770,6 @@ class InlineCall:
                 occurrence.position.to(occurrence.position + len(def_arg.arg)),
                 value,
             )
-
-
-def get_return_value(new_lines: Sequence[str]) -> str:
-    for line in new_lines[::-1]:
-        if (stripped := line.strip()).startswith("return "):
-            return stripped[len("return ") :]
-
-    raise NotFoundError("No return found")
 
 
 @register

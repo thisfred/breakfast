@@ -72,7 +72,7 @@ class TextRange(Protocol):
     def enclosing_scopes(
         self,
     ) -> Sequence[
-        "NodeWithRange[ast.FunctionDef] | NodeWithRange[ast.AsyncFunctionDef] | NodeWithRange[ast.ClassDef]"
+        "NodeWithRange[ast.FunctionDef] | NodeWithRange[ast.AsyncFunctionDef] | NodeWithRange[ast.ClassDef] | NodeWithRange[ast.Module]"
     ]: ...
 
     def enclosing_nodes_by_type[T: ast.AST](

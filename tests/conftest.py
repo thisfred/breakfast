@@ -79,7 +79,7 @@ def range_for(
     last_range = None
     for i, needle in enumerate(needles):
         for row, line in enumerate(source.lines):
-            if len(needles) == 1:
+            if re.escape(needle) == needle:
                 pattern = rf"\b{re.escape(needle)}\b"
             else:
                 pattern = re.escape(needle)
