@@ -59,15 +59,39 @@ class CodeSelection:
 
     @cached_property
     def in_method(self) -> bool:
-        return False
+        return len(self.text_range.enclosing_scopes) > 1 and isinstance(
+            self.text_range.enclosing_scopes[-2].node, ast.ClassDef
+        )
 
     @cached_property
     def in_static_method(self) -> bool:
-        return self.in_method and False
+        return (
+            self.in_method
+            and isinstance(
+                (scope_node := self.text_range.enclosing_scopes[-1].node),
+                ast.FunctionDef,
+            )
+            and any(
+                d.id == "staticmethod"
+                for d in scope_node.decorator_list
+                if isinstance(d, ast.Name)
+            )
+        )
 
     @cached_property
     def in_class_method(self) -> bool:
-        return self.in_method and False
+        return (
+            self.in_method
+            and isinstance(
+                (scope_node := self.text_range.enclosing_scopes[-1].node),
+                ast.FunctionDef,
+            )
+            and any(
+                d.id == "classmethod"
+                for d in scope_node.decorator_list
+                if isinstance(d, ast.Name)
+            )
+        )
 
     @cached_property
     def name_at_cursor(self) -> str | None:
@@ -152,6 +176,7 @@ class UsageCollector:
         self._used_after_extraction: dict[str, list[Occurrence]] = defaultdict(
             list
         )
+        self.self_or_cls: Occurrence | None = None
 
     @property
     def defined_before_extraction(self) -> Mapping[str, Sequence[Occurrence]]:
@@ -182,13 +207,15 @@ class UsageCollector:
         return self._used_after_extraction or {}
 
     def _collect(self) -> None:
-        for occurrence in find_names(
-            self.enclosing_scope.node, self.code_selection.source
+        for i, occurrence in enumerate(
+            find_names(self.enclosing_scope.node, self.code_selection.source)
         ):
             if (
                 occurrence.position < self.code_selection.text_range.start
                 and occurrence.node_type is NodeType.DEFINITION
             ):
+                if i == 0 and not (self.code_selection.in_static_method):
+                    self.self_or_cls = occurrence
                 self._defined_before_extraction[occurrence.name].append(
                     occurrence
                 )
@@ -326,7 +353,7 @@ class ExtractMethod:
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
-        # TODO: check we're in a method
+        # TODO: check we're in a (non static) method
         return selection.text_range.end > selection.text_range.start
 
     @property
@@ -336,7 +363,6 @@ class ExtractMethod:
                 ast.FunctionDef
             )[-1]
         )
-
         start_of_scope = enclosing_scope.range.start
         new_level = start_of_scope.column // 4
         nodes = list(self.code_selection.text_range.statements)
@@ -344,20 +370,6 @@ class ExtractMethod:
             found for node in nodes for found in find_returns(node)
         )
         usages = UsageCollector(self.code_selection, enclosing_scope)
-        self_or_cls = None
-        for i, occurrence in enumerate(
-            find_names(enclosing_scope.node, self.code_selection.source)
-        ):
-            if (
-                occurrence.position < self.code_selection.text_range.start
-                and occurrence.node_type is NodeType.DEFINITION
-            ):
-                if i == 0 and not (
-                    self.code_selection.in_class_method
-                    or self.code_selection.in_static_method
-                ):
-                    self_or_cls = occurrence
-                    break
 
         arguments = make_arguments(
             usages.defined_before_extraction, usages.used_in_extraction
@@ -379,8 +391,13 @@ class ExtractMethod:
         if return_node:
             nodes.append(return_node)
 
-        if self_or_cls and self_or_cls.name not in usages.used_in_extraction:
+        if (
+            usages.self_or_cls
+            and usages.self_or_cls.name not in usages.used_in_extraction
+        ):
             decorator_list: list[ast.expr] = [ast.Name("staticmethod")]
+        elif usages.self_or_cls and self.code_selection.in_class_method:
+            decorator_list = [ast.Name("classmethod")]
         else:
             decorator_list = []
         method = make_function(
@@ -397,13 +414,13 @@ class ExtractMethod:
             f"{NEWLINE}{"".join(to_source(method, level=new_level))}{NEWLINE}"
         )
 
-        if not self_or_cls:
+        if not usages.self_or_cls:
             logger.error("Couldn't detect self parameter.")
             return ()
 
         calling_statement = make_method_call(
             return_node=return_node,
-            self_name=self_or_cls.name,
+            self_name=usages.self_or_cls.name,
             method_name="m",
             arguments=arguments,
             has_returns=has_returns,
@@ -630,6 +647,7 @@ class InlineVariable:
 
         name = self.code_selection.name_at_cursor
         if name is None:
+            logger.warning("No variable at cursor that can be inlined.")
             return ()
         if self.cursor in assignment.range:
             after_cursor = (

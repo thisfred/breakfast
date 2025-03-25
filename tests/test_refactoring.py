@@ -637,6 +637,32 @@ def test_extract_method_should_extract_static_method_when_self_not_used():
     )
 
 
+def test_extract_method_should_extract_class_method_from_class_method():
+    assert_refactors_to(
+        refactoring=ExtractMethod,
+        target="sum = cls.start + end",
+        code="""
+        class C:
+            @classmethod
+            def m1(cls, end):
+                sum = cls.start + end
+                print(sum)
+        """,
+        expected="""
+        class C:
+            @classmethod
+            def m1(cls, end):
+                sum = cls.m(end=end)
+                print(sum)
+
+            @classmethod
+            def m(cls, end):
+                sum = cls.start + end
+                return sum
+        """,
+    )
+
+
 def test_slide_statements_should_not_slide_beyond_first_usage():
     source = make_source(
         """

@@ -710,7 +710,7 @@ def render_decorators(
     decorators: Iterable[ast.AST], level: int
 ) -> Iterator[str]:
     for decorator in decorators:
-        yield start_line("@ ", level)
+        yield start_line("@", level)
         yield from to_source(decorator, level)
 
 
