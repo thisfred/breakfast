@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from functools import singledispatch
 from typing import Any, Protocol
 
-from breakfast.types import NodeType, Position, Source, TextRange
+from breakfast.types import NodeType, Position, Source
 from breakfast.visitor import generic_visit
 
 
@@ -14,29 +14,6 @@ class Occurrence:
     position: Position
     ast: ast.AST | None
     node_type: NodeType
-
-
-@singledispatch
-def find_scopes(
-    node: ast.AST, up_to: Position | None
-) -> Iterator[ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef]:
-    if (
-        up_to
-        and hasattr(node, "lineno")
-        and up_to.source.node_position(node) > up_to
-    ):
-        return
-    yield from generic_visit(find_scopes, node, up_to)
-
-
-@find_scopes.register
-def find_scope_in_function_or_class(
-    node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
-    up_to: Position | None,
-) -> Iterator[ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef]:
-    yield node
-    for child in node.body:
-        yield from find_scopes(child, up_to=up_to)
 
 
 @singledispatch
@@ -163,33 +140,6 @@ def find_names_in_attribute(
     node: ast.Attribute, source: Source
 ) -> Iterator[Occurrence]:
     yield from find_names(node.value, source)
-
-
-@singledispatch
-def find_arguments_passed_in_range(
-    node: ast.AST, text_range: TextRange
-) -> Iterator[str]:
-    end = text_range.end
-    if hasattr(node, "lineno"):
-        position = end.source.node_position(node)
-        if position > end:
-            return
-    yield from generic_visit(find_arguments_passed_in_range, node, text_range)
-
-
-@find_arguments_passed_in_range.register
-def find_arguments_in_call(
-    node: ast.Call, text_range: TextRange
-) -> Iterator[str]:
-    for argument in node.args:
-        if isinstance(argument, ast.Name):
-            yield argument.id
-
-    for keyword_argument in node.keywords:
-        if isinstance(keyword_argument.value, ast.Name):
-            yield keyword_argument.value.id
-
-    yield from generic_visit(find_arguments_passed_in_range, node, text_range)
 
 
 @singledispatch
