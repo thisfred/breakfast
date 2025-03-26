@@ -108,16 +108,6 @@ class CodeSelection:
         except NotFoundError:
             return ()
 
-    @cached_property
-    def full_line_range(self) -> types.TextRange:
-        start = self.text_range.start
-        end = self.text_range.end
-        if start.row < end.row:
-            start = start.start_of_line
-            end = end.line.next.start if end.line.next else end
-
-        return start.to(end)
-
     def find_usages_after_position(
         self,
         occurrences: Sequence[Occurrence],
