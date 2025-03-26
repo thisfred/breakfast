@@ -72,9 +72,7 @@ class TextRange(Protocol):
     @property
     def enclosing_scopes(
         self,
-    ) -> Sequence[
-        "NodeWithRange[ast.FunctionDef] | NodeWithRange[ast.AsyncFunctionDef] | NodeWithRange[ast.ClassDef] | NodeWithRange[ast.Module]"
-    ]: ...
+    ) -> Sequence["ScopeWithRange"]: ...
 
     @property
     def enclosing_nodes(self) -> Sequence["NodeWithRange[ast.AST]"]: ...
@@ -103,6 +101,14 @@ class TextRange(Protocol):
 class NodeWithRange[T: ast.AST]:
     node: T
     range: "TextRange"
+
+
+ScopeWithRange = (
+    NodeWithRange[ast.FunctionDef]
+    | NodeWithRange[ast.AsyncFunctionDef]
+    | NodeWithRange[ast.ClassDef]
+    | NodeWithRange[ast.Module]
+)
 
 
 @dataclass(order=True, frozen=True)  # pragma: nocover

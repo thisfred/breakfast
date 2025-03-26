@@ -97,6 +97,8 @@ def range_for(
                     break
 
     if first_range and last_range:
-        return TextRange(first_range.start, last_range.end)
+        found_range = TextRange(first_range.start, last_range.end)
+        print(f"{found_range=}")
+        return found_range
 
     raise ValueError("not found")  # pragma: nocover

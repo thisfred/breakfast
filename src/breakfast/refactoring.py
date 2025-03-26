@@ -131,10 +131,7 @@ class UsageCollector:
     def __init__(
         self,
         code_selection: CodeSelection,
-        enclosing_scope: types.NodeWithRange[ast.FunctionDef]
-        | types.NodeWithRange[ast.AsyncFunctionDef]
-        | types.NodeWithRange[ast.ClassDef]
-        | types.NodeWithRange[ast.Module],
+        enclosing_scope: types.ScopeWithRange,
     ) -> None:
         self.code_selection = code_selection
         self.enclosing_scope = enclosing_scope
@@ -228,47 +225,31 @@ class ExtractFunction:
     @property
     def edits(self) -> tuple[Edit, ...]:
         enclosing_scope = self.code_selection.text_range.enclosing_scopes[-1]
-
         start_of_scope = enclosing_scope.range.start
         new_level = start_of_scope.column // 4
-        nodes = list(self.code_selection.text_range.statements)
+        original_indentation = self.code_selection.text_range.start.indentation
         has_returns = any(
-            found for node in nodes for found in find_returns(node)
+            found
+            for node in self.code_selection.text_range.statements
+            for found in find_returns(node)
         )
         usages = UsageCollector(self.code_selection, enclosing_scope)
 
         arguments = make_arguments(
             usages.defined_before_extraction, usages.used_in_extraction
         )
-        if not nodes:
-            if (
-                enclosing_assignment
-                := self.code_selection.text_range.enclosing_assignment
-            ):
-                targets = enclosing_assignment.node.targets
-                if len(targets) > 1:
-                    value: ast.expr | ast.Tuple = ast.Tuple(targets)
-                else:
-                    value = targets[0]
-                nodes = [enclosing_assignment.node, ast.Return(value=value)]
-            elif (
-                enclosing_returns
-                := self.code_selection.text_range.enclosing_nodes_by_type(
-                    ast.Return
-                )
-            ):
-                nodes = [enclosing_returns[-1].node]
+        body = make_body(selection=self.code_selection)
 
         return_node = make_return_node(
             usages.modified_in_extraction, usages.used_after_extraction
         )
         if return_node:
-            nodes.append(return_node)
+            body.append(return_node)
 
         function = make_function(
             decorator_list=[],
             name="f",
-            nodes=nodes,
+            nodes=body,
             arguments=arguments,
         )
 
@@ -304,7 +285,9 @@ class ExtractFunction:
             arguments=arguments,
             has_returns=has_returns,
         )
-        call_text = "".join(to_source(calling_statement, level=new_level))
+        call_text = "".join(to_source(calling_statement, level=0))
+        if self.code_selection.text_range.start.column == 0:
+            call_text = f"{original_indentation}{call_text}"
 
         edits = (
             Edit(insert_position.as_range, text=definition_text),
@@ -316,6 +299,27 @@ class ExtractFunction:
             ),
         )
         return edits
+
+
+def make_body(
+    selection: CodeSelection,
+) -> list[ast.stmt]:
+    nodes = list(selection.text_range.statements)
+    if not nodes:
+        if enclosing_assignment := selection.text_range.enclosing_assignment:
+            targets = enclosing_assignment.node.targets
+            if len(targets) > 1:
+                value: ast.expr | ast.Tuple = ast.Tuple(targets)
+            else:
+                value = targets[0]
+            nodes = [enclosing_assignment.node, ast.Return(value=value)]
+        else:
+            if (
+                enclosing_returns
+                := selection.text_range.enclosing_nodes_by_type(ast.Return)
+            ):
+                nodes = [enclosing_returns[-1].node]
+    return nodes
 
 
 @register
@@ -342,31 +346,25 @@ class ExtractMethod:
         )
         start_of_scope = enclosing_scope.range.start
         new_level = start_of_scope.column // 4
-        nodes = list(self.code_selection.text_range.statements)
+        original_indentation = self.code_selection.text_range.start.indentation
         has_returns = any(
-            found for node in nodes for found in find_returns(node)
+            found
+            for node in self.code_selection.text_range.statements
+            for found in find_returns(node)
         )
         usages = UsageCollector(self.code_selection, enclosing_scope)
 
         arguments = make_arguments(
             usages.defined_before_extraction, usages.used_in_extraction
         )
-        if not nodes and (
-            enclosing_assignment
-            := self.code_selection.text_range.enclosing_assignment
-        ):
-            targets = enclosing_assignment.node.targets
-            if len(targets) > 1:
-                value: ast.expr | ast.Tuple = ast.Tuple(targets)
-            else:
-                value = targets[0]
-            nodes = [enclosing_assignment.node, ast.Return(value=value)]
+
+        body = make_body(selection=self.code_selection)
 
         return_node = make_return_node(
             usages.modified_in_extraction, usages.used_after_extraction
         )
         if return_node:
-            nodes.append(return_node)
+            body.append(return_node)
 
         if (
             usages.self_or_cls
@@ -380,7 +378,7 @@ class ExtractMethod:
         method = make_function(
             decorator_list=decorator_list,
             name="m",
-            nodes=nodes,
+            nodes=body,
             arguments=arguments,
         )
         if enclosing_scope.range.end.line.next:
@@ -395,6 +393,7 @@ class ExtractMethod:
             logger.error("Couldn't detect self parameter.")
             return ()
 
+        print(f"{ new_level= }")
         calling_statement = make_method_call(
             return_node=return_node,
             self_name=usages.self_or_cls.name,
@@ -402,7 +401,10 @@ class ExtractMethod:
             arguments=arguments,
             has_returns=has_returns,
         )
-        call_text = "".join(to_source(calling_statement, level=new_level))
+        call_text = "".join(to_source(calling_statement, level=0))
+
+        if self.code_selection.text_range.start.column == 0:
+            call_text = f"{original_indentation}{call_text}"
 
         edits = (
             Edit(insert_position.as_range, text=definition_text),
@@ -699,13 +701,13 @@ class InlineCall:
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
-        return True
+        return selection.text_range.enclosing_call is not None
 
     @property
     def edits(self) -> tuple[Edit, ...]:
         call = self.enclosing_call
         if not call:
-            logger.warn("No enclosing call.")
+            logger.warning("No enclosing call.")
             return ()
 
         name_start = call.range.start
@@ -723,10 +725,10 @@ class InlineCall:
 
         definition = find_definition(self.scope_graph, name_start)
         if definition is None or definition.position is None:
-            logger.warn(f"No definition position {definition=}.")
+            logger.warning(f"No definition position {definition=}.")
             return ()
         if not isinstance(definition.ast, ast.FunctionDef):
-            logger.warn(f"Not a function {definition.ast=}.")
+            logger.warning(f"Not a function {definition.ast=}.")
             return ()
 
         body_range = definition.position.body_for_callable
@@ -927,16 +929,10 @@ class SlideStatementsDown:
         )
         lines = first.start.to(last.end)
         names_defined_in_range = lines.definitions
-        first_usage_after_range = next(
-            (
-                o.position
-                for o in self.code_selection.find_names_used_after_position(
-                    names_defined_in_range,
-                    self.code_selection.scope_graph,
-                    last.end,
-                )
-            ),
-            None,
+        enclosing_scope = self.code_selection.text_range.enclosing_scopes[-1]
+        first_usage_after_range = self.get_subsequent_usage(
+            names_defined_in_range=names_defined_in_range,
+            enclosing_scope=enclosing_scope,
         )
         if not first_usage_after_range:
             return None
@@ -959,3 +955,21 @@ class SlideStatementsDown:
             return first_usage_after_range.start_of_line
 
         return None
+
+    def get_subsequent_usage(
+        self,
+        names_defined_in_range: Iterable[Occurrence],
+        enclosing_scope: types.ScopeWithRange,
+    ) -> types.Position | None:
+        usages = UsageCollector(self.code_selection, enclosing_scope)
+        occurrences_after_range = sorted(
+            [
+                o.position
+                for n in names_defined_in_range
+                for o in usages.used_after_extraction[n.name]
+            ]
+        )
+        first_usage_after_range = (
+            occurrences_after_range[0] if occurrences_after_range else None
+        )
+        return first_usage_after_range

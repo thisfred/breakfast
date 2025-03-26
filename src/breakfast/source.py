@@ -4,9 +4,10 @@ import os
 import re
 import sys
 from ast import AST, parse
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from dataclasses import InitVar, dataclass, replace
 from functools import cached_property
+from itertools import dropwhile, takewhile
 from typing import Protocol, TypeGuard
 
 from breakfast import types
@@ -223,7 +224,7 @@ class TextRange:
         return assignments[-1] if assignments else None
 
     @cached_property
-    def statements(self) -> Iterable[ast.stmt]:
+    def statements(self) -> Sequence[ast.stmt]:
         if self.end.column == 0 and self.end.line.previous is not None:
             text_range = self.start.to(self.end.line.previous.end)
         else:
@@ -238,14 +239,17 @@ class TextRange:
             parent,
             ast.Module | ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
         ):
-            return
+            return []
 
-        for node in parent.body:
-            if self.source.node_position(node) < text_range.start:
-                continue
-            if self.source.node_position(node) > text_range.end:
-                break
-            yield node
+        return list(
+            takewhile(
+                lambda n: self.source.node_position(n) <= text_range.end,
+                dropwhile(
+                    lambda n: self.source.node_position(n) < text_range.start,
+                    parent.body,
+                ),
+            )
+        )
 
     def text_with_substitutions(
         self, substitutions: Sequence[types.Edit]
