@@ -99,4 +99,4 @@ def range_for(
     if first_range and last_range:
         return TextRange(first_range.start, last_range.end)
 
-    raise ValueError("not found")
+    raise ValueError("not found")  # pragma: nocover

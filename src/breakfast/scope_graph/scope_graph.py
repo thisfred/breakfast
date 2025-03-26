@@ -125,14 +125,6 @@ class ScopeGraph:
         self.max_id += 1
         return new_id
 
-    def get_parent(self, scope: ScopeNode) -> ScopeNode | None:
-        for _, parent_id in self.edges[scope.node_id]:
-            node = self.nodes[parent_id]
-            if not (node.name or node.action):
-                return node
-
-        return None
-
     def _add_scope(
         self,
         *,
@@ -245,7 +237,7 @@ class ScopeGraph:
         )
         return IncompleteFragment(fragment_or_scope_1, fragment_or_scope_2)
 
-    def group_by_rank(self) -> Iterable[set[int]]:
+    def group_by_rank(self) -> Iterable[set[int]]:  # pragma: nocover
         edges_to: dict[int, set[tuple[Edge, int]]] = defaultdict(set)
         for node_id, to_nodes in self.edges.items():
             for edge, other_id in to_nodes:
