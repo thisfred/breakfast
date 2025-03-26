@@ -243,9 +243,7 @@ class ExtractFunction:
     @property
     def edits(self) -> tuple[Edit, ...]:
         enclosing_scope = self.code_selection.text_range.enclosing_scopes[-1]
-
         start_of_scope = enclosing_scope.range.start
-        new_level = start_of_scope.column // 4
         original_indentation = self.code_selection.text_range.start.indentation
         has_returns = any(
             found
@@ -261,29 +259,21 @@ class ExtractFunction:
         )
         body = make_body(selection=self.code_selection, return_node=return_node)
         decorator_list = self.make_decorators(usages=usages)
-        name = make_unique_name("f", enclosing_scope=enclosing_scope)
-        function = make_function(
+        name = make_unique_name(
+            "f",
+            enclosing_scope=self.code_selection.text_range.enclosing_scopes[0],
+        )
+        callable_definition = make_function(
             decorator_list=decorator_list,
             name=name,
             body=body,
             arguments=arguments,
         )
 
-        if not isinstance(enclosing_scope.node, ast.Module):
-            match self.code_selection.text_range.enclosing_scopes:
-                case [
-                    types.NodeWithRange(node=ast.Module()),
-                    types.NodeWithRange(node=ast.ClassDef()),
-                    *_,
-                ]:
-                    new_level = 0
-        insert_position = self.get_insert_position(
-            enclosing_scope=enclosing_scope
+        new_level = self.compute_new_level(
+            enclosing_scope=enclosing_scope, start_of_scope=start_of_scope
         )
-
-        definition_text = (
-            f"{NEWLINE}{"".join(to_source(function, level=new_level))}{NEWLINE}"
-        )
+        definition_text = f"{NEWLINE}{"".join(to_source(callable_definition, level=new_level))}{NEWLINE}"
 
         calling_statement = make_function_call(
             return_node=return_node,
@@ -295,6 +285,9 @@ class ExtractFunction:
         if self.code_selection.text_range.start.column == 0:
             call_text = f"{original_indentation}{call_text}"
 
+        insert_position = self.get_insert_position(
+            enclosing_scope=enclosing_scope
+        )
         edits = (
             Edit(insert_position.as_range, text=definition_text),
             Edit(
@@ -305,6 +298,22 @@ class ExtractFunction:
             ),
         )
         return edits
+
+    def compute_new_level(
+        self,
+        enclosing_scope: types.ScopeWithRange,
+        start_of_scope: types.Position,
+    ) -> int:
+        new_level = start_of_scope.column // 4
+        if not isinstance(enclosing_scope.node, ast.Module):
+            match self.code_selection.text_range.enclosing_scopes:
+                case [
+                    types.NodeWithRange(node=ast.Module()),
+                    types.NodeWithRange(node=ast.ClassDef()),
+                    *_,
+                ]:
+                    new_level = 0
+        return new_level
 
     def get_insert_position(
         self,
@@ -392,13 +401,8 @@ class ExtractMethod:
 
     @property
     def edits(self) -> tuple[Edit, ...]:
-        enclosing_scope = (
-            self.code_selection.text_range.enclosing_nodes_by_type(
-                ast.FunctionDef
-            )[-1]
-        )
+        enclosing_scope = self.code_selection.text_range.enclosing_scopes[-1]
         start_of_scope = enclosing_scope.range.start
-        new_level = start_of_scope.column // 4
         original_indentation = self.code_selection.text_range.start.indentation
         has_returns = any(
             found
@@ -414,21 +418,21 @@ class ExtractMethod:
         )
         body = make_body(selection=self.code_selection, return_node=return_node)
         decorator_list = self.make_decorators(usages=usages)
-        enclosing_class_scope = (
-            self.code_selection.text_range.enclosing_nodes_by_type(
-                ast.ClassDef
-            )[-1]
+        name = make_unique_name(
+            "m",
+            enclosing_scope=self.code_selection.text_range.enclosing_scopes[0],
         )
-        name = make_unique_name("m", enclosing_scope=enclosing_class_scope)
-        method = make_function(
+        callable_definition = make_function(
             decorator_list=decorator_list,
             name=name,
             body=body,
             arguments=arguments,
         )
-        definition_text = (
-            f"{NEWLINE}{"".join(to_source(method, level=new_level))}{NEWLINE}"
+
+        new_level = self.compute_new_level(
+            enclosing_scope=enclosing_scope, start_of_scope=start_of_scope
         )
+        definition_text = f"{NEWLINE}{"".join(to_source(callable_definition, level=new_level))}{NEWLINE}"
 
         if not usages.self_or_cls:
             logger.error("Couldn't detect self parameter.")
@@ -459,6 +463,12 @@ class ExtractMethod:
             ),
         )
         return edits
+
+    @staticmethod
+    def compute_new_level(
+        enclosing_scope: types.ScopeWithRange, start_of_scope: types.Position
+    ) -> int:
+        return start_of_scope.column // 4
 
     @staticmethod
     def get_insert_position(
