@@ -199,6 +199,22 @@ class UsageCollector:
             if occurrence.position > self.code_selection.text_range.end:
                 self._used_after_extraction[occurrence.name].append(occurrence)
 
+    def get_subsequent_usage(
+        self,
+        names_defined_in_range: Iterable[Occurrence],
+    ) -> types.Position | None:
+        occurrences_after_range = sorted(
+            [
+                o.position
+                for n in names_defined_in_range
+                for o in self.used_after_extraction[n.name]
+            ]
+        )
+        first_usage_after_range = (
+            occurrences_after_range[0] if occurrences_after_range else None
+        )
+        return first_usage_after_range
+
 
 class Refactoring(Protocol):
     name: str
@@ -270,10 +286,11 @@ class ExtractFunction:
                     last_line = self.code_selection.text_range.enclosing_scopes[
                         -1
                     ].range.end.line
-            if next_line := last_line.next:
-                insert_position = next_line.start
-            else:
-                insert_position = last_line.end
+            insert_position = (
+                next_line.start
+                if (next_line := last_line.next)
+                else last_line.end
+            )
 
         definition_text = (
             f"{NEWLINE}{"".join(to_source(function, level=new_level))}{NEWLINE}"
@@ -375,16 +392,18 @@ class ExtractMethod:
             decorator_list = [ast.Name("classmethod")]
         else:
             decorator_list = []
+
         method = make_function(
             decorator_list=decorator_list,
             name="m",
             body=body,
             arguments=arguments,
         )
-        if enclosing_scope.range.end.line.next:
-            insert_position = enclosing_scope.range.end.line.next.start
-        else:
-            insert_position = enclosing_scope.range.end.line.end
+        insert_position = (
+            enclosing_scope.range.end.line.next.start
+            if enclosing_scope.range.end.line.next
+            else enclosing_scope.range.end.line.end
+        )
         definition_text = (
             f"{NEWLINE}{"".join(to_source(method, level=new_level))}{NEWLINE}"
         )
@@ -929,9 +948,9 @@ class SlideStatementsDown:
         lines = first.start.to(last.end)
         names_defined_in_range = lines.definitions
         enclosing_scope = self.code_selection.text_range.enclosing_scopes[-1]
-        first_usage_after_range = self.get_subsequent_usage(
-            names_defined_in_range=names_defined_in_range,
-            enclosing_scope=enclosing_scope,
+        usages = UsageCollector(self.code_selection, enclosing_scope)
+        first_usage_after_range = usages.get_subsequent_usage(
+            names_defined_in_range=names_defined_in_range
         )
         if not first_usage_after_range:
             return None
@@ -954,21 +973,3 @@ class SlideStatementsDown:
             return first_usage_after_range.start_of_line
 
         return None
-
-    def get_subsequent_usage(
-        self,
-        names_defined_in_range: Iterable[Occurrence],
-        enclosing_scope: types.ScopeWithRange,
-    ) -> types.Position | None:
-        usages = UsageCollector(self.code_selection, enclosing_scope)
-        occurrences_after_range = sorted(
-            [
-                o.position
-                for n in names_defined_in_range
-                for o in usages.used_after_extraction[n.name]
-            ]
-        )
-        first_usage_after_range = (
-            occurrences_after_range[0] if occurrences_after_range else None
-        )
-        return first_usage_after_range
