@@ -269,23 +269,22 @@ class ExtractFunction:
             body=body,
             arguments=arguments,
         )
-
         new_level = self.compute_new_level(
             enclosing_scope=enclosing_scope, start_of_scope=start_of_scope
         )
         definition_text = f"{NEWLINE}{"".join(to_source(callable_definition, level=new_level))}{NEWLINE}"
-
         calling_statement = self.make_call(
             has_returns=has_returns,
             arguments=arguments,
             return_node=return_node,
             name=name,
-            self_or_cls_name=None,
+            self_or_cls_name=usages.self_or_cls.name
+            if usages.self_or_cls
+            else None,
         )
         call_text = "".join(to_source(calling_statement, level=0))
         if self.code_selection.text_range.start.column == 0:
             call_text = f"{original_indentation}{call_text}"
-
         insert_position = self.get_insert_position(
             enclosing_scope=enclosing_scope
         )
@@ -308,13 +307,8 @@ class ExtractFunction:
         name: str,
         self_or_cls_name: str | None,
     ) -> ast.Call | ast.Assign | ast.Return:
-        calling_statement = make_function_call(
-            return_node=return_node,
-            function_name=name,
-            arguments=arguments,
-            has_returns=has_returns,
-        )
-        return calling_statement
+        func = ast.Name(id=name)
+        return make_call(return_node, func, arguments, has_returns)
 
     def compute_new_level(
         self,
@@ -445,28 +439,22 @@ class ExtractMethod:
             body=body,
             arguments=arguments,
         )
-
         new_level = self.compute_new_level(
             enclosing_scope=enclosing_scope, start_of_scope=start_of_scope
         )
         definition_text = f"{NEWLINE}{"".join(to_source(callable_definition, level=new_level))}{NEWLINE}"
-
-        if not usages.self_or_cls:
-            logger.error("Couldn't detect self parameter.")
-            return ()
-
         calling_statement = self.make_call(
             has_returns=has_returns,
             arguments=arguments,
             return_node=return_node,
             name=name,
-            self_or_cls_name=usages.self_or_cls.name,
+            self_or_cls_name=usages.self_or_cls.name
+            if usages.self_or_cls
+            else None,
         )
         call_text = "".join(to_source(calling_statement, level=0))
-
         if self.code_selection.text_range.start.column == 0:
             call_text = f"{original_indentation}{call_text}"
-
         insert_position = self.get_insert_position(
             enclosing_scope=enclosing_scope
         )
@@ -490,19 +478,17 @@ class ExtractMethod:
         self_or_cls_name: str | None,
     ) -> ast.Call | ast.Assign | ast.Return:
         if self_or_cls_name:
-            calling_statement = make_method_call(
-                return_node=return_node,
-                self_name=self_or_cls_name,
-                method_name=name,
-                arguments=arguments,
-                has_returns=has_returns,
+            arguments = [o for o in arguments if o.name != self_or_cls_name]
+            func: ast.Attribute | ast.Name = ast.Attribute(
+                value=ast.Name(id=self_or_cls_name), attr=name
+            )
+            calling_statement = make_call(
+                return_node, func, arguments, has_returns
             )
         else:
-            calling_statement = make_function_call(
-                return_node=return_node,
-                function_name=name,
-                arguments=arguments,
-                has_returns=has_returns,
+            func = ast.Name(id=name)
+            calling_statement = make_call(
+                return_node, func, arguments, has_returns
             )
         return calling_statement
 
@@ -560,30 +546,6 @@ def make_function(
         returns=None,
         type_params=[],
     )
-
-
-def make_method_call(
-    *,
-    return_node: ast.Return | None,
-    self_name: str,
-    method_name: str,
-    arguments: Sequence[Occurrence],
-    has_returns: bool,
-) -> ast.Call | ast.Assign | ast.Return:
-    arguments = [o for o in arguments if o.name != self_name]
-    func = ast.Attribute(value=ast.Name(id=self_name), attr=method_name)
-    return make_call(return_node, func, arguments, has_returns)
-
-
-def make_function_call(
-    *,
-    return_node: ast.Return | None,
-    function_name: str,
-    arguments: Sequence[Occurrence],
-    has_returns: bool,
-) -> ast.Call | ast.Assign | ast.Return:
-    func = ast.Name(id=function_name)
-    return make_call(return_node, func, arguments, has_returns)
 
 
 def make_call(
