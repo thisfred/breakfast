@@ -17,28 +17,6 @@ class Occurrence:
 
 
 @singledispatch
-def find_functions(
-    node: ast.AST, up_to: Position | None
-) -> Iterator[ast.FunctionDef | ast.AsyncFunctionDef]:
-    if (
-        up_to
-        and hasattr(node, "lineno")
-        and up_to.source.node_position(node) > up_to
-    ):
-        return
-    yield from generic_visit(find_functions, node, up_to)
-
-
-@find_functions.register
-def find_function_in_function(
-    node: ast.FunctionDef | ast.AsyncFunctionDef, up_to: Position | None
-) -> Iterator[ast.FunctionDef | ast.AsyncFunctionDef]:
-    yield node
-    for child in node.body:
-        yield from find_functions(child, up_to=up_to)
-
-
-@singledispatch
 def find_scopes(
     node: ast.AST, up_to: Position | None
 ) -> Iterator[ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef]:
