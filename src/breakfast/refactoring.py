@@ -269,28 +269,17 @@ class ExtractFunction:
             arguments=arguments,
         )
 
-        if isinstance(enclosing_scope.node, ast.Module):
-            insert_position = self.code_selection.text_range.start.line.start
-        else:
+        if not isinstance(enclosing_scope.node, ast.Module):
             match self.code_selection.text_range.enclosing_scopes:
-                case (
-                    [
-                        types.NodeWithRange(node=ast.Module()),
-                        types.NodeWithRange(node=ast.ClassDef()),
-                        *_,
-                    ] as matched
-                ):
-                    last_line = matched[1].range.end.line
+                case [
+                    types.NodeWithRange(node=ast.Module()),
+                    types.NodeWithRange(node=ast.ClassDef()),
+                    *_,
+                ]:
                     new_level = 0
-                case _:
-                    last_line = self.code_selection.text_range.enclosing_scopes[
-                        -1
-                    ].range.end.line
-            insert_position = (
-                next_line.start
-                if (next_line := last_line.next)
-                else last_line.end
-            )
+        insert_position = self.get_insert_position(
+            enclosing_scope=enclosing_scope
+        )
 
         definition_text = (
             f"{NEWLINE}{"".join(to_source(function, level=new_level))}{NEWLINE}"
@@ -316,6 +305,33 @@ class ExtractFunction:
             ),
         )
         return edits
+
+    def get_insert_position(
+        self,
+        enclosing_scope: types.ScopeWithRange,
+    ) -> types.Position:
+        if isinstance(enclosing_scope.node, ast.Module):
+            insert_position = self.code_selection.text_range.start.line.start
+        else:
+            match self.code_selection.text_range.enclosing_scopes:
+                case (
+                    [
+                        types.NodeWithRange(node=ast.Module()),
+                        types.NodeWithRange(node=ast.ClassDef()),
+                        *_,
+                    ] as matched
+                ):
+                    last_line = matched[1].range.end.line
+                case _:
+                    last_line = self.code_selection.text_range.enclosing_scopes[
+                        -1
+                    ].range.end.line
+            insert_position = (
+                next_line.start
+                if (next_line := last_line.next)
+                else last_line.end
+            )
+        return insert_position
 
     def make_decorators(self, usages: UsageCollector) -> list[ast.expr]:
         return []
@@ -410,11 +426,6 @@ class ExtractMethod:
             body=body,
             arguments=arguments,
         )
-        insert_position = (
-            enclosing_scope.range.end.line.next.start
-            if enclosing_scope.range.end.line.next
-            else enclosing_scope.range.end.line.end
-        )
         definition_text = (
             f"{NEWLINE}{"".join(to_source(method, level=new_level))}{NEWLINE}"
         )
@@ -435,6 +446,9 @@ class ExtractMethod:
         if self.code_selection.text_range.start.column == 0:
             call_text = f"{original_indentation}{call_text}"
 
+        insert_position = self.get_insert_position(
+            enclosing_scope=enclosing_scope
+        )
         edits = (
             Edit(insert_position.as_range, text=definition_text),
             Edit(
@@ -445,6 +459,16 @@ class ExtractMethod:
             ),
         )
         return edits
+
+    @staticmethod
+    def get_insert_position(
+        enclosing_scope: types.ScopeWithRange,
+    ) -> types.Position:
+        return (
+            enclosing_scope.range.end.line.next.start
+            if enclosing_scope.range.end.line.next
+            else enclosing_scope.range.end.line.end
+        )
 
     def make_decorators(self, usages: UsageCollector) -> list[ast.expr]:
         if (
