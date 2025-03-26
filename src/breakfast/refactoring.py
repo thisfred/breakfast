@@ -108,22 +108,6 @@ class CodeSelection:
         except NotFoundError:
             return ()
 
-    def find_usages_after_position(
-        self,
-        occurrences: Sequence[Occurrence],
-        scope_graph: ScopeGraph,
-        cutoff: Position,
-    ) -> Iterator[Occurrence]:
-        for occurrence in occurrences:
-            try:
-                usages = all_occurrences(occurrence.position, graph=scope_graph)
-            except NotFoundError:
-                continue
-            for usage in usages:
-                if usage.position > cutoff:
-                    yield usage
-                    break
-
     def find_names_used_after_position(
         self,
         names: Sequence[Occurrence],
