@@ -459,8 +459,11 @@ def make_extract_callable_edits(
         ),
     )
     call_text = "".join(to_source(calling_statement, level=0))
-    if refactoring.code_selection.text_range.start.column == 0:
-        call_text = f"{original_indentation}{call_text}"
+    call_text = (
+        f"{original_indentation}{call_text}"
+        if refactoring.code_selection.text_range.start.column == 0
+        else call_text
+    )
     insert_position = refactoring.get_insert_position(
         enclosing_scope=enclosing_scope
     )
