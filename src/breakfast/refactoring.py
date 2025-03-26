@@ -209,7 +209,7 @@ class UsageCollector:
             [
                 o.position
                 for n in names_defined_in_range
-                for o in self.used_after_extraction[n.name]
+                for o in self.used_after_extraction.get(n.name, [])
             ]
         )
         first_usage_after_range = (
@@ -242,62 +242,7 @@ class ExtractFunction:
 
     @property
     def edits(self) -> tuple[Edit, ...]:
-        enclosing_scope = self.code_selection.text_range.enclosing_scopes[-1]
-        start_of_scope = enclosing_scope.range.start
-        original_indentation = self.code_selection.text_range.start.indentation
-        has_returns = any(
-            found
-            for node in self.code_selection.text_range.statements
-            for found in find_returns(node)
-        )
-        usages = UsageCollector(self.code_selection, enclosing_scope)
-        arguments = make_arguments(
-            usages.defined_before_extraction, usages.used_in_extraction
-        )
-        return_node = make_return_node(
-            usages.modified_in_extraction, usages.used_after_extraction
-        )
-        body = make_body(selection=self.code_selection, return_node=return_node)
-        decorator_list = self.make_decorators(usages=usages)
-        name = make_unique_name(
-            "f",
-            enclosing_scope=self.code_selection.text_range.enclosing_scopes[0],
-        )
-        callable_definition = make_function(
-            decorator_list=decorator_list,
-            name=name,
-            body=body,
-            arguments=arguments,
-        )
-        new_level = self.compute_new_level(
-            enclosing_scope=enclosing_scope, start_of_scope=start_of_scope
-        )
-        definition_text = f"{NEWLINE}{"".join(to_source(callable_definition, level=new_level))}{NEWLINE}"
-        calling_statement = self.make_call(
-            has_returns=has_returns,
-            arguments=arguments,
-            return_node=return_node,
-            name=name,
-            self_or_cls_name=usages.self_or_cls.name
-            if usages.self_or_cls
-            else None,
-        )
-        call_text = "".join(to_source(calling_statement, level=0))
-        if self.code_selection.text_range.start.column == 0:
-            call_text = f"{original_indentation}{call_text}"
-        insert_position = self.get_insert_position(
-            enclosing_scope=enclosing_scope
-        )
-        edits = (
-            Edit(insert_position.as_range, text=definition_text),
-            Edit(
-                self.code_selection.text_range.start.to(
-                    self.code_selection.text_range.end
-                ),
-                text=call_text,
-            ),
-        )
-        return edits
+        return make_extract_callable_edits(refactoring=self, name="f")
 
     @staticmethod
     def make_call(
@@ -412,62 +357,7 @@ class ExtractMethod:
 
     @property
     def edits(self) -> tuple[Edit, ...]:
-        enclosing_scope = self.code_selection.text_range.enclosing_scopes[-1]
-        start_of_scope = enclosing_scope.range.start
-        original_indentation = self.code_selection.text_range.start.indentation
-        has_returns = any(
-            found
-            for node in self.code_selection.text_range.statements
-            for found in find_returns(node)
-        )
-        usages = UsageCollector(self.code_selection, enclosing_scope)
-        arguments = make_arguments(
-            usages.defined_before_extraction, usages.used_in_extraction
-        )
-        return_node = make_return_node(
-            usages.modified_in_extraction, usages.used_after_extraction
-        )
-        body = make_body(selection=self.code_selection, return_node=return_node)
-        decorator_list = self.make_decorators(usages=usages)
-        name = make_unique_name(
-            "m",
-            enclosing_scope=self.code_selection.text_range.enclosing_scopes[0],
-        )
-        callable_definition = make_function(
-            decorator_list=decorator_list,
-            name=name,
-            body=body,
-            arguments=arguments,
-        )
-        new_level = self.compute_new_level(
-            enclosing_scope=enclosing_scope, start_of_scope=start_of_scope
-        )
-        definition_text = f"{NEWLINE}{"".join(to_source(callable_definition, level=new_level))}{NEWLINE}"
-        calling_statement = self.make_call(
-            has_returns=has_returns,
-            arguments=arguments,
-            return_node=return_node,
-            name=name,
-            self_or_cls_name=usages.self_or_cls.name
-            if usages.self_or_cls
-            else None,
-        )
-        call_text = "".join(to_source(calling_statement, level=0))
-        if self.code_selection.text_range.start.column == 0:
-            call_text = f"{original_indentation}{call_text}"
-        insert_position = self.get_insert_position(
-            enclosing_scope=enclosing_scope
-        )
-        edits = (
-            Edit(insert_position.as_range, text=definition_text),
-            Edit(
-                self.code_selection.text_range.start.to(
-                    self.code_selection.text_range.end
-                ),
-                text=call_text,
-            ),
-        )
-        return edits
+        return make_extract_callable_edits(refactoring=self, name="m")
 
     @staticmethod
     def make_call(
@@ -520,6 +410,70 @@ class ExtractMethod:
             else:
                 decorator_list = []
         return decorator_list
+
+
+def make_extract_callable_edits(
+    refactoring: ExtractFunction | ExtractMethod, name: str
+) -> tuple[Edit, ...]:
+    enclosing_scope = refactoring.code_selection.text_range.enclosing_scopes[-1]
+    start_of_scope = enclosing_scope.range.start
+    original_indentation = (
+        refactoring.code_selection.text_range.start.indentation
+    )
+    has_returns = any(
+        found
+        for node in refactoring.code_selection.text_range.statements
+        for found in find_returns(node)
+    )
+    usages = UsageCollector(refactoring.code_selection, enclosing_scope)
+    arguments = make_arguments(
+        usages.defined_before_extraction, usages.used_in_extraction
+    )
+    return_node = make_return_node(
+        usages.modified_in_extraction, usages.used_after_extraction
+    )
+    body = make_body(
+        selection=refactoring.code_selection, return_node=return_node
+    )
+    decorator_list = refactoring.make_decorators(usages=usages)
+    name = make_unique_name(
+        name,
+        enclosing_scope=refactoring.code_selection.text_range.enclosing_scopes[
+            0
+        ],
+    )
+    callable_definition = make_function(
+        decorator_list=decorator_list, name=name, body=body, arguments=arguments
+    )
+    new_level = refactoring.compute_new_level(
+        enclosing_scope=enclosing_scope, start_of_scope=start_of_scope
+    )
+    definition_text = f"{NEWLINE}{"".join(to_source(callable_definition, level=new_level))}{NEWLINE}"
+    calling_statement = refactoring.make_call(
+        has_returns=has_returns,
+        arguments=arguments,
+        return_node=return_node,
+        name=name,
+        self_or_cls_name=(
+            usages.self_or_cls.name if usages.self_or_cls else None
+        ),
+    )
+    call_text = "".join(to_source(calling_statement, level=0))
+    if refactoring.code_selection.text_range.start.column == 0:
+        call_text = f"{original_indentation}{call_text}"
+    insert_position = refactoring.get_insert_position(
+        enclosing_scope=enclosing_scope
+    )
+    all_edits = (
+        Edit(insert_position.as_range, text=definition_text),
+        Edit(
+            refactoring.code_selection.text_range.start.to(
+                refactoring.code_selection.text_range.end
+            ),
+            text=call_text,
+        ),
+    )
+    return all_edits
 
 
 def make_function(
