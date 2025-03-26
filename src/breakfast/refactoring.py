@@ -538,12 +538,11 @@ def make_arguments(
     defined_before_extraction: Mapping[str, Sequence[Occurrence]],
     used_in_extraction: Mapping[str, Sequence[Occurrence]],
 ) -> Sequence[Occurrence]:
-    arguments = []
-    for name, occurrences in defined_before_extraction.items():
-        if name in used_in_extraction:
-            arguments.append(occurrences[0])
-
-    return arguments
+    return [
+        occurrences[0]
+        for name, occurrences in defined_before_extraction.items()
+        if name in used_in_extraction
+    ]
 
 
 def make_argument(occurrence: Occurrence) -> ast.arg:
@@ -590,7 +589,6 @@ class ExtractVariable:
         )
         first_edit_position = edits[0].start
 
-        statement_start = None
         preceding_statement_positions = list(
             takewhile(
                 lambda p: p < first_edit_position,
