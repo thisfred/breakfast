@@ -264,15 +264,7 @@ class ExtractFunction:
         if return_node:
             body.append(return_node)
 
-        original_name = name = "f"
-        names_in_range = {
-            occurrence.name for occurrence in enclosing_scope.range.names
-        }
-        counter = 0
-        while name in names_in_range:
-            name = f"{original_name}{counter}"
-            counter += 1
-
+        name = make_unique_name("f", enclosing_scope=enclosing_scope)
         function = make_function(
             decorator_list=[],
             name=name,
@@ -329,6 +321,20 @@ class ExtractFunction:
         return edits
 
 
+def make_unique_name(
+    original_name: str, enclosing_scope: types.ScopeWithRange
+) -> str:
+    name = original_name
+    names_in_range = {
+        occurrence.name for occurrence in enclosing_scope.range.names
+    }
+    counter = 0
+    while name in names_in_range:
+        name = f"{original_name}{counter}"
+        counter += 1
+    return name
+
+
 def make_body(
     selection: CodeSelection,
 ) -> list[ast.stmt]:
@@ -372,22 +378,6 @@ class ExtractMethod:
                 ast.FunctionDef
             )[-1]
         )
-
-        enclosing_class_scope = (
-            self.code_selection.text_range.enclosing_nodes_by_type(
-                ast.ClassDef
-            )[-1]
-        )
-        original_name = name = "m"
-        names_in_range = {
-            occurrence.name for occurrence in enclosing_class_scope.range.names
-        }
-        print(names_in_range)
-        counter = 0
-        while name in names_in_range:
-            name = f"{original_name}{counter}"
-            counter += 1
-
         start_of_scope = enclosing_scope.range.start
         new_level = start_of_scope.column // 4
         original_indentation = self.code_selection.text_range.start.indentation
@@ -410,8 +400,6 @@ class ExtractMethod:
         if return_node:
             body.append(return_node)
 
-        print(f"{usages.self_or_cls=}")
-        print(f"{usages.used_in_extraction=}")
         if (
             usages.self_or_cls
             and usages.self_or_cls.name not in usages.used_in_extraction
@@ -422,6 +410,12 @@ class ExtractMethod:
         else:
             decorator_list = []
 
+        enclosing_class_scope = (
+            self.code_selection.text_range.enclosing_nodes_by_type(
+                ast.ClassDef
+            )[-1]
+        )
+        name = make_unique_name("m", enclosing_scope=enclosing_class_scope)
         method = make_function(
             decorator_list=decorator_list,
             name=name,
@@ -586,17 +580,6 @@ class ExtractVariable:
 
     @property
     def edits(self) -> tuple[Edit, ...]:
-        enclosing_scope = self.text_range.enclosing_scopes[-1]
-
-        original_name = name = "v"
-        names_in_range = {
-            occurrence.name for occurrence in enclosing_scope.range.names
-        }
-        counter = 0
-        while name in names_in_range:
-            name = f"{original_name}{counter}"
-            counter += 1
-
         extracted = self.text_range.text
 
         if not (expression := self.get_single_expression_value(extracted)):
@@ -608,6 +591,9 @@ class ExtractVariable:
             node=expression,
             position=self.text_range.start,
         )
+
+        enclosing_scope = self.text_range.enclosing_scopes[-1]
+        name = make_unique_name("v", enclosing_scope=enclosing_scope)
         other_edits = [
             (start := self.source.node_position(o))
             .to(start + len(extracted))
