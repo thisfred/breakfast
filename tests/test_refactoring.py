@@ -26,7 +26,7 @@ def test_extract_variable_should_insert_name_definition():
         CodeSelection(TextRange(extraction_start, extraction_end))
     )
     insert, *_ = refactor.edits
-    assert insert.text == "result = a + 3\n"
+    assert insert.text == "v = a + 3\n"
 
 
 def test_extract_variable_should_replace_extracted_test_with_result():
@@ -43,7 +43,7 @@ def test_extract_variable_should_replace_extracted_test_with_result():
     )
     _, replace = refactor.edits
     assert replace == Edit(
-        TextRange(start=extraction_start, end=extraction_end), text="result"
+        TextRange(start=extraction_start, end=extraction_end), text="v"
     )
 
 
@@ -81,9 +81,9 @@ def test_extract_variable_should_replace_code_with_variable():
     assert edits == (
         Edit(
             TextRange(source.position(1, 0), source.position(1, 0)),
-            "result = some_calculation()\n",
+            "v = some_calculation()\n",
         ),
-        Edit(TextRange(extraction_start, extraction_end), "result"),
+        Edit(TextRange(extraction_start, extraction_end), "v"),
     )
 
 
@@ -346,10 +346,10 @@ def test_extract_function_should_extract_outside_function():
         expected="""
         def f():
             a = 1
-            b = f(a=a)
+            b = f0(a=a)
             print(b)
 
-        def f(a):
+        def f0(a):
             b = a + 2
             return b
         """,
@@ -850,16 +850,18 @@ def test_extract_method_should_extract_part_of_a_line():
         refactoring=ExtractMethod,
         target="self.text_range.start + 2",
         code="""
-        def inline_call(self) -> tuple[Edit, ...]:
-            range_end = self.text_range.start + 2
+        class C:
+            def inline_call(self) -> tuple[Edit, ...]:
+                range_end = self.text_range.start + 2
         """,
         expected="""
-        def inline_call(self) -> tuple[Edit, ...]:
-            range_end = self.m()
+        class C:
+            def inline_call(self) -> tuple[Edit, ...]:
+                range_end = self.m()
 
-        def m(self):
-            range_end = self.text_range.start + 2
-            return range_end
+            def m(self):
+                range_end = self.text_range.start + 2
+                return range_end
         """,
     )
 
@@ -1428,5 +1430,86 @@ def test_inline_callable_should_handle_multiple_returns():
             result = 2
 
         b = result
+        """,
+    )
+
+
+def test_extract_variable_should_not_use_existing_name():
+    assert_refactors_to(
+        refactoring=ExtractVariable,
+        target="a + 2",
+        code="""
+        a = 1
+        v = 2
+        b = a + 2
+
+        print(b, v)
+        """,
+        expected="""
+        a = 1
+        v = 2
+        v0 = a + 2
+        b = v0
+
+        print(b, v)
+        """,
+    )
+
+
+def test_extract_function_should_not_use_existing_name():
+    assert_refactors_to(
+        refactoring=ExtractFunction,
+        target="a + 2",
+        code="""
+        a = 1
+        f = 2
+        b = a + 2
+
+        print(b, f)
+        """,
+        expected="""
+        a = 1
+        f = 2
+        def f0(a):
+           b = a + 2
+           return b
+
+        b = f0(a=a)
+        print(b, f)
+        """,
+    )
+
+
+def test_extract_method_should_not_use_existing_name():
+    assert_refactors_to(
+        refactoring=ExtractMethod,
+        target="self.a + 2",
+        code="""
+        class C:
+            def m(self):
+                self.a = 1
+                f = 2
+                b = self.a + 2
+
+                print(b, f)
+
+            def m0(self):
+                pass
+        """,
+        expected="""
+        class C:
+            def m(self):
+                self.a = 1
+                f = 2
+                b = self.m1()
+
+                print(b, f)
+
+            def m1(self):
+                b = self.a + 2
+                return b
+
+            def m0(self):
+                pass
         """,
     )

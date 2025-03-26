@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 
 FOUR_SPACES = "    "
 NEWLINE = "\n"
+STATIC_METHOD = "staticmethod"
+CLASS_METHOD = "classmethod"
 
 
 def register(refactoring: "type[Refactoring]") -> "type[Refactoring]":
@@ -72,7 +74,7 @@ class CodeSelection:
                 ast.FunctionDef,
             )
             and any(
-                d.id == "staticmethod"
+                d.id == STATIC_METHOD
                 for d in scope_node.decorator_list
                 if isinstance(d, ast.Name)
             )
@@ -87,7 +89,7 @@ class CodeSelection:
                 ast.FunctionDef,
             )
             and any(
-                d.id == "classmethod"
+                d.id == CLASS_METHOD
                 for d in scope_node.decorator_list
                 if isinstance(d, ast.Name)
             )
@@ -185,7 +187,7 @@ class UsageCollector:
                 occurrence.position < self.code_selection.text_range.start
                 and occurrence.node_type is NodeType.DEFINITION
             ):
-                if i == 0 and not (self.code_selection.in_static_method):
+                if i == 1 and not (self.code_selection.in_static_method):
                     self.self_or_cls = occurrence
                 self._defined_before_extraction[occurrence.name].append(
                     occurrence
@@ -262,9 +264,18 @@ class ExtractFunction:
         if return_node:
             body.append(return_node)
 
+        original_name = name = "f"
+        names_in_range = {
+            occurrence.name for occurrence in enclosing_scope.range.names
+        }
+        counter = 0
+        while name in names_in_range:
+            name = f"{original_name}{counter}"
+            counter += 1
+
         function = make_function(
             decorator_list=[],
-            name="f",
+            name=name,
             body=body,
             arguments=arguments,
         )
@@ -298,7 +309,7 @@ class ExtractFunction:
 
         calling_statement = make_function_call(
             return_node=return_node,
-            function_name="f",
+            function_name=name,
             arguments=arguments,
             has_returns=has_returns,
         )
@@ -361,6 +372,22 @@ class ExtractMethod:
                 ast.FunctionDef
             )[-1]
         )
+
+        enclosing_class_scope = (
+            self.code_selection.text_range.enclosing_nodes_by_type(
+                ast.ClassDef
+            )[-1]
+        )
+        original_name = name = "m"
+        names_in_range = {
+            occurrence.name for occurrence in enclosing_class_scope.range.names
+        }
+        print(names_in_range)
+        counter = 0
+        while name in names_in_range:
+            name = f"{original_name}{counter}"
+            counter += 1
+
         start_of_scope = enclosing_scope.range.start
         new_level = start_of_scope.column // 4
         original_indentation = self.code_selection.text_range.start.indentation
@@ -383,19 +410,21 @@ class ExtractMethod:
         if return_node:
             body.append(return_node)
 
+        print(f"{usages.self_or_cls=}")
+        print(f"{usages.used_in_extraction=}")
         if (
             usages.self_or_cls
             and usages.self_or_cls.name not in usages.used_in_extraction
         ):
-            decorator_list: list[ast.expr] = [ast.Name("staticmethod")]
+            decorator_list: list[ast.expr] = [ast.Name(STATIC_METHOD)]
         elif usages.self_or_cls and self.code_selection.in_class_method:
-            decorator_list = [ast.Name("classmethod")]
+            decorator_list = [ast.Name(CLASS_METHOD)]
         else:
             decorator_list = []
 
         method = make_function(
             decorator_list=decorator_list,
-            name="m",
+            name=name,
             body=body,
             arguments=arguments,
         )
@@ -415,7 +444,7 @@ class ExtractMethod:
         calling_statement = make_method_call(
             return_node=return_node,
             self_name=usages.self_or_cls.name,
-            method_name="m",
+            method_name=name,
             arguments=arguments,
             has_returns=has_returns,
         )
@@ -557,7 +586,17 @@ class ExtractVariable:
 
     @property
     def edits(self) -> tuple[Edit, ...]:
-        name = "result"
+        enclosing_scope = self.text_range.enclosing_scopes[-1]
+
+        original_name = name = "v"
+        names_in_range = {
+            occurrence.name for occurrence in enclosing_scope.range.names
+        }
+        counter = 0
+        while name in names_in_range:
+            name = f"{original_name}{counter}"
+            counter += 1
+
         extracted = self.text_range.text
 
         if not (expression := self.get_single_expression_value(extracted)):

@@ -125,6 +125,12 @@ def find_names_in_name(node: ast.Name, source: Source) -> Iterator[Occurrence]:
 def find_names_in_function(
     node: ast.FunctionDef | ast.AsyncFunctionDef, source: Source
 ) -> Iterator[Occurrence]:
+    yield Occurrence(
+        name=node.name,
+        position=source.position(node.lineno - 1, node.col_offset),
+        ast=node,
+        node_type=NodeType.DEFINITION,
+    )
     for arg in node.args.args:
         yield Occurrence(
             name=arg.arg,
