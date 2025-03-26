@@ -238,8 +238,8 @@ class ExtractFunction:
         arguments = make_arguments(
             usages.defined_before_extraction, usages.used_in_extraction
         )
-        body = make_body(selection=self.code_selection)
 
+        body = make_body(selection=self.code_selection)
         return_node = make_return_node(
             usages.modified_in_extraction, usages.used_after_extraction
         )
@@ -249,7 +249,7 @@ class ExtractFunction:
         function = make_function(
             decorator_list=[],
             name="f",
-            nodes=body,
+            body=body,
             arguments=arguments,
         )
 
@@ -378,7 +378,7 @@ class ExtractMethod:
         method = make_function(
             decorator_list=decorator_list,
             name="m",
-            nodes=body,
+            body=body,
             arguments=arguments,
         )
         if enclosing_scope.range.end.line.next:
@@ -393,7 +393,6 @@ class ExtractMethod:
             logger.error("Couldn't detect self parameter.")
             return ()
 
-        print(f"{ new_level= }")
         calling_statement = make_method_call(
             return_node=return_node,
             self_name=usages.self_or_cls.name,
@@ -423,7 +422,7 @@ def make_function(
     decorator_list: list[ast.expr],
     name: str,
     arguments: Sequence[Occurrence],
-    nodes: Iterable[ast.stmt],
+    body: list[ast.stmt],
 ) -> ast.FunctionDef:
     args = ast.arguments(
         posonlyargs=[],
@@ -437,7 +436,7 @@ def make_function(
     return ast.FunctionDef(
         name=name,
         args=args,
-        body=list(nodes),
+        body=body,
         decorator_list=decorator_list,
         returns=None,
         type_params=[],
