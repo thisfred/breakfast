@@ -275,11 +275,12 @@ class ExtractFunction:
         )
         definition_text = f"{NEWLINE}{"".join(to_source(callable_definition, level=new_level))}{NEWLINE}"
 
-        calling_statement = make_function_call(
-            return_node=return_node,
-            function_name=name,
-            arguments=arguments,
+        calling_statement = self.make_call(
             has_returns=has_returns,
+            arguments=arguments,
+            return_node=return_node,
+            name=name,
+            self_or_cls_name=None,
         )
         call_text = "".join(to_source(calling_statement, level=0))
         if self.code_selection.text_range.start.column == 0:
@@ -298,6 +299,22 @@ class ExtractFunction:
             ),
         )
         return edits
+
+    @staticmethod
+    def make_call(
+        has_returns: bool,
+        arguments: Sequence[Occurrence],
+        return_node: ast.Return | None,
+        name: str,
+        self_or_cls_name: str | None,
+    ) -> ast.Call | ast.Assign | ast.Return:
+        calling_statement = make_function_call(
+            return_node=return_node,
+            function_name=name,
+            arguments=arguments,
+            has_returns=has_returns,
+        )
+        return calling_statement
 
     def compute_new_level(
         self,
@@ -438,12 +455,12 @@ class ExtractMethod:
             logger.error("Couldn't detect self parameter.")
             return ()
 
-        calling_statement = make_method_call(
-            return_node=return_node,
-            self_name=usages.self_or_cls.name,
-            method_name=name,
-            arguments=arguments,
+        calling_statement = self.make_call(
             has_returns=has_returns,
+            arguments=arguments,
+            return_node=return_node,
+            name=name,
+            self_or_cls_name=usages.self_or_cls.name,
         )
         call_text = "".join(to_source(calling_statement, level=0))
 
@@ -463,6 +480,31 @@ class ExtractMethod:
             ),
         )
         return edits
+
+    @staticmethod
+    def make_call(
+        has_returns: bool,
+        arguments: Sequence[Occurrence],
+        return_node: ast.Return | None,
+        name: str,
+        self_or_cls_name: str | None,
+    ) -> ast.Call | ast.Assign | ast.Return:
+        if self_or_cls_name:
+            calling_statement = make_method_call(
+                return_node=return_node,
+                self_name=self_or_cls_name,
+                method_name=name,
+                arguments=arguments,
+                has_returns=has_returns,
+            )
+        else:
+            calling_statement = make_function_call(
+                return_node=return_node,
+                function_name=name,
+                arguments=arguments,
+                has_returns=has_returns,
+            )
+        return calling_statement
 
     @staticmethod
     def compute_new_level(
