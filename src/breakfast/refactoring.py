@@ -243,6 +243,7 @@ class ExtractFunction:
     @property
     def edits(self) -> tuple[Edit, ...]:
         enclosing_scope = self.code_selection.text_range.enclosing_scopes[-1]
+
         start_of_scope = enclosing_scope.range.start
         new_level = start_of_scope.column // 4
         original_indentation = self.code_selection.text_range.start.indentation
@@ -252,21 +253,17 @@ class ExtractFunction:
             for found in find_returns(node)
         )
         usages = UsageCollector(self.code_selection, enclosing_scope)
-
         arguments = make_arguments(
             usages.defined_before_extraction, usages.used_in_extraction
         )
-
-        body = make_body(selection=self.code_selection)
         return_node = make_return_node(
             usages.modified_in_extraction, usages.used_after_extraction
         )
-        if return_node:
-            body.append(return_node)
-
+        body = make_body(selection=self.code_selection, return_node=return_node)
+        decorator_list = self.make_decorators(usages=usages)
         name = make_unique_name("f", enclosing_scope=enclosing_scope)
         function = make_function(
-            decorator_list=[],
+            decorator_list=decorator_list,
             name=name,
             body=body,
             arguments=arguments,
@@ -320,6 +317,9 @@ class ExtractFunction:
         )
         return edits
 
+    def make_decorators(self, usages: UsageCollector) -> list[ast.expr]:
+        return []
+
 
 def make_unique_name(
     original_name: str, enclosing_scope: types.ScopeWithRange
@@ -336,7 +336,7 @@ def make_unique_name(
 
 
 def make_body(
-    selection: CodeSelection,
+    selection: CodeSelection, return_node: ast.Return | None
 ) -> list[ast.stmt]:
     nodes = list(selection.text_range.statements)
     if not nodes:
@@ -353,6 +353,9 @@ def make_body(
                 := selection.text_range.enclosing_nodes_by_type(ast.Return)
             ):
                 nodes = [enclosing_returns[-1].node]
+
+    if return_node:
+        nodes.append(return_node)
     return nodes
 
 
@@ -387,29 +390,14 @@ class ExtractMethod:
             for found in find_returns(node)
         )
         usages = UsageCollector(self.code_selection, enclosing_scope)
-
         arguments = make_arguments(
             usages.defined_before_extraction, usages.used_in_extraction
         )
-
-        body = make_body(selection=self.code_selection)
-
         return_node = make_return_node(
             usages.modified_in_extraction, usages.used_after_extraction
         )
-        if return_node:
-            body.append(return_node)
-
-        if (
-            usages.self_or_cls
-            and usages.self_or_cls.name not in usages.used_in_extraction
-        ):
-            decorator_list: list[ast.expr] = [ast.Name(STATIC_METHOD)]
-        elif usages.self_or_cls and self.code_selection.in_class_method:
-            decorator_list = [ast.Name(CLASS_METHOD)]
-        else:
-            decorator_list = []
-
+        body = make_body(selection=self.code_selection, return_node=return_node)
+        decorator_list = self.make_decorators(usages=usages)
         enclosing_class_scope = (
             self.code_selection.text_range.enclosing_nodes_by_type(
                 ast.ClassDef
@@ -457,6 +445,19 @@ class ExtractMethod:
             ),
         )
         return edits
+
+    def make_decorators(self, usages: UsageCollector) -> list[ast.expr]:
+        if (
+            usages.self_or_cls
+            and usages.self_or_cls.name not in usages.used_in_extraction
+        ):
+            decorator_list: list[ast.expr] = [ast.Name(STATIC_METHOD)]
+        else:
+            if usages.self_or_cls and self.code_selection.in_class_method:
+                decorator_list = [ast.Name(CLASS_METHOD)]
+            else:
+                decorator_list = []
+        return decorator_list
 
 
 def make_function(
