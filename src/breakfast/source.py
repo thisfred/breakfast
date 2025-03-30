@@ -525,9 +525,13 @@ class SubSource:
         return self.parent_start_position + column
 
     def find_after(self, name: str, position: types.Position) -> types.Position:
+        if self != position.source:
+            return self.parent_source.find_after(name, position)
+
         assert (  # noqa: S101
             position.row == 0
         ), "Multiline string type annotations are not supported"
+
         return self.parent_source.find_after(
             name, self.parent_start_position + position.column
         )

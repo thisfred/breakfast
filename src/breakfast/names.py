@@ -410,7 +410,6 @@ def visit_attribute(
     names = names_from(node.value)
     positions = []
     for name in (*names, node.attr):
-        logger.debug(f"{name=}, {position=}")
         new_position = source.find_after(name, position)
         positions.append(new_position)
         position = new_position

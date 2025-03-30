@@ -1309,3 +1309,16 @@ def test_name_for_type_of_keyword_only_argument_should_be_found():
     graph = build_graph(sources=[source])
 
     assert len(graph.references["Refactor"]) == 1
+
+
+def test_attribute_in_string_annotation():
+    source = make_source(
+        """
+        class C:
+            @property
+            def enclosing_call(self) -> "NodeWithRange[ast.Call] | None": ...
+        """
+    )
+    graph = build_graph(sources=[source])
+
+    assert len(graph.references["Call"]) == 1

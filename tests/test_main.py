@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from breakfast.project import Project, get_module_paths, is_allowed
+from breakfast.source import Source
 
 
 def test_returns_paths(project_root):
@@ -65,3 +66,17 @@ def test_get_module_paths_should_not_return_python_files_in_dotted_directories(
     assert "wat.py" not in {
         p.name for p in get_module_paths(Path(project_root) / "tests" / "data")
     }
+
+
+def test_can_analyze_project(project_root):
+    project = Project(root=project_root)
+    refactoring_py_path = str(
+        Path(__file__).parent.parent.resolve()
+        / "src"
+        / "breakfast"
+        / "refactoring.py"
+    )
+    refactoring_py = Source(path=refactoring_py_path, project_root=project_root)
+    position = refactoring_py.position(972, 8)
+    print(project.get_occurrences(position))
+    assert False
