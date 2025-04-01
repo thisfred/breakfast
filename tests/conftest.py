@@ -40,6 +40,12 @@ def project_root():
     return str(Path(__file__).parent.parent.resolve())
 
 
+def assert_ast_equals(code: str, other_code: str) -> None:
+    actual = unparse(ast.parse(code))
+    expected = unparse(ast.parse(other_code))
+    assert actual == expected
+
+
 def assert_refactors_to(
     *,
     refactoring: type[Refactoring],
@@ -52,10 +58,10 @@ def assert_refactors_to(
     selection_range = range_for(target, source, occurrence)
     selection = CodeSelection(selection_range)
     edits = refactoring(selection).edits
-    actual = unparse(ast.parse(apply_edits(source=source, edits=edits)))
-    expected = unparse(ast.parse(dedent(expected).strip()))
+    actual = apply_edits(source=source, edits=edits)
+    expected = dedent(expected).strip()
 
-    assert actual == expected
+    assert_ast_equals(actual, expected)
 
 
 def apply_edits(source: types.Source, edits: Sequence[types.Edit]):

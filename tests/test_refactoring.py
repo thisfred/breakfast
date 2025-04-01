@@ -1,3 +1,5 @@
+from pytest import mark
+
 from breakfast.refactoring import (
     CodeSelection,
     Edit,
@@ -1429,6 +1431,62 @@ def test_inline_callable_should_handle_multiple_returns():
         else:
             result = 2
 
+        b = result
+        """,
+    )
+
+
+@mark.xfail
+def test_inline_callable_should_eliminate_contradictions():
+    assert_refactors_to(
+        refactoring=InlineCall,
+        target="function",
+        occurrence=2,
+        code="""
+        def function(a):
+            if a is True:
+                return 1
+            else:
+                return 2
+
+        b = function(False)
+        """,
+        expected="""
+        def function(a):
+            if a is True:
+                return 1
+            else:
+                return 2
+
+        result = 2
+        b = result
+        """,
+    )
+
+
+@mark.xfail
+def test_inline_callable_should_eliminate_tautologies():
+    assert_refactors_to(
+        refactoring=InlineCall,
+        target="function",
+        occurrence=2,
+        code="""
+        def function(a):
+            if a is True:
+                return 1
+            else:
+                return 2
+
+        b = function(True)
+        """,
+        expected="""
+        def function(a):
+            if a is True:
+                return 1
+            else:
+                return 2
+
+        result = 1
         b = result
         """,
     )
