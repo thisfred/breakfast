@@ -22,13 +22,12 @@ def generic_visit(
 
 
 def generic_transform(
-    f: Callable[Concatenate[ast.AST, P], ast.AST],
+    f: Callable[Concatenate[ast.AST, P], Iterator[ast.AST]],
     node: ast.AST,
     *args: P.args,
     **kwargs: P.kwargs,
-) -> ast.AST:
+) -> Iterator[ast.AST]:
     params: dict[str, ast.AST | list[Any]] = {}
-    print(node)
     for field, old_value in ast.iter_fields(node):
         if isinstance(old_value, list):
             new_values = []
@@ -38,13 +37,12 @@ def generic_transform(
                     if value is None:
                         continue
                     elif not isinstance(value, ast.AST):
-                        new_values.extend(value)
+                        new_values.extend(list(value))
                         continue
                 new_values.append(value)
             params[field] = new_values
         elif isinstance(old_value, ast.AST):
-            new_node = f(old_value, *args, **kwargs)
+            new_node = next(f(old_value, *args, **kwargs), None)
             if new_node is not None:
                 params[field] = new_node
-    print(params)
-    return node.__class__(**params)
+    yield node.__class__(**params)

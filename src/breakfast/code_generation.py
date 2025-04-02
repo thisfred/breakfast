@@ -212,7 +212,7 @@ def import_from(node: ast.ImportFrom, level: int) -> Iterator[str]:
 @to_source.register
 def compare(node: ast.Compare, level: int) -> Iterator[str]:
     yield from to_source(node.left, level)
-    for op, comparator in zip(node.ops, node.comparators, strict=False):
+    for op, comparator in zip(node.ops, node.comparators, strict=True):
         yield f" {COMPARISONS[type(op)]} "
         yield from to_source(comparator, level)
 

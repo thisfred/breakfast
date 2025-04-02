@@ -1018,23 +1018,29 @@ def test_inline_call_should_substitute_parameters():
 
 
 def test_inline_call_should_substitute_parameters_in_attribute():
-    source = make_source(
-        """
+    assert_refactors_to(
+        refactoring=InlineCall,
+        target="f",
+        occurrence=2,
+        code="""
         def f(at):
             text = at.source.lines[at.row].text
             return text
 
         a = 2
         b = f(at=a)
-        """
+        """,
+        expected="""
+        def f(at):
+            text = at.source.lines[at.row].text
+            return text
+
+        a = 2
+        text = a.source.lines[a.row].text
+        result = text
+        b = result
+        """,
     )
-
-    start = source.position(6, 4)
-    end = source.position(6, 7)
-    refactor = InlineCall(CodeSelection(TextRange(start, end)))
-    insert, edit = refactor.edits
-
-    assert "text = a.source.lines[a.row].text" in insert.text
 
 
 def test_inline_call_should_substitute_keyword_arguments():
@@ -1464,7 +1470,6 @@ def test_inline_callable_should_eliminate_contradictions():
     )
 
 
-@mark.xfail
 def test_inline_callable_should_eliminate_tautologies():
     assert_refactors_to(
         refactoring=InlineCall,
@@ -1486,6 +1491,28 @@ def test_inline_callable_should_eliminate_tautologies():
             else:
                 return 2
 
+        result = 1
+        b = result
+        """,
+    )
+
+
+@mark.xfail
+def test_inline_callable_should_eliminate_unused_function():
+    assert_refactors_to(
+        refactoring=InlineCall,
+        target="function",
+        occurrence=2,
+        code="""
+        def function(a):
+            if a is True:
+                return 1
+            else:
+                return 2
+
+        b = function(True)
+        """,
+        expected="""
         result = 1
         b = result
         """,

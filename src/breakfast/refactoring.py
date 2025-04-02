@@ -1,10 +1,10 @@
 import ast
 import logging
 from collections import defaultdict
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from functools import cached_property, singledispatch
 from itertools import dropwhile, takewhile
-from typing import ClassVar, Protocol
+from typing import Any, ClassVar, Protocol
 
 from breakfast import types
 from breakfast.code_generation import to_source, unparse
@@ -30,6 +30,20 @@ FOUR_SPACES = "    "
 NEWLINE = "\n"
 STATIC_METHOD = "staticmethod"
 CLASS_METHOD = "classmethod"
+
+
+COMPARISONS: dict[type[ast.AST], Callable[[Any, Any], bool]] = {
+    ast.Eq: lambda a, b: a == b,
+    ast.Gt: lambda a, b: a > b,
+    ast.GtE: lambda a, b: a >= b,
+    ast.In: lambda a, b: a in b,
+    ast.Is: lambda a, b: a is b,
+    ast.IsNot: lambda a, b: a is not b,
+    ast.Lt: lambda a, b: a < b,
+    ast.LtE: lambda a, b: a <= b,
+    ast.NotEq: lambda a, b: a != b,
+    ast.NotIn: lambda a, b: a not in b,
+}
 
 
 def register(refactoring: "type[Refactoring]") -> "type[Refactoring]":
@@ -851,7 +865,7 @@ class InlineCall:
         result = [
             s
             for node in definition_ast.body
-            for s in [substitute_nodes(node, substitutions)]
+            for s in substitute_nodes(node, substitutions)
             if isinstance(s, ast.stmt)
         ]
         return result
@@ -997,40 +1011,74 @@ class SlideStatementsDown:
 def substitute_nodes(
     node: ast.AST,
     substitutions: dict[ast.AST, ast.AST],
-) -> ast.AST:
+) -> Iterator[ast.AST]:
     if node in substitutions:
-        return generic_transform(
+        yield from generic_transform(
             substitute_nodes, substitutions[node], substitutions
         )
-    return generic_transform(substitute_nodes, node, substitutions)
+    else:
+        yield from generic_transform(substitute_nodes, node, substitutions)
 
 
 @substitute_nodes.register
 def substitute_nodes_in_name(
     node: ast.Name,
     substitutions: dict[ast.AST, ast.AST],
-) -> ast.AST:
+) -> Iterator[ast.AST]:
     substitution = substitutions.get(node)
     if substitution is None:
-        return node
-
-    return substitution
+        yield node
+    else:
+        yield substitution
 
 
 @substitute_nodes.register
 def substitute_nodes_in_constant(
     node: ast.Constant,
     substitutions: dict[ast.AST, ast.AST],
-) -> ast.AST:
-    return node
+) -> Iterator[ast.AST]:
+    yield node
 
 
 @substitute_nodes.register
 def substitute_nodes_in_attribute(
     node: ast.Attribute,
     substitutions: dict[ast.AST, ast.AST],
-) -> ast.AST:
-    new_value = substitute_nodes(node.value, substitutions)
+) -> Iterator[ast.AST]:
+    new_value = next(substitute_nodes(node.value, substitutions), None)
     if isinstance(new_value, ast.expr):
-        return ast.Attribute(new_value, attr=node.attr)
-    return node
+        yield ast.Attribute(new_value, attr=node.attr)
+    else:
+        yield node
+
+
+@substitute_nodes.register
+def substitute_nodes_in_if(
+    node: ast.If,
+    substitutions: dict[ast.AST, ast.AST],
+) -> Iterator[ast.AST]:
+    transformed = next(substitute_nodes(node.test, substitutions), None)
+    if transformed and is_tautology(transformed):
+        for statement in node.body:
+            yield from substitute_nodes(statement, substitutions)
+    else:
+        yield from generic_transform(substitute_nodes, node, substitutions)
+
+
+@singledispatch
+def is_tautology(node: ast.AST) -> bool:
+    return False
+
+
+@is_tautology.register
+def is_tautology_bin_op(node: ast.Compare) -> bool:
+    if not isinstance(node.left, ast.Constant):
+        return False
+    prev = node.left.value
+    for op, comparator in zip(node.ops, node.comparators, strict=True):
+        if not isinstance(comparator, ast.Constant):
+            return False
+        if not COMPARISONS[type(op)](prev, comparator.value):
+            return False
+        prev = comparator.value
+    return True
