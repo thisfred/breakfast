@@ -1492,6 +1492,35 @@ def test_inline_callable_should_eliminate_tautologies():
     )
 
 
+def test_inline_callable_should_not_eliminate_used_function():
+    assert_refactors_to(
+        refactoring=InlineCall,
+        target="function",
+        occurrence=2,
+        code="""
+        def function(a):
+            if a is True:
+                return 1
+            else:
+                return 2
+
+        b = function(True)
+        c = function(False)
+        """,
+        expected="""
+        def function(a):
+            if a is True:
+                return 1
+            else:
+                return 2
+
+        result = 1
+        b = result
+        c = function(False)
+        """,
+    )
+
+
 @mark.xfail
 def test_inline_callable_should_eliminate_unused_function():
     assert_refactors_to(
@@ -1509,6 +1538,36 @@ def test_inline_callable_should_eliminate_unused_function():
         """,
         expected="""
         result = 1
+        b = result
+        """,
+    )
+
+
+def test_inline_callable_should_keep_arg_that_is_modified():
+    assert_refactors_to(
+        refactoring=InlineCall,
+        target="function",
+        occurrence=2,
+        code="""
+        def function(a):
+            while a is True:
+                a = False
+
+            return a or True
+
+        b = function(True)
+        """,
+        expected="""
+        def function(a):
+            while a is True:
+                a = False
+
+            return a or True
+
+        while a is True:
+            a = False
+
+        result = a or True
         b = result
         """,
     )
@@ -1591,5 +1650,28 @@ def test_extract_method_should_not_use_existing_name():
 
             def m0(self):
                 pass
+        """,
+    )
+
+
+@mark.xfail
+def test_extract_method_should_extract_from_for_loop():
+    assert_refactors_to(
+        refactoring=ExtractMethod,
+        target="            print(self, i)",
+        code="""
+        class C:
+            def method(self):
+                for i in range(10):
+                    print(self, i)
+        """,
+        expected="""
+        class C:
+            def method(self):
+                for i in range(10):
+                    self.m(i)
+
+            def m(self, i):
+                print(self, i)
         """,
     )

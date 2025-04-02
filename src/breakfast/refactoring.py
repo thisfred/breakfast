@@ -1,7 +1,15 @@
 import ast
 import logging
 from collections import defaultdict
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import (
+    Callable,
+    Container,
+    Iterable,
+    Iterator,
+    Mapping,
+    MutableMapping,
+    Sequence,
+)
 from functools import cached_property, singledispatch
 from itertools import dropwhile, takewhile
 from typing import Any, ClassVar, Protocol
@@ -790,6 +798,7 @@ class InlineCall:
         if not isinstance(definition.ast, ast.FunctionDef):
             logger.warning(f"Not a function {definition.ast=}.")
             return ()
+        # number_of_occurrences = len(all_occurrences(name_start))
 
         body_range = definition.position.body_for_callable
         if not body_range:
@@ -841,13 +850,32 @@ class InlineCall:
         definition_ast: ast.FunctionDef,
     ) -> list[ast.stmt]:
         substitutions: dict[ast.AST, ast.AST] = {}
+
+        name = "result"
+        returned_names = set()
+        for statement in definition_ast.body:
+            returns = find_returns(statement)
+            for return_node in returns:
+                if return_node.value:
+                    substitutions[return_node] = ast.Assign(
+                        targets=[ast.Name(id=name)], value=return_node.value
+                    )
+                    if isinstance(return_node.value, ast.Name):
+                        returned_names.add(return_node.value.id)
+
         seen = set()
         for keyword in call.keywords:
             argument: ast.keyword | ast.arg = keyword
             seen.add(argument.arg)
             value = keyword.value
-            for node in self.get_occurrence_nodes(argument, body_range):
-                substitutions[node] = value
+
+            self.add_substitutions(
+                argument=argument,
+                value=value,
+                body_range=body_range,
+                substitutions=substitutions,
+                returned_names=returned_names,
+            )
 
         values = call.args
         if isinstance(call.func, ast.Attribute):
@@ -857,16 +885,13 @@ class InlineCall:
             values,
             strict=True,
         ):
-            for node in self.get_occurrence_nodes(argument, body_range):
-                substitutions[node] = value
-
-        name = "result"
-        for statement in definition_ast.body:
-            for return_node in find_returns(statement):
-                if return_node.value:
-                    substitutions[return_node] = ast.Assign(
-                        targets=[ast.Name(id=name)], value=return_node.value
-                    )
+            self.add_substitutions(
+                argument=argument,
+                value=value,
+                body_range=body_range,
+                substitutions=substitutions,
+                returned_names=returned_names,
+            )
 
         result: list[ast.stmt] = []
         result = [
@@ -876,6 +901,33 @@ class InlineCall:
             if isinstance(s, ast.stmt)
         ]
         return result
+
+    def add_substitutions(
+        self,
+        argument: ast.keyword | ast.arg,
+        value: ast.expr,
+        body_range: TextRange,
+        substitutions: MutableMapping[ast.AST, ast.AST],
+        returned_names: Container[str],
+    ) -> None:
+        occurrences = self.get_occurrences(argument, body_range)
+        if argument.arg in returned_names or all(
+            o.node_type is NodeType.REFERENCE for o in occurrences
+        ):
+            for occurrence in occurrences:
+                if occurrence.ast:
+                    substitutions[occurrence.ast] = value
+
+    def get_occurrences(
+        self, argument: ast.keyword | ast.arg, body_range: TextRange
+    ) -> Sequence[Occurrence]:
+        assert argument.arg is not None  # noqa: S101
+        arg_position = self.source.node_position(argument)
+        return [
+            o
+            for o in all_occurrences(arg_position)
+            if o.position in body_range and o.ast
+        ]
 
     def get_occurrence_nodes(
         self, argument: ast.keyword | ast.arg, body_range: TextRange
@@ -1082,7 +1134,7 @@ def is_tautology(node: ast.AST) -> bool:
 
 
 @is_tautology.register
-def is_tautology_bin_op(node: ast.Compare) -> bool:
+def is_tautology_compare(node: ast.Compare) -> bool:
     if not isinstance(node.left, ast.Constant):
         return False
     prev = node.left.value
@@ -1101,7 +1153,7 @@ def is_contradiction(node: ast.AST) -> bool:
 
 
 @is_contradiction.register
-def is_contradiction_bin_op(node: ast.Compare) -> bool:
+def is_contradiction_compare(node: ast.Compare) -> bool:
     if not isinstance(node.left, ast.Constant):
         return False
     prev = node.left.value
