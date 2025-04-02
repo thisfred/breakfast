@@ -1057,10 +1057,18 @@ def substitute_nodes_in_if(
     node: ast.If,
     substitutions: dict[ast.AST, ast.AST],
 ) -> Iterator[ast.AST]:
+    print(ast.dump(node))
     transformed = next(substitute_nodes(node.test, substitutions), None)
-    if transformed and is_tautology(transformed):
-        for statement in node.body:
-            yield from substitute_nodes(statement, substitutions)
+    if transformed:
+        print(ast.dump(transformed))
+        if is_tautology(transformed):
+            print("tautology")
+            for statement in node.body:
+                yield from substitute_nodes(statement, substitutions)
+        elif node.orelse and is_contradiction(transformed):
+            print("contradiction")
+            for statement in node.orelse:
+                yield from substitute_nodes(statement, substitutions)
     else:
         yield from generic_transform(substitute_nodes, node, substitutions)
 
@@ -1079,6 +1087,25 @@ def is_tautology_bin_op(node: ast.Compare) -> bool:
         if not isinstance(comparator, ast.Constant):
             return False
         if not COMPARISONS[type(op)](prev, comparator.value):
+            return False
+        prev = comparator.value
+    return True
+
+
+@singledispatch
+def is_contradiction(node: ast.AST) -> bool:
+    return False
+
+
+@is_contradiction.register
+def is_contradiction_bin_op(node: ast.Compare) -> bool:
+    if not isinstance(node.left, ast.Constant):
+        return False
+    prev = node.left.value
+    for op, comparator in zip(node.ops, node.comparators, strict=True):
+        if not isinstance(comparator, ast.Constant):
+            return False
+        if COMPARISONS[type(op)](prev, comparator.value):
             return False
         prev = comparator.value
     return True

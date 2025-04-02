@@ -1432,17 +1432,12 @@ def test_inline_callable_should_handle_multiple_returns():
             else:
                 return 2
 
-        if False is True:
-            result = 1
-        else:
-            result = 2
-
+        result = 2
         b = result
         """,
     )
 
 
-@mark.xfail
 def test_inline_callable_should_eliminate_contradictions():
     assert_refactors_to(
         refactoring=InlineCall,
