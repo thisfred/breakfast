@@ -1,19 +1,10 @@
 import ast
 from collections.abc import Iterator
-from dataclasses import dataclass
 from functools import singledispatch
 from typing import Any, Protocol
 
-from breakfast.types import NodeType, Position, Source
+from breakfast.types import NodeType, Occurrence, Position, Source
 from breakfast.visitor import generic_visit
-
-
-@dataclass(frozen=True)
-class Occurrence:
-    name: str
-    position: Position
-    ast: ast.AST | None
-    node_type: NodeType
 
 
 @singledispatch

@@ -6,10 +6,8 @@ from functools import cached_property, singledispatch
 from itertools import dropwhile, takewhile
 from typing import Any, ClassVar, Protocol
 
-from breakfast import types
 from breakfast.code_generation import to_source, unparse
 from breakfast.names import (
-    Occurrence,
     all_occurrences,
     build_graph,
     find_definition,
@@ -21,7 +19,15 @@ from breakfast.search import (
     find_returns,
     find_statements,
 )
-from breakfast.types import Edit, NotFoundError, Position
+from breakfast.types import (
+    Edit,
+    NodeWithRange,
+    NotFoundError,
+    Occurrence,
+    Position,
+    ScopeWithRange,
+    TextRange,
+)
 from breakfast.visitor import generic_transform
 
 logger = logging.getLogger(__name__)
@@ -54,7 +60,7 @@ def register(refactoring: "type[Refactoring]") -> "type[Refactoring]":
 class CodeSelection:
     _refactorings: ClassVar[dict[str, "type[Refactoring]"]] = {}
 
-    def __init__(self, text_range: types.TextRange):
+    def __init__(self, text_range: TextRange):
         self.text_range = text_range
         self.source = self.text_range.source
         self.scope_graph = build_graph(
@@ -114,7 +120,7 @@ class CodeSelection:
         return self.source.get_name_at(self.cursor)
 
     @cached_property
-    def cursor(self) -> types.Position:
+    def cursor(self) -> Position:
         return self.text_range.start
 
     @cached_property
@@ -147,7 +153,7 @@ class UsageCollector:
     def __init__(
         self,
         code_selection: CodeSelection,
-        enclosing_scope: types.ScopeWithRange,
+        enclosing_scope: ScopeWithRange,
     ) -> None:
         self.code_selection = code_selection
         self.enclosing_scope = enclosing_scope
@@ -218,7 +224,7 @@ class UsageCollector:
     def get_subsequent_usage(
         self,
         names_defined_in_range: Iterable[Occurrence],
-    ) -> types.Position | None:
+    ) -> Position | None:
         occurrences_after_range = sorted(
             [
                 o.position
@@ -271,15 +277,15 @@ class ExtractFunction:
 
     def compute_new_level(
         self,
-        enclosing_scope: types.ScopeWithRange,
-        start_of_scope: types.Position,
+        enclosing_scope: ScopeWithRange,
+        start_of_scope: Position,
     ) -> int:
         new_level = start_of_scope.column // 4
         if not isinstance(enclosing_scope.node, ast.Module):
             match self.code_selection.text_range.enclosing_scopes:
                 case [
-                    types.NodeWithRange(node=ast.Module()),
-                    types.NodeWithRange(node=ast.ClassDef()),
+                    NodeWithRange(node=ast.Module()),
+                    NodeWithRange(node=ast.ClassDef()),
                     *_,
                 ]:
                     new_level = 0
@@ -287,16 +293,16 @@ class ExtractFunction:
 
     def get_insert_position(
         self,
-        enclosing_scope: types.ScopeWithRange,
-    ) -> types.Position:
+        enclosing_scope: ScopeWithRange,
+    ) -> Position:
         if isinstance(enclosing_scope.node, ast.Module):
             insert_position = self.code_selection.text_range.start.line.start
         else:
             match self.code_selection.text_range.enclosing_scopes:
                 case (
                     [
-                        types.NodeWithRange(node=ast.Module()),
-                        types.NodeWithRange(node=ast.ClassDef()),
+                        NodeWithRange(node=ast.Module()),
+                        NodeWithRange(node=ast.ClassDef()),
                         *_,
                     ] as matched
                 ):
@@ -317,7 +323,7 @@ class ExtractFunction:
 
 
 def make_unique_name(
-    original_name: str, enclosing_scope: types.ScopeWithRange
+    original_name: str, enclosing_scope: ScopeWithRange
 ) -> str:
     name = original_name
     names_in_range = {
@@ -398,14 +404,14 @@ class ExtractMethod:
 
     @staticmethod
     def compute_new_level(
-        enclosing_scope: types.ScopeWithRange, start_of_scope: types.Position
+        enclosing_scope: ScopeWithRange, start_of_scope: Position
     ) -> int:
         return start_of_scope.column // 4
 
     @staticmethod
     def get_insert_position(
-        enclosing_scope: types.ScopeWithRange,
-    ) -> types.Position:
+        enclosing_scope: ScopeWithRange,
+    ) -> Position:
         return (
             enclosing_scope.range.end.line.next.start
             if enclosing_scope.range.end.line.next
@@ -694,7 +700,7 @@ class InlineVariable:
                     self.code_selection.occurrences_of_name_at_cursor,
                 )
             )
-            to_replace: tuple[types.TextRange, ...] = tuple(
+            to_replace: tuple[TextRange, ...] = tuple(
                 o.position.to(o.position + len(name))
                 for o in takewhile(
                     lambda x: x.node_type is not NodeType.DEFINITION,
@@ -759,6 +765,7 @@ class InlineCall:
     @property
     def edits(self) -> tuple[Edit, ...]:
         call = self.enclosing_call
+
         if not call:
             logger.warning("No enclosing call.")
             return ()
@@ -830,7 +837,7 @@ class InlineCall:
         self,
         *,
         call: ast.Call,
-        body_range: types.TextRange,
+        body_range: TextRange,
         definition_ast: ast.FunctionDef,
     ) -> list[ast.stmt]:
         substitutions: dict[ast.AST, ast.AST] = {}
@@ -871,7 +878,7 @@ class InlineCall:
         return result
 
     def get_occurrence_nodes(
-        self, argument: ast.keyword | ast.arg, body_range: types.TextRange
+        self, argument: ast.keyword | ast.arg, body_range: TextRange
     ) -> Iterator[ast.AST]:
         assert argument.arg is not None  # noqa: S101
         arg_position = self.source.node_position(argument)

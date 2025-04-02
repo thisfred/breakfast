@@ -189,7 +189,7 @@ class NodeType(Enum):
 
 
 @dataclass(frozen=True)
-class Occurrence(Protocol):
+class Occurrence:
     name: str
     position: Position
     ast: ast.AST | None
