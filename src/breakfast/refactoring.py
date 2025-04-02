@@ -2,9 +2,8 @@ import ast
 import logging
 from collections import defaultdict
 from collections.abc import Iterable, Iterator, Mapping, Sequence
-from functools import cached_property
+from functools import cached_property, singledispatch
 from itertools import dropwhile, takewhile
-from textwrap import dedent, indent
 from typing import ClassVar, Protocol
 
 from breakfast import types
@@ -23,6 +22,7 @@ from breakfast.search import (
     find_statements,
 )
 from breakfast.types import Edit, NotFoundError, Position
+from breakfast.visitor import generic_transform
 
 logger = logging.getLogger(__name__)
 
@@ -774,7 +774,7 @@ class InlineCall:
         if not body_range:
             return ()
 
-        new_lines = self.get_new_lines(
+        new_statements = self.get_new_statements(
             call=call.node, body_range=body_range, definition_ast=definition.ast
         )
 
@@ -787,20 +787,18 @@ class InlineCall:
 
         indentation = self.text_range.start.indentation
         name = "result"
-        for return_range in return_ranges:
-            offset = return_range.start.row - body_range.start.row
-            new_lines[offset] = new_lines[offset].replace(
-                "return ", f"{name} = ", 1
+        body = "".join(
+            to_source(
+                ast.Module(body=new_statements, type_ignores=[]),
+                level=len(indentation) // 4,
             )
-        body = indent(
-            dedent(NEWLINE.join(new_lines) + NEWLINE),
-            indentation,
         )
+
         if not return_ranges:
             return (
                 Edit(
                     call.range,
-                    text=f"{body}",
+                    text=f"{body}\n",
                 ),
             )
 
@@ -809,64 +807,63 @@ class InlineCall:
         return (
             Edit(
                 insert_range,
-                text=f"{body}",
+                text=f"{body}\n",
             ),
             Edit(call.range, text=name),
         )
 
-    def get_new_lines(
+    def get_new_statements(
         self,
         *,
         call: ast.Call,
         body_range: types.TextRange,
         definition_ast: ast.FunctionDef,
-    ) -> list[str]:
-        substitutions = []
+    ) -> list[ast.stmt]:
+        substitutions: dict[ast.AST, ast.AST] = {}
         seen = set()
-
-        call_args = call.args
-        if isinstance(call.func, ast.Attribute):
-            call_args = [call.func.value, *call_args]
         for keyword in call.keywords:
-            def_arg: ast.keyword | ast.arg = keyword
-            seen.add(def_arg.arg)
-            call_arg = keyword.value
-            substitutions.extend(
-                list(self.get_substitions(def_arg, call_arg, body_range))
-            )
+            argument: ast.keyword | ast.arg = keyword
+            seen.add(argument.arg)
+            value = keyword.value
+            for node in self.get_occurrence_nodes(argument, body_range):
+                substitutions[node] = value
 
-        for call_arg, def_arg in zip(
-            call_args,
+        values = call.args
+        if isinstance(call.func, ast.Attribute):
+            values = [call.func.value, *values]
+        for argument, value in zip(
             (a for a in definition_ast.args.args if a.arg not in seen),
+            values,
             strict=True,
         ):
-            substitutions.extend(
-                list(self.get_substitions(def_arg, call_arg, body_range))
-            )
+            for node in self.get_occurrence_nodes(argument, body_range):
+                substitutions[node] = value
 
-        return list(body_range.text_with_substitutions(substitutions))
+        name = "result"
+        for statement in definition_ast.body:
+            for return_node in find_returns(statement):
+                if return_node.value:
+                    substitutions[return_node] = ast.Assign(
+                        targets=[ast.Name(id=name)], value=return_node.value
+                    )
 
-    def get_substitions(
-        self,
-        def_arg: ast.keyword | ast.arg,
-        call_arg: ast.expr,
-        body_range: types.TextRange,
-    ) -> Iterator[types.Edit]:
-        assert def_arg.arg is not None  # noqa: S101
-        arg_position = self.source.node_position(def_arg)
-        value = (
-            call_arg_range.text
-            if (call_arg_range := self.source.node_range(call_arg))
-            else ""
-        )
+        result: list[ast.stmt] = []
+        result = [
+            s
+            for node in definition_ast.body
+            for s in [substitute_nodes(node, substitutions)]
+            if isinstance(s, ast.stmt)
+        ]
+        return result
 
+    def get_occurrence_nodes(
+        self, argument: ast.keyword | ast.arg, body_range: types.TextRange
+    ) -> Iterator[ast.AST]:
+        assert argument.arg is not None  # noqa: S101
+        arg_position = self.source.node_position(argument)
         for occurrence in all_occurrences(arg_position):
-            if occurrence.position not in body_range:
-                continue
-            yield Edit(
-                occurrence.position.to(occurrence.position + len(def_arg.arg)),
-                value,
-            )
+            if occurrence.position in body_range and occurrence.ast:
+                yield occurrence.ast
 
 
 @register
@@ -994,3 +991,46 @@ class SlideStatementsDown:
             return first_usage_after_range.start_of_line
 
         return None
+
+
+@singledispatch
+def substitute_nodes(
+    node: ast.AST,
+    substitutions: dict[ast.AST, ast.AST],
+) -> ast.AST:
+    if node in substitutions:
+        return generic_transform(
+            substitute_nodes, substitutions[node], substitutions
+        )
+    return generic_transform(substitute_nodes, node, substitutions)
+
+
+@substitute_nodes.register
+def substitute_nodes_in_name(
+    node: ast.Name,
+    substitutions: dict[ast.AST, ast.AST],
+) -> ast.AST:
+    substitution = substitutions.get(node)
+    if substitution is None:
+        return node
+
+    return substitution
+
+
+@substitute_nodes.register
+def substitute_nodes_in_constant(
+    node: ast.Constant,
+    substitutions: dict[ast.AST, ast.AST],
+) -> ast.AST:
+    return node
+
+
+@substitute_nodes.register
+def substitute_nodes_in_attribute(
+    node: ast.Attribute,
+    substitutions: dict[ast.AST, ast.AST],
+) -> ast.AST:
+    new_value = substitute_nodes(node.value, substitutions)
+    if isinstance(new_value, ast.expr):
+        return ast.Attribute(new_value, attr=node.attr)
+    return node
