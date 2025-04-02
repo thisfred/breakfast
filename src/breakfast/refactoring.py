@@ -1064,16 +1064,12 @@ def substitute_nodes_in_if(
     node: ast.If,
     substitutions: dict[ast.AST, ast.AST],
 ) -> Iterator[ast.AST]:
-    print(ast.dump(node))
     transformed = next(substitute_nodes(node.test, substitutions), None)
     if transformed:
-        print(ast.dump(transformed))
         if is_tautology(transformed):
-            print("tautology")
             for statement in node.body:
                 yield from substitute_nodes(statement, substitutions)
         elif node.orelse and is_contradiction(transformed):
-            print("contradiction")
             for statement in node.orelse:
                 yield from substitute_nodes(statement, substitutions)
     else:
