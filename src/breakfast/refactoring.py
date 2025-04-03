@@ -463,6 +463,8 @@ def make_extract_callable_edits(
     body = make_body(
         selection=refactoring.code_selection, return_node=return_node
     )
+    if not body:
+        return ()
     decorator_list = refactoring.make_decorators(usages=usages)
     name = make_unique_name(
         name,
@@ -928,15 +930,6 @@ class InlineCall:
             for o in all_occurrences(arg_position)
             if o.position in body_range and o.ast
         ]
-
-    def get_occurrence_nodes(
-        self, argument: ast.keyword | ast.arg, body_range: TextRange
-    ) -> Iterator[ast.AST]:
-        assert argument.arg is not None  # noqa: S101
-        arg_position = self.source.node_position(argument)
-        for occurrence in all_occurrences(arg_position):
-            if occurrence.position in body_range and occurrence.ast:
-                yield occurrence.ast
 
 
 @register
