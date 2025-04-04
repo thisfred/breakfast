@@ -797,7 +797,11 @@ class InlineCall:
         if number_of_occurrences <= 2:
             edits: tuple[Edit, ...] = (
                 (Edit(definition_range, text=""),)
-                if (definition_range := self.source.node_range(definition.ast))
+                if (
+                    definition_range := definition.position.source.node_range(
+                        definition.ast
+                    )
+                )
                 else ()
             )
 
