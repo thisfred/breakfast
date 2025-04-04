@@ -127,7 +127,7 @@ def initialize(server: LanguageServer, params: InitializeParams) -> None:
 
 
 @LSP_SERVER.feature(TEXT_DOCUMENT_PREPARE_RENAME)
-async def prepare_rename(
+def prepare_rename(
     server: LanguageServer, params: PrepareRenameParams
 ) -> PrepareRenameResult | None:
     return find_identifier_range_at(
@@ -144,7 +144,7 @@ def get_source(uri: str, project_root: str, lines: Iterable[str]) -> Source:
 
 
 @LSP_SERVER.feature(TEXT_DOCUMENT_RENAME)
-async def rename(
+def rename(
     server: LanguageServer, params: RenameParams
 ) -> WorkspaceEdit | None:
     document = server.workspace.get_text_document(params.text_document.uri)
@@ -236,7 +236,7 @@ def edits_to_text_edits(
         resolve_provider=True,
     ),
 )
-async def code_action(
+def code_action(
     server: LanguageServer, params: CodeActionParams
 ) -> list[CodeAction] | None:
     actions: list[CodeAction] = []
@@ -274,7 +274,7 @@ async def code_action(
                     if "extract" in new_refactoring.name
                     else CodeActionKind.Refactor,
                     data=document_uri,
-                    edit=await get_edits(
+                    edit=get_edits(
                         new_refactoring(selection), document_uri, version
                     ),
                     diagnostics=[],
@@ -284,7 +284,7 @@ async def code_action(
     return actions
 
 
-async def get_edits(
+def get_edits(
     refactoring: Refactoring, document_uri: str, version: None
 ) -> WorkspaceEdit:
     text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(

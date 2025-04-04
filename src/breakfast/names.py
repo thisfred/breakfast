@@ -1155,12 +1155,12 @@ def name_names(node: ast.Name) -> Path:
 
 @names_from.register
 def attribute_names(node: ast.Attribute) -> Path:
-    return (*names_from(node.value), ".", node.attr)
+    return (*names_from(node.value), node.attr)
 
 
 @names_from.register
 def call_names(node: ast.Call) -> Path:
-    names = (*names_from(node.func), "()")
+    names = names_from(node.func)
     return names
 
 

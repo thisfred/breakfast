@@ -391,7 +391,11 @@ class Source:
         match = regex.search(self.get_string_starting_at(start))
         while start.row < len(self.text) and not match:
             match = regex.search(self.get_string_starting_at(start))
-            start = start.line.next.start if start.line.next else start
+            new_start = start.line.next.start if start.line.next else start
+            if new_start == start:
+                break
+            start = new_start
+
         if not match:
             raise AssertionError("no match found")
         return start + match.span()[0]

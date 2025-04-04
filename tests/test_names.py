@@ -2,9 +2,16 @@ import sys
 
 from pytest import mark
 
-from breakfast.names import all_occurrence_positions, build_graph
+from breakfast.names import (
+    all_occurrence_positions,
+    build_graph,
+)
+from breakfast.project import Project
 from breakfast.source import Position
-from tests.conftest import all_occurrence_position_tuples, make_source
+from tests.conftest import (
+    all_occurrence_position_tuples,
+    make_source,
+)
 
 
 def test_assignment_occurrences() -> None:
@@ -1322,3 +1329,10 @@ def test_attribute_in_string_annotation():
     graph = build_graph(sources=[source])
 
     assert len(graph.references["Call"]) == 1
+
+
+def test_dogfood(project_root):
+    application = Project(root=project_root)
+    sources = application.find_sources()
+    graph = build_graph(sources=sources)
+    assert graph is not None
