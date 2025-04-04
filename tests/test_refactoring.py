@@ -1,5 +1,3 @@
-from pytest import mark
-
 from breakfast.refactoring import (
     CodeSelection,
     Edit,
@@ -869,24 +867,21 @@ def test_extract_method_should_extract_part_of_a_line():
 
 
 def test_inline_call_should_replace_call_with_function_return_value():
-    source = make_source(
-        """
+    assert_refactors_to(
+        refactoring=InlineCall,
+        target="f",
+        occurrence=2,
+        code="""
         def f():
             return 2
 
         b = f()
-        """
+        """,
+        expected="""
+        result = 2
+        b = result
+        """,
     )
-
-    start = source.position(4, 4)
-    end = source.position(4, 7)
-    refactor = InlineCall(CodeSelection(TextRange(start, end)))
-    insert, edit = refactor.edits
-
-    assert "result = 2" in insert.text
-    assert "result" == edit.text
-    assert edit.start == start
-    assert edit.end == end
 
 
 def test_inline_call_should_work_without_return_value():
@@ -952,43 +947,24 @@ def test_inline_call_should_work_inside_branches():
     assert edit.end == source.position(8, 11)
 
 
-def test_inline_call_should_work_when_cursor_is_in_call():
-    source = make_source(
-        """
-        def f():
-            return 2
-
-        b = f()
-        """
-    )
-
-    start = source.position(4, 4)
-    refactor = InlineCall(CodeSelection(TextRange(start, start)))
-    insert, edit = refactor.edits
-
-    assert "result = 2" in insert.text
-    assert "result" == edit.text
-    assert edit.start == start
-    assert edit.end == start + 3
-
-
 def test_inline_call_should_extract_body_before_assignment():
-    source = make_source(
-        """
+    assert_refactors_to(
+        refactoring=InlineCall,
+        target="f",
+        occurrence=2,
+        code="""
         def f():
             a = 2
             return a
 
         b = f()
-        """
+        """,
+        expected="""
+        a = 2
+        result = a
+        b = result
+        """,
     )
-
-    start = source.position(5, 4)
-    end = source.position(5, 6)
-    refactor = InlineCall(CodeSelection(TextRange(start, end)))
-    insert, edit = refactor.edits
-
-    assert "a = 2\nresult = a" in insert.text
 
 
 def test_inline_call_should_substitute_parameters():
@@ -1005,10 +981,6 @@ def test_inline_call_should_substitute_parameters():
         b = f(a)
         """,
         expected="""
-        def f(c):
-            c += 1
-            return c
-
         a = 2
         a += 1
         result = a
@@ -1031,10 +1003,6 @@ def test_inline_call_should_substitute_parameters_in_attribute():
         b = f(at=a)
         """,
         expected="""
-        def f(at):
-            text = at.source.lines[at.row].text
-            return text
-
         a = 2
         text = a.source.lines[a.row].text
         result = text
@@ -1057,10 +1025,6 @@ def test_inline_call_should_substitute_keyword_arguments():
         b = f(c=a)
         """,
         expected="""
-        def f(c):
-            c += 1
-            return c
-
         a = 2
         a += 1
         result = a
@@ -1070,23 +1034,25 @@ def test_inline_call_should_substitute_keyword_arguments():
 
 
 def test_inline_call_should_indent_in_new_context():
-    source = make_source(
-        """
+    assert_refactors_to(
+        refactoring=InlineCall,
+        target="f",
+        occurrence=2,
+        code="""
         def f():
             a = 2
             return a
 
         def g():
             b = f()
-        """
+        """,
+        expected="""
+        def g():
+            a = 2
+            result = a
+            b = result
+        """,
     )
-
-    start = source.position(6, 8)
-    end = source.position(6, 10)
-    refactor = InlineCall(CodeSelection(TextRange(start, end)))
-    insert, edit = refactor.edits
-
-    assert "    a = 2\n    result = a" in insert.text
 
 
 def test_inline_variable_should_replace_variable_with_expression():
@@ -1338,8 +1304,10 @@ def test_inline_variable_should_inline_once_from_second_usage():
 
 
 def test_inline_call_should_inline_method_call():
-    source = make_source(
-        """
+    assert_refactors_to(
+        refactoring=InlineCall,
+        target="containing_nodes_by_type",
+        code="""
         class C:
 
             def containing_scopes(self):
@@ -1348,17 +1316,16 @@ def test_inline_call_should_inline_method_call():
 
             def containing_nodes_by_type(self):
                 return self
-        """
+        """,
+        expected="""
+        class C:
+
+            def containing_scopes(self):
+                result = self
+                nodes = result
+                return nodes
+        """,
     )
-
-    start = source.position(4, 23)
-    selection = CodeSelection(TextRange(start, start))
-
-    refactoring = InlineCall(selection)
-    insert, edit = refactoring.edits
-
-    assert "result = self" in insert.text
-    assert "result" == edit.text
 
 
 def test_extract_callable_containing_return_statement_should_preserve_it():
@@ -1401,12 +1368,6 @@ def test_inline_callable_should_handle_multiline_return():
             print("a")
             result = (1,)
             return result
-
-        def f2():
-            print("a")
-            return (
-                1,
-            )
         """,
     )
 
@@ -1426,12 +1387,6 @@ def test_inline_callable_should_handle_multiple_returns():
         b = function(False)
         """,
         expected="""
-        def function(a):
-            if a is True:
-                return 1
-            else:
-                return 2
-
         result = 2
         b = result
         """,
@@ -1453,12 +1408,6 @@ def test_inline_callable_should_eliminate_contradictions():
         b = function(False)
         """,
         expected="""
-        def function(a):
-            if a is True:
-                return 1
-            else:
-                return 2
-
         result = 2
         b = result
         """,
@@ -1480,12 +1429,6 @@ def test_inline_callable_should_eliminate_tautologies():
         b = function(True)
         """,
         expected="""
-        def function(a):
-            if a is True:
-                return 1
-            else:
-                return 2
-
         result = 1
         b = result
         """,
@@ -1521,7 +1464,6 @@ def test_inline_callable_should_not_eliminate_used_function():
     )
 
 
-@mark.xfail
 def test_inline_callable_should_eliminate_unused_function():
     assert_refactors_to(
         refactoring=InlineCall,
@@ -1558,12 +1500,6 @@ def test_inline_callable_should_keep_arg_that_is_modified():
         b = function(True)
         """,
         expected="""
-        def function(a):
-            while a is True:
-                a = False
-
-            return a or True
-
         while a is True:
             a = False
 

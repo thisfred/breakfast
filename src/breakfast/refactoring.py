@@ -780,6 +780,66 @@ class InlineCall:
             logger.warning("No enclosing call.")
             return ()
 
+        name_start = self.get_start_of_name(call=call)
+
+        definition = find_definition(self.scope_graph, name_start)
+        if definition is None or definition.position is None:
+            logger.warning(f"No definition position {definition=}.")
+            return ()
+        if not isinstance(definition.ast, ast.FunctionDef):
+            logger.warning(f"Not a function {definition.ast=}.")
+            return ()
+        body_range = definition.position.body_for_callable
+        if not body_range:
+            return ()
+
+        number_of_occurrences = len(all_occurrences(name_start))
+        if number_of_occurrences <= 2:
+            edits: tuple[Edit, ...] = (
+                (Edit(definition_range, text=""),)
+                if (definition_range := self.source.node_range(definition.ast))
+                else ()
+            )
+
+        else:
+            edits = ()
+
+        new_statements = self.get_new_statements(
+            call=call.node, body_range=body_range, definition_ast=definition.ast
+        )
+
+        indentation = self.text_range.start.indentation
+        name = "result"
+        edits = (Edit(call.range, text=name), *edits)
+
+        return_ranges = [
+            return_range
+            for statement in definition.ast.body
+            for r in find_returns(statement)
+            if (return_range := self.source.node_range(r))
+        ]
+        insert_range = (
+            self.text_range.start.line.start.as_range
+            if return_ranges
+            else call.range
+        )
+        body = "".join(
+            to_source(
+                ast.Module(body=new_statements, type_ignores=[]),
+                level=len(indentation) // 4,
+            )
+        )
+        edits = (
+            Edit(
+                insert_range,
+                text=f"{body}{NEWLINE}",
+            ),
+            *edits,
+        )
+        return edits
+
+    @staticmethod
+    def get_start_of_name(call: NodeWithRange[ast.Call]) -> Position:
         name_start = call.range.start
         call_args = call.node.args
         if isinstance(call.node.func, ast.Attribute):
@@ -792,53 +852,7 @@ class InlineCall:
                     call.node.func.value.end_col_offset
                     - call.node.func.col_offset
                 ) + 1
-
-        definition = find_definition(self.scope_graph, name_start)
-        if definition is None or definition.position is None:
-            logger.warning(f"No definition position {definition=}.")
-            return ()
-        if not isinstance(definition.ast, ast.FunctionDef):
-            logger.warning(f"Not a function {definition.ast=}.")
-            return ()
-        # number_of_occurrences = len(all_occurrences(name_start))
-
-        body_range = definition.position.body_for_callable
-        if not body_range:
-            return ()
-
-        new_statements = self.get_new_statements(
-            call=call.node, body_range=body_range, definition_ast=definition.ast
-        )
-
-        return_ranges = [
-            return_range
-            for statement in definition.ast.body
-            for r in find_returns(statement)
-            if (return_range := self.source.node_range(r))
-        ]
-
-        indentation = self.text_range.start.indentation
-        name = "result"
-        body = "".join(
-            to_source(
-                ast.Module(body=new_statements, type_ignores=[]),
-                level=len(indentation) // 4,
-            )
-        )
-
-        insert_range = (
-            self.text_range.start.line.start.as_range
-            if return_ranges
-            else call.range
-        )
-
-        return (
-            Edit(
-                insert_range,
-                text=f"{body}{NEWLINE}",
-            ),
-            Edit(call.range, text=name),
-        )
+        return name_start
 
     def get_new_statements(
         self,
