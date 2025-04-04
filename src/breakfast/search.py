@@ -1,5 +1,5 @@
 import ast
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from functools import singledispatch
 from typing import Any, Protocol
 
@@ -8,12 +8,12 @@ from breakfast.visitor import generic_visit
 
 
 @singledispatch
-def find_statements(node: ast.AST) -> Iterator[ast.AST]:
+def find_statements(node: ast.AST) -> Iterator[ast.stmt]:
     yield from generic_visit(find_statements, node)
 
 
 @find_statements.register
-def find_statements_in_expression(node: ast.Expr) -> Iterator[ast.AST]:
+def find_statements_in_expression(node: ast.Expr) -> Iterator[ast.stmt]:
     yield from ()
 
 
@@ -23,9 +23,31 @@ def find_statements_in_node_with_body(
     | ast.FunctionDef
     | ast.AsyncFunctionDef
     | ast.ClassDef
-    | ast.For,
-) -> Iterator[ast.AST]:
-    for child in node.body:
+    | ast.With
+    | ast.AsyncWith,
+) -> Iterator[ast.stmt]:
+    yield from find_nested_statements(node.body)
+
+
+@find_statements.register
+def find_statements_in_node_with_body_and_orelse(
+    node: ast.For | ast.AsyncFor | ast.If | ast.While,
+) -> Iterator[ast.stmt]:
+    yield from find_nested_statements(node.body)
+    yield from find_nested_statements(node.orelse)
+
+
+@find_statements.register
+def find_statements_in_try(node: ast.Try | ast.TryStar) -> Iterator[ast.stmt]:
+    yield from find_nested_statements(node.body)
+    yield from find_nested_statements(node.orelse)
+    yield from find_nested_statements(node.finalbody)
+
+
+def find_nested_statements(
+    statements: Iterable[ast.stmt],
+) -> Iterator[ast.stmt]:
+    for child in statements:
         yield child
         yield from find_statements(child)
 

@@ -1654,7 +1654,6 @@ def test_extract_method_should_not_use_existing_name():
     )
 
 
-@mark.xfail
 def test_extract_method_should_extract_from_for_loop():
     assert_refactors_to(
         refactoring=ExtractMethod,
@@ -1669,7 +1668,7 @@ def test_extract_method_should_extract_from_for_loop():
         class C:
             def method(self):
                 for i in range(10):
-                    self.m(i)
+                    self.m(i=i)
 
             def m(self, i):
                 print(self, i)

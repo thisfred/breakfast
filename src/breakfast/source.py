@@ -7,14 +7,10 @@ from ast import AST, parse
 from collections.abc import Sequence
 from dataclasses import InitVar, dataclass, replace
 from functools import cached_property
-from itertools import dropwhile, takewhile
 from typing import Protocol, TypeGuard
 
 from breakfast import types
-from breakfast.search import (
-    find_names,
-    get_nodes,
-)
+from breakfast.search import find_names, find_statements, get_nodes
 
 logger = logging.getLogger(__name__)
 
@@ -241,15 +237,21 @@ class TextRange:
         ):
             return []
 
-        return list(
-            takewhile(
-                lambda n: self.source.node_position(n) <= text_range.end,
-                dropwhile(
-                    lambda n: self.source.node_position(n) < text_range.start,
-                    parent.body,
-                ),
-            )
-        )
+        found = []
+        statements = parent.body
+        enclosing_node = text_range.enclosing_nodes[-1]
+        if enclosing_node.range != text_range:
+            if enclosing_node.node != parent:
+                statements = list(find_statements(enclosing_node.node))
+
+        for node in statements:
+            node_start = self.source.node_position(node)
+            if node_start < text_range.start:
+                continue
+            if node_start > text_range.end:
+                break
+            found.append(node)
+        return found
 
     def text_with_substitutions(
         self, substitutions: Sequence[types.Edit]
@@ -474,10 +476,9 @@ class Source:
 class SubSource:
     """Source that parses a single type annotation string.
 
-    `ast.parse()` does not parse type annotations specified as strings. This class
-    exists to be able to handle them: we explicitly parse the constant value and proxy
-    through to the actual source to get the real positions when needed.
-
+    `ast.parse()` does not parse type annotations written as strings. This class exists
+    to be able to handle them: we explicitly parse the constant value and proxy through
+    to the actual source to get the real positions when needed.
     """
 
     def __init__(

@@ -826,20 +826,16 @@ class InlineCall:
             )
         )
 
-        if not return_ranges:
-            return (
-                Edit(
-                    call.range,
-                    text=f"{body}\n",
-                ),
-            )
-
-        insert_range = self.text_range.start.line.start.as_range
+        insert_range = (
+            self.text_range.start.line.start.as_range
+            if return_ranges
+            else call.range
+        )
 
         return (
             Edit(
                 insert_range,
-                text=f"{body}\n",
+                text=f"{body}{NEWLINE}",
             ),
             Edit(call.range, text=name),
         )
