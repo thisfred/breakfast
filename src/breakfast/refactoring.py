@@ -845,9 +845,7 @@ class InlineCall:
     @staticmethod
     def get_start_of_name(call: NodeWithRange[ast.Call]) -> Position:
         name_start = call.range.start
-        call_args = call.node.args
         if isinstance(call.node.func, ast.Attribute):
-            call_args = [call.node.func.value, *call_args]
             if (
                 call.node.func.value.end_col_offset
                 and call.node.func.col_offset
