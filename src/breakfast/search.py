@@ -7,13 +7,29 @@ from breakfast.types import NodeType, Occurrence, Position, Source
 from breakfast.visitor import generic_visit
 
 
+def find_nested_statements(
+    statements: Iterable[ast.stmt],
+) -> Iterator[ast.stmt]:
+    for child in statements:
+        yield child
+        yield from find_statements(child)
+
+
+def identity(statements: Iterable[ast.stmt]) -> Iterator[ast.stmt]:
+    yield from statements
+
+
 @singledispatch
-def find_statements(node: ast.AST) -> Iterator[ast.stmt]:
-    yield from generic_visit(find_statements, node)
+def find_statements(
+    node: ast.AST, recursive_find: bool = True
+) -> Iterator[ast.stmt]:
+    yield from generic_visit(find_statements, node, recursive_find)
 
 
 @find_statements.register
-def find_statements_in_expression(node: ast.Expr) -> Iterator[ast.stmt]:
+def find_statements_in_expression(
+    node: ast.Expr, recursive_find: bool = True
+) -> Iterator[ast.stmt]:
     yield from ()
 
 
@@ -25,31 +41,30 @@ def find_statements_in_node_with_body(
     | ast.ClassDef
     | ast.With
     | ast.AsyncWith,
+    recursive_find: bool = True,
 ) -> Iterator[ast.stmt]:
-    yield from find_nested_statements(node.body)
+    find = find_nested_statements if recursive_find else identity
+    yield from find(node.body)
 
 
 @find_statements.register
 def find_statements_in_node_with_body_and_orelse(
     node: ast.For | ast.AsyncFor | ast.If | ast.While,
+    recursive_find: bool = True,
 ) -> Iterator[ast.stmt]:
-    yield from find_nested_statements(node.body)
-    yield from find_nested_statements(node.orelse)
+    find = find_nested_statements if recursive_find else identity
+    yield from find(node.body)
+    yield from find(node.orelse)
 
 
 @find_statements.register
-def find_statements_in_try(node: ast.Try | ast.TryStar) -> Iterator[ast.stmt]:
-    yield from find_nested_statements(node.body)
-    yield from find_nested_statements(node.orelse)
-    yield from find_nested_statements(node.finalbody)
-
-
-def find_nested_statements(
-    statements: Iterable[ast.stmt],
+def find_statements_in_try(
+    node: ast.Try | ast.TryStar, recursive_find: bool = True
 ) -> Iterator[ast.stmt]:
-    for child in statements:
-        yield child
-        yield from find_statements(child)
+    find = find_nested_statements if recursive_find else identity
+    yield from find(node.body)
+    yield from find(node.orelse)
+    yield from find(node.finalbody)
 
 
 def find_other_occurrences(

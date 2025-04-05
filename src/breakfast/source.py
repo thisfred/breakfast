@@ -259,7 +259,15 @@ class TextRange:
                         and node_end == text_range.end
                     )
                 ):
-                    nodes.extendleft(list(find_statements(current_node)))
+                    nodes.extendleft(
+                        reversed(
+                            list(
+                                find_statements(
+                                    current_node, recursive_find=False
+                                )
+                            )
+                        )
+                    )
                     continue
 
             found.append(current_node)

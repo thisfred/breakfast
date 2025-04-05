@@ -1146,24 +1146,23 @@ def test_extract_variable_should_include_quotes():
 
 
 def test_extract_variable_should_extract_within_for_loop():
-    source = make_source(
-        """
+    assert_refactors_to(
+        refactoring=ExtractVariable,
+        target="TextRange(position, position + len(def_arg.arg))",
+        code="""
         for position in all_occurrence_positions(arg_position):
             if position not in body_range:
                 continue
             yield TextRange(position, position + len(def_arg.arg)), value
-        """
+        """,
+        expected="""
+        for position in all_occurrence_positions(arg_position):
+            if position not in body_range:
+                continue
+            v = TextRange(position, position + len(def_arg.arg))
+            yield v, value
+        """,
     )
-    extraction_start = source.position(4, 10)
-    extraction_end = source.position(4, 58)
-
-    refactor = ExtractVariable(
-        CodeSelection(TextRange(extraction_start, extraction_end))
-    )
-    insert, *_ = refactor.edits
-
-    assert insert.text_range.start.row == 4
-    assert insert.text_range.start.column == 4
 
 
 def test_inline_variable_should_only_inline_after_definition():
