@@ -1674,3 +1674,135 @@ def test_extract_function_should_not_double_extract_nested_statements():
                 print(item)
         """,
     )
+
+
+def test_inline_call_regression():
+    assert_refactors_to(
+        refactoring=InlineCall,
+        target="f(",
+        code="""
+        class GildedRose:
+            @staticmethod
+            def update_item_quality(item):
+                is_brie = item.name == AGED_BRIE
+                is_backstage_passes = item.name == BACKSTAGE_PASSES
+                is_sulfuras = item.name == SULFURAS
+
+                if is_brie:
+                    f(
+                        item=item,
+                        is_brie=True,
+                        is_backstage_passes=is_backstage_passes,
+                        is_sulfuras=is_sulfuras,
+                    )  # end
+                else:
+                    f(
+                        item=item,
+                        is_brie=False,
+                        is_backstage_passes=is_backstage_passes,
+                        is_sulfuras=is_sulfuras,
+                    )
+
+        def f(item, is_brie, is_backstage_passes, is_sulfuras):
+            if not is_brie and not is_backstage_passes:
+                if item.quality > 0:
+                    if not is_sulfuras:
+                        item.quality = item.quality - 1
+            else:
+                if item.quality < 50:
+                    item.quality = item.quality + 1
+                    if is_backstage_passes:
+                        if item.sell_in < 11:
+                            if item.quality < 50:
+                                item.quality = item.quality + 1
+                        if item.sell_in < 6:
+                            if item.quality < 50:
+                                item.quality = item.quality + 1
+            if not is_sulfuras:
+                item.sell_in = item.sell_in - 1
+            if item.sell_in < 0:
+                if not is_brie:
+                    if not is_backstage_passes:
+                        if item.quality > 0:
+                            if not is_sulfuras:
+                                item.quality = item.quality - 1
+                    else:
+                        item.quality = item.quality - item.quality
+                else:
+                    if item.quality < 50:
+                        item.quality = item.quality + 1
+        """,
+        expected="""
+        class GildedRose:
+            @staticmethod
+            def update_item_quality(item):
+                is_brie = item.name == AGED_BRIE
+                is_backstage_passes = item.name == BACKSTAGE_PASSES
+                is_sulfuras = item.name == SULFURAS
+
+                if is_brie:
+                    if not True and not is_backstage_passes:
+                        if item.quality > 0:
+                            if not is_sulfuras:
+                                item.quality = item.quality - 1
+                    else:
+                        if item.quality < 50:
+                            item.quality = item.quality + 1
+                            if is_backstage_passes:
+                                if item.sell_in < 11:
+                                    if item.quality < 50:
+                                        item.quality = item.quality + 1
+                                if item.sell_in < 6:
+                                    if item.quality < 50:
+                                        item.quality = item.quality + 1
+                    if not is_sulfuras:
+                        item.sell_in = item.sell_in - 1
+                    if item.sell_in < 0:
+                        if not True:
+                            if not is_backstage_passes:
+                                if item.quality > 0:
+                                    if not is_sulfuras:
+                                        item.quality = item.quality - 1
+                            else:
+                                item.quality = item.quality - item.quality
+                        else:
+                            if item.quality < 50:
+                                item.quality = item.quality + 1
+                else:
+                    f(
+                        item=item,
+                        is_brie=False,
+                        is_backstage_passes=is_backstage_passes,
+                        is_sulfuras=is_sulfuras,
+                    )
+
+        def f(item, is_brie, is_backstage_passes, is_sulfuras):
+            if not is_brie and not is_backstage_passes:
+                if item.quality > 0:
+                    if not is_sulfuras:
+                        item.quality = item.quality - 1
+            else:
+                if item.quality < 50:
+                    item.quality = item.quality + 1
+                    if is_backstage_passes:
+                        if item.sell_in < 11:
+                            if item.quality < 50:
+                                item.quality = item.quality + 1
+                        if item.sell_in < 6:
+                            if item.quality < 50:
+                                item.quality = item.quality + 1
+            if not is_sulfuras:
+                item.sell_in = item.sell_in - 1
+            if item.sell_in < 0:
+                if not is_brie:
+                    if not is_backstage_passes:
+                        if item.quality > 0:
+                            if not is_sulfuras:
+                                item.quality = item.quality - 1
+                    else:
+                        item.quality = item.quality - item.quality
+                else:
+                    if item.quality < 50:
+                        item.quality = item.quality + 1
+        """,
+    )

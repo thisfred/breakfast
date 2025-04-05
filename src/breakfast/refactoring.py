@@ -814,8 +814,6 @@ class InlineCall:
         )
 
         indentation = self.text_range.start.indentation
-        name = "result"
-        edits = (Edit(call.range, text=name), *edits)
 
         return_ranges = [
             return_range
@@ -823,6 +821,9 @@ class InlineCall:
             for r in find_returns(statement)
             if (return_range := self.source.node_range(r))
         ]
+        if return_ranges:
+            name = "result"
+            edits = (Edit(call.range, text=name), *edits)
         insert_range = (
             self.text_range.start.line.start.as_range
             if return_ranges
@@ -1130,6 +1131,8 @@ def substitute_nodes_in_if(
         elif node.orelse and is_contradiction(transformed):
             for statement in node.orelse:
                 yield from substitute_nodes(statement, substitutions)
+        else:
+            yield from generic_transform(substitute_nodes, node, substitutions)
     else:
         yield from generic_transform(substitute_nodes, node, substitutions)
 
