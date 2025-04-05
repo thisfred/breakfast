@@ -1609,3 +1609,68 @@ def test_extract_method_should_extract_from_for_loop():
                 print(self, i)
         """,
     )
+
+
+def test_extract_method_should_not_over_indent_when_extracting_from_for_loop():
+    assert_refactors_to(
+        refactoring=ExtractMethod,
+        target="print(item)",
+        code="""
+        class GildedRose(object):
+            def __init__(self, items):
+                self.items = items
+
+            def update_quality(self):
+                for item in self.items:
+                    print(item)
+        """,
+        expected="""
+        class GildedRose(object):
+            def __init__(self, items):
+                self.items = items
+
+            def update_quality(self):
+                for item in self.items:
+                    self.m(item=item)
+
+            @staticmethod
+            def m(item):
+                print(item)
+        """,
+    )
+
+
+def test_extract_function_should_not_double_extract_nested_statements():
+    assert_refactors_to(
+        refactoring=ExtractFunction,
+        target=("if (", "print(item)"),
+        code="""
+        class GildedRose(object):
+            def __init__(self, items):
+                self.items = items
+
+            def update_quality(self):
+                for item in self.items:
+                    if (
+                        item.name != "Aged Brie"
+                        and item.name != "Backstage passes to a TAFKAL80ETC concert"
+                    ):
+                        print(item)
+        """,
+        expected="""
+        class GildedRose(object):
+            def __init__(self, items):
+                self.items = items
+
+            def update_quality(self):
+                for item in self.items:
+                    f(item=item)
+
+        def f(item):
+            if (
+                item.name != "Aged Brie"
+                and item.name != "Backstage passes to a TAFKAL80ETC concert"
+            ):
+                print(item)
+        """,
+    )
