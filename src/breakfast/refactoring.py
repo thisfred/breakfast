@@ -80,7 +80,7 @@ class CodeSelection:
         cls._refactorings[refactoring.name] = refactoring
 
     @property
-    def refactorings(self) -> Iterable["type[Refactoring]"]:
+    def refactorings(self) -> Sequence["type[Refactoring]"]:
         return [
             refactoring
             for refactoring in self._refactorings.values()
@@ -464,6 +464,7 @@ def make_extract_callable_edits(
         selection=refactoring.code_selection, return_node=return_node
     )
     if not body:
+        logger.warning("Could not extract callable body.")
         return ()
     decorator_list = refactoring.make_decorators(usages=usages)
     name = make_unique_name(

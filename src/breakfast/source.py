@@ -4,6 +4,7 @@ import os
 import re
 import sys
 from ast import AST, parse
+from collections import deque
 from collections.abc import Sequence
 from dataclasses import InitVar, dataclass, replace
 from functools import cached_property
@@ -225,7 +226,9 @@ class TextRange:
             text_range = self.start.to(self.end.line.previous.end)
         else:
             text_range = self
+
         enclosing_scopes = text_range.enclosing_scopes
+
         if enclosing_scopes:
             parent: ast.AST = enclosing_scopes[-1].node
         else:
@@ -238,19 +241,29 @@ class TextRange:
             return []
 
         found = []
-        statements = parent.body
-        enclosing_node = text_range.enclosing_nodes[-1]
-        if enclosing_node.range != text_range:
-            if enclosing_node.node != parent:
-                statements = list(find_statements(enclosing_node.node))
-
-        for node in statements:
-            node_start = self.source.node_position(node)
-            if node_start < text_range.start:
-                continue
+        nodes = deque(parent.body)
+        while nodes:
+            current_node = nodes.popleft()
+            node_start = self.source.node_position(current_node)
+            node_end = self.source.node_end_position(current_node)
             if node_start > text_range.end:
                 break
-            found.append(node)
+            if node_end and node_end < text_range.start:
+                continue
+            if node_start <= text_range.start:
+                if (
+                    node_end
+                    and node_end >= text_range.end
+                    and not (
+                        node_start == text_range.start
+                        and node_end == text_range.end
+                    )
+                ):
+                    nodes.extendleft(list(find_statements(current_node)))
+                    continue
+
+            found.append(current_node)
+
         return found
 
     def text_with_substitutions(
