@@ -76,27 +76,6 @@ class Position:
     def line(self) -> types.Line:
         return self.source.lines[self.row]
 
-    @cached_property
-    def body_for_callable(self) -> types.TextRange | None:
-        def node_filter(node: ast.AST) -> bool:
-            return (
-                isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
-                and self.source.node_position(node).row == self.row
-            )
-
-        found = next(get_nodes(self.source.ast, node_filter), None)
-
-        if not isinstance(found, ast.FunctionDef | ast.AsyncFunctionDef):
-            return None
-
-        children = found.body
-        start_position = self.source.node_position(children[0])
-        end_position = (
-            self.source.node_end_position(children[-1])
-            or start_position.line.end
-        )
-        return TextRange(start_position, end_position)
-
     @property
     def indentation(self) -> str:
         text = self.source.lines[self.row].text

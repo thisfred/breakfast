@@ -26,6 +26,7 @@ from breakfast.search import (
     find_other_occurrences,
     find_returns,
     find_statements,
+    get_nodes,
 )
 from breakfast.types import (
     Edit,
@@ -444,19 +445,7 @@ def make_extract_callable_edits(
     refactoring: ExtractFunction | ExtractMethod, name: str
 ) -> tuple[Edit, ...]:
     enclosing_scope = refactoring.code_selection.text_range.enclosing_scopes[-1]
-    start_of_scope = enclosing_scope.range.start
-    original_indentation = (
-        refactoring.code_selection.text_range.start.indentation
-    )
-    has_returns = any(
-        found
-        for node in refactoring.code_selection.text_range.statements
-        for found in find_returns(node)
-    )
     usages = UsageCollector(refactoring.code_selection, enclosing_scope)
-    arguments = make_arguments(
-        usages.defined_before_extraction, usages.used_in_extraction
-    )
     return_node = make_return_node(
         usages.modified_in_extraction, usages.used_after_extraction
     )
@@ -466,20 +455,29 @@ def make_extract_callable_edits(
     if not body:
         logger.warning("Could not extract callable body.")
         return ()
-    decorator_list = refactoring.make_decorators(usages=usages)
     name = make_unique_name(
         name,
         enclosing_scope=refactoring.code_selection.text_range.enclosing_scopes[
             0
         ],
     )
+    arguments = make_arguments(
+        usages.defined_before_extraction, usages.used_in_extraction
+    )
+    decorator_list = refactoring.make_decorators(usages=usages)
     callable_definition = make_function(
         decorator_list=decorator_list, name=name, body=body, arguments=arguments
     )
+    start_of_scope = enclosing_scope.range.start
     new_level = refactoring.compute_new_level(
         enclosing_scope=enclosing_scope, start_of_scope=start_of_scope
     )
     definition_text = f"{NEWLINE}{"".join(to_source(callable_definition, level=new_level))}{NEWLINE}"
+    has_returns = any(
+        found
+        for node in refactoring.code_selection.text_range.statements
+        for found in find_returns(node)
+    )
     calling_statement = refactoring.make_call(
         has_returns=has_returns,
         arguments=arguments,
@@ -490,6 +488,9 @@ def make_extract_callable_edits(
         ),
     )
     call_text = "".join(to_source(calling_statement, level=0))
+    original_indentation = (
+        refactoring.code_selection.text_range.start.indentation
+    )
     call_text = (
         f"{original_indentation}{call_text}"
         if refactoring.code_selection.text_range.start.column == 0
@@ -790,7 +791,31 @@ class InlineCall:
         if not isinstance(definition.ast, ast.FunctionDef):
             logger.warning(f"Not a function {definition.ast=}.")
             return ()
-        body_range = definition.position.body_for_callable
+
+        def node_filter(node: ast.AST) -> bool:
+            return (
+                isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+                and definition.position.source.node_position(node).row
+                == definition.position.row
+            )
+
+        found = next(
+            get_nodes(definition.position.source.ast, node_filter), None
+        )
+
+        if not isinstance(found, ast.FunctionDef | ast.AsyncFunctionDef):
+            body_range = None
+        else:
+            children = found.body
+            start_position = definition.position.source.node_position(
+                children[0]
+            )
+            end_position = (
+                definition.position.source.node_end_position(children[-1])
+                or start_position.line.end
+            )
+            body_range = start_position.to(end_position)
+
         if not body_range:
             return ()
 

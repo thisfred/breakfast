@@ -33,9 +33,6 @@ class Position(Protocol):
     def line(self) -> "Line": ...
 
     @property
-    def body_for_callable(self) -> "TextRange | None": ...
-
-    @property
     def indentation(self) -> str: ...
 
     @property
