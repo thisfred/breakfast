@@ -835,7 +835,7 @@ class InlineCall:
         result = (
             Edit(
                 insert_range,
-                text=f"{body or "pass"}{NEWLINE}",
+                text=f"{body or 'pass'}{NEWLINE}",
             ),
             *result,
         )

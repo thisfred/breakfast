@@ -1886,7 +1886,7 @@ def test_inline_call_should_eliminate_dead_conditionals_2():
     )
 
 
-def test_inline_call_should_eliminate_dead_conditionals_3():
+def test_inline_call_should_replace_completely_redundant_body_with_pass():
     assert_refactors_to(
         refactoring=InlineCall,
         target="f(",
