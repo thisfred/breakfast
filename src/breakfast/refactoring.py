@@ -11,7 +11,7 @@ from collections.abc import (
     Sequence,
 )
 from functools import cached_property, singledispatch
-from itertools import dropwhile, takewhile
+from itertools import chain, dropwhile, takewhile
 from typing import Any, ClassVar, Protocol
 
 from breakfast.code_generation import to_source, unparse
@@ -1125,6 +1125,7 @@ def substitute_nodes_in_if(
 ) -> Iterator[ast.AST]:
     transformed = next(substitute_nodes(node.test, substitutions), None)
     if transformed:
+        print(f"{ast.dump(transformed)=}")
         if always_true(transformed):
             for statement in node.body:
                 yield from substitute_nodes(statement, substitutions)
@@ -1135,6 +1136,46 @@ def substitute_nodes_in_if(
             yield from generic_transform(substitute_nodes, node, substitutions)
     else:
         yield from generic_transform(substitute_nodes, node, substitutions)
+
+
+@substitute_nodes.register
+def substitute_nodes_in_bool_op(
+    node: ast.BoolOp,
+    substitutions: dict[ast.AST, ast.AST],
+) -> Iterator[ast.AST]:
+    transformed = chain.from_iterable(
+        substitute_nodes(value, substitutions) for value in node.values
+    )
+    if isinstance(node.op, ast.And):
+        new_values = [
+            v
+            for v in transformed
+            if not always_true(v) and isinstance(v, ast.expr)
+        ]
+        if len(new_values) == 1:
+            yield new_values[0]
+        else:
+            yield (
+                ast.BoolOp(op=ast.And(), values=new_values)
+                if new_values
+                else node
+            )
+    elif isinstance(node.op, ast.Or):
+        new_values = [
+            v
+            for v in transformed
+            if not always_false(v) and isinstance(v, ast.expr)
+        ]
+        if len(new_values) == 1:
+            yield new_values[0]
+        else:
+            yield (
+                ast.BoolOp(op=ast.Or(), values=new_values)
+                if new_values
+                else node
+            )
+    else:
+        yield node
 
 
 @singledispatch
