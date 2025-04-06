@@ -838,7 +838,7 @@ class InlineCall:
         edits = (
             Edit(
                 insert_range,
-                text=f"{body}{NEWLINE}",
+                text=f"{body or "pass"}{NEWLINE}",
             ),
             *edits,
         )
@@ -1123,19 +1123,47 @@ def substitute_nodes_in_if(
     node: ast.If,
     substitutions: dict[ast.AST, ast.AST],
 ) -> Iterator[ast.AST]:
-    transformed = next(substitute_nodes(node.test, substitutions), None)
-    if transformed:
-        print(f"{ast.dump(transformed)=}")
-        if always_true(transformed):
-            for statement in node.body:
-                yield from substitute_nodes(statement, substitutions)
-        elif always_false(transformed):
-            for statement in node.orelse:
-                yield from substitute_nodes(statement, substitutions)
+    test = next(substitute_nodes(node.test, substitutions), None)
+    body = (
+        s
+        for s in (
+            chain.from_iterable(
+                substitute_nodes(s, substitutions) for s in node.body
+            )
+        )
+        if isinstance(s, ast.stmt)
+    )
+    orelse = (
+        s
+        for s in (
+            chain.from_iterable(
+                substitute_nodes(s, substitutions) for s in node.orelse
+            )
+        )
+        if isinstance(s, ast.stmt)
+    )
+    if test:
+        if always_true(test):
+            yield from body
+        elif always_false(test):
+            yield from orelse
         else:
-            yield from generic_transform(substitute_nodes, node, substitutions)
-    else:
-        yield from generic_transform(substitute_nodes, node, substitutions)
+            if as_list := list(orelse):
+                yield (
+                    ast.If(
+                        test=test,
+                        body=list(body) or [ast.Pass()],
+                        orelse=as_list,
+                    )
+                    if isinstance(test, ast.expr)
+                    else node
+                )
+            elif as_list := list(body):
+                yield (
+                    ast.If(test=test, body=as_list, orelse=[])
+                    if isinstance(test, ast.expr)
+                    else node
+                )
 
 
 @substitute_nodes.register

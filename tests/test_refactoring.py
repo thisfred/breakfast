@@ -1884,3 +1884,37 @@ def test_inline_call_should_eliminate_dead_conditionals_2():
                             item.quality = item.quality - item.quality
         """,
     )
+
+
+def test_inline_call_should_eliminate_dead_conditionals_3():
+    assert_refactors_to(
+        refactoring=InlineCall,
+        target="f(",
+        code="""
+        class GildedRose:
+            @staticmethod
+            def update_item_quality(item):
+                is_sulfuras = item.name == SULFURAS
+                if is_sulfuras:
+                    f(item=item, is_sulfuras=True)
+
+        def f(item, is_sulfuras):
+            if item.quality > 0:
+                if not is_sulfuras:
+                    item.quality = item.quality - 1
+            if not is_sulfuras:
+                item.sell_in = item.sell_in - 1
+            if item.sell_in < 0:
+                if item.quality > 0:
+                    if not is_sulfuras:
+                        item.quality = item.quality - 1
+        """,
+        expected="""
+        class GildedRose:
+            @staticmethod
+            def update_item_quality(item):
+                is_sulfuras = item.name == SULFURAS
+                if is_sulfuras:
+                    pass
+        """,
+    )
