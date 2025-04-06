@@ -800,13 +800,7 @@ class InlineCall:
         if not isinstance(found, ast.FunctionDef | ast.AsyncFunctionDef):
             return ()
 
-        children = found.body
-        start_position = definition.position.source.node_position(children[0])
-        end_position = (
-            definition.position.source.node_end_position(children[-1])
-            or start_position.line.end
-        )
-        body_range = start_position.to(end_position)
+        body_range = self.get_body_range(definition=definition, found=found)
 
         number_of_occurrences = len(all_occurrences(name_start))
         if number_of_occurrences <= 2:
@@ -857,6 +851,19 @@ class InlineCall:
             *edits,
         )
         return edits
+
+    @staticmethod
+    def get_body_range(
+        definition: Occurrence, found: ast.FunctionDef | ast.AsyncFunctionDef
+    ) -> TextRange:
+        children = found.body
+        start_position = definition.position.source.node_position(children[0])
+        end_position = (
+            definition.position.source.node_end_position(children[-1])
+            or start_position.line.end
+        )
+        body_range = start_position.to(end_position)
+        return body_range
 
     @staticmethod
     def make_filter(definition: Occurrence) -> NodeFilter:
