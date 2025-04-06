@@ -1125,10 +1125,13 @@ def substitute_nodes_in_if(
 ) -> Iterator[ast.AST]:
     transformed = next(substitute_nodes(node.test, substitutions), None)
     if transformed:
-        if is_tautology(transformed):
+        print(f"{ast.dump(transformed)=}")
+    if transformed:
+        if always_true(transformed):
+            print("always true")
             for statement in node.body:
                 yield from substitute_nodes(statement, substitutions)
-        elif node.orelse and is_contradiction(transformed):
+        elif always_false(transformed):
             for statement in node.orelse:
                 yield from substitute_nodes(statement, substitutions)
         else:
@@ -1138,12 +1141,25 @@ def substitute_nodes_in_if(
 
 
 @singledispatch
-def is_tautology(node: ast.AST) -> bool:
+def always_true(node: ast.AST) -> bool:
     return False
 
 
-@is_tautology.register
-def is_tautology_compare(node: ast.Compare) -> bool:
+@always_true.register
+def always_true_constant(node: ast.Constant) -> bool:
+    return bool(node.value)
+
+
+@always_true.register
+def always_true_unary_op(node: ast.UnaryOp) -> bool:
+    if isinstance(node.op, ast.Not):
+        return always_false(node.operand)
+
+    return False
+
+
+@always_true.register
+def always_true_compare(node: ast.Compare) -> bool:
     if not isinstance(node.left, ast.Constant):
         return False
     prev = node.left.value
@@ -1156,13 +1172,43 @@ def is_tautology_compare(node: ast.Compare) -> bool:
     return True
 
 
-@singledispatch
-def is_contradiction(node: ast.AST) -> bool:
+@always_true.register
+def always_true_bool_op(node: ast.BoolOp) -> bool:
+    if isinstance(node.op, ast.Or):
+        for value in node.values:
+            if always_true(value):
+                return True
+        return False
+
+    if isinstance(node.op, ast.And):
+        for value in node.values:
+            if not always_true(value):
+                return False
+        return True
+
     return False
 
 
-@is_contradiction.register
-def is_contradiction_compare(node: ast.Compare) -> bool:
+@singledispatch
+def always_false(node: ast.AST) -> bool:
+    return False
+
+
+@always_false.register
+def always_false_unary_op(node: ast.UnaryOp) -> bool:
+    if isinstance(node.op, ast.Not):
+        return always_true(node.operand)
+
+    return False
+
+
+@always_false.register
+def always_false_constant(node: ast.Constant) -> bool:
+    return not bool(node.value)
+
+
+@always_false.register
+def always_false_compare(node: ast.Compare) -> bool:
     if not isinstance(node.left, ast.Constant):
         return False
     prev = node.left.value
@@ -1173,3 +1219,20 @@ def is_contradiction_compare(node: ast.Compare) -> bool:
             return False
         prev = comparator.value
     return True
+
+
+@always_false.register
+def always_false_bool_op(node: ast.BoolOp) -> bool:
+    if isinstance(node.op, ast.And):
+        for value in node.values:
+            if always_false(value):
+                return True
+        return False
+
+    if isinstance(node.op, ast.Or):
+        for value in node.values:
+            if not always_false(value):
+                return False
+        return True
+
+    return False

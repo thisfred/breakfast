@@ -84,7 +84,7 @@ def bin_op(node: ast.BinOp, level: int) -> Iterator[str]:
 
 @to_source.register
 def unary_op(node: ast.UnaryOp, level: int) -> Iterator[str]:
-    yield f" {UNARY_OPERATORS[type(node.op)]}"
+    yield f"{UNARY_OPERATORS[type(node.op)]}"
     yield from to_source(node.operand, level)
 
 
