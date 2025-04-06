@@ -20,7 +20,7 @@ from breakfast.names import (
     build_graph,
     find_definition,
 )
-from breakfast.scope_graph import NodeType, ScopeGraph
+from breakfast.scope_graph import NodeType
 from breakfast.search import (
     NodeFilter,
     find_names,
@@ -139,24 +139,6 @@ class CodeSelection:
             return all_occurrences(self.cursor, graph=self.scope_graph)
         except NotFoundError:
             return ()
-
-    def find_names_used_after_position(
-        self,
-        names: Sequence[Occurrence],
-        scope_graph: ScopeGraph,
-        cutoff: Position,
-    ) -> Iterator[Occurrence]:
-        for name_occurrence in names:
-            try:
-                occurrences = all_occurrences(
-                    name_occurrence.position, graph=scope_graph
-                )
-            except NotFoundError:
-                continue
-            for occurrence in occurrences:
-                if occurrence.position > cutoff:
-                    yield occurrence
-                    break
 
 
 class UsageCollector:
