@@ -204,5 +204,3 @@ def get_nodes(
         yield node
 
     yield from generic_visit(get_nodes, node, node_filter)
-
-    return None
