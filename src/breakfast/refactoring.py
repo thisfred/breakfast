@@ -797,21 +797,16 @@ class InlineCall:
         found = next(
             get_nodes(definition.position.source.ast, node_filter), None
         )
-
-        body_range = None
-        if isinstance(found, ast.FunctionDef | ast.AsyncFunctionDef):
-            children = found.body
-            start_position = definition.position.source.node_position(
-                children[0]
-            )
-            end_position = (
-                definition.position.source.node_end_position(children[-1])
-                or start_position.line.end
-            )
-            body_range = start_position.to(end_position)
-
-        if not body_range:
+        if not isinstance(found, ast.FunctionDef | ast.AsyncFunctionDef):
             return ()
+
+        children = found.body
+        start_position = definition.position.source.node_position(children[0])
+        end_position = (
+            definition.position.source.node_end_position(children[-1])
+            or start_position.line.end
+        )
+        body_range = start_position.to(end_position)
 
         number_of_occurrences = len(all_occurrences(name_start))
         if number_of_occurrences <= 2:
