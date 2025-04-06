@@ -22,6 +22,7 @@ from breakfast.names import (
 )
 from breakfast.scope_graph import NodeType, ScopeGraph
 from breakfast.search import (
+    NodeFilter,
     find_names,
     find_other_occurrences,
     find_returns,
@@ -774,6 +775,17 @@ class InlineCall:
     def applies_to(cls, selection: CodeSelection) -> bool:
         return selection.text_range.enclosing_call is not None
 
+    @staticmethod
+    def make_filter(definition: Occurrence) -> NodeFilter:
+        def node_filter(node: ast.AST) -> bool:
+            return (
+                isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+                and definition.position.source.node_position(node).row
+                == definition.position.row
+            )
+
+        return node_filter
+
     @property
     def edits(self) -> tuple[Edit, ...]:
         call = self.enclosing_call
@@ -792,13 +804,7 @@ class InlineCall:
             logger.warning(f"Not a function {definition.ast=}.")
             return ()
 
-        def node_filter(node: ast.AST) -> bool:
-            return (
-                isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
-                and definition.position.source.node_position(node).row
-                == definition.position.row
-            )
-
+        node_filter = self.make_filter(definition)
         found = next(
             get_nodes(definition.position.source.ast, node_filter), None
         )
