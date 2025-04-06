@@ -1125,10 +1125,7 @@ def substitute_nodes_in_if(
 ) -> Iterator[ast.AST]:
     transformed = next(substitute_nodes(node.test, substitutions), None)
     if transformed:
-        print(f"{ast.dump(transformed)=}")
-    if transformed:
         if always_true(transformed):
-            print("always true")
             for statement in node.body:
                 yield from substitute_nodes(statement, substitutions)
         elif always_false(transformed):
