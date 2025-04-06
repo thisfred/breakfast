@@ -775,17 +775,6 @@ class InlineCall:
     def applies_to(cls, selection: CodeSelection) -> bool:
         return selection.text_range.enclosing_call is not None
 
-    @staticmethod
-    def make_filter(definition: Occurrence) -> NodeFilter:
-        def node_filter(node: ast.AST) -> bool:
-            return (
-                isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
-                and definition.position.source.node_position(node).row
-                == definition.position.row
-            )
-
-        return node_filter
-
     @property
     def edits(self) -> tuple[Edit, ...]:
         call = self.enclosing_call
@@ -809,9 +798,8 @@ class InlineCall:
             get_nodes(definition.position.source.ast, node_filter), None
         )
 
-        if not isinstance(found, ast.FunctionDef | ast.AsyncFunctionDef):
-            body_range = None
-        else:
+        body_range = None
+        if isinstance(found, ast.FunctionDef | ast.AsyncFunctionDef):
             children = found.body
             start_position = definition.position.source.node_position(
                 children[0]
@@ -874,6 +862,17 @@ class InlineCall:
             *edits,
         )
         return edits
+
+    @staticmethod
+    def make_filter(definition: Occurrence) -> NodeFilter:
+        def node_filter(node: ast.AST) -> bool:
+            return (
+                isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+                and definition.position.source.node_position(node).row
+                == definition.position.row
+            )
+
+        return node_filter
 
     @staticmethod
     def get_start_of_name(call: NodeWithRange[ast.Call]) -> Position:
