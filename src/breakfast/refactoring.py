@@ -802,20 +802,9 @@ class InlineCall:
 
         body_range = self.get_body_range(definition=definition, found=found)
 
-        number_of_occurrences = len(all_occurrences(name_start))
-        if number_of_occurrences <= 2:
-            edits: tuple[Edit, ...] = (
-                (Edit(definition_range, text=""),)
-                if (
-                    definition_range := definition.position.source.node_range(
-                        definition.ast
-                    )
-                )
-                else ()
-            )
-
-        else:
-            edits = ()
+        result = self.maybe_remove_definition(
+            name_start=name_start, definition=definition
+        )
 
         new_statements = self.get_new_statements(
             call=call.node, body_range=body_range, definition_ast=definition.ast
@@ -831,7 +820,7 @@ class InlineCall:
         ]
         if return_ranges:
             name = "result"
-            edits = (Edit(call.range, text=name), *edits)
+            result = (Edit(call.range, text=name), *result)
         insert_range = (
             self.text_range.start.line.start.as_range
             if return_ranges
@@ -843,14 +832,32 @@ class InlineCall:
                 level=len(indentation) // 4,
             )
         )
-        edits = (
+        result = (
             Edit(
                 insert_range,
                 text=f"{body or "pass"}{NEWLINE}",
             ),
-            *edits,
+            *result,
         )
-        return edits
+        return result
+
+    @staticmethod
+    def maybe_remove_definition(
+        name_start: Position, definition: Occurrence
+    ) -> tuple[Edit, ...]:
+        number_of_occurrences = len(all_occurrences(name_start))
+        if (
+            number_of_occurrences > 2
+            or definition.ast is None
+            or (
+                definition_range := definition.position.source.node_range(
+                    definition.ast
+                )
+            )
+            is None
+        ):
+            return ()
+        return (Edit(definition_range, text=""),)
 
     @staticmethod
     def get_body_range(
