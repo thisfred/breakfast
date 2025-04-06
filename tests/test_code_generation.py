@@ -27,6 +27,7 @@ def test_roundtrip_string_should_result_in_same_ast(code):
         "src/breakfast/names.py",
         "src/breakfast/project.py",
         "src/breakfast/refactoring.py",
+        "src/breakfast/rewrites.py",
         "src/breakfast/scope_graph/__init__.py",
         "src/breakfast/scope_graph/scope_graph.py",
         "src/breakfast/scope_graph/visualization.py",
