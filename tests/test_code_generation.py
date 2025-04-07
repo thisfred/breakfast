@@ -23,7 +23,7 @@ def test_roundtrip_string_should_result_in_same_ast(code):
     assert ast.unparse(source.ast) == ast.unparse(ast.parse(new_source))
 
 
-def test_i_blame_the_parens():
+def test_to_source_should_add_parentheses_around_sub_clauses_only():
     source = make_source("a = 2 - 8 + 5 * 10")
     new_source = "".join(to_source(source.ast, 0))
     assert new_source.strip() == "a = (2 - 8) + (5 * 10)"
