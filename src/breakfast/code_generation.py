@@ -258,7 +258,7 @@ def if_node(node: ast.If, level: int) -> Iterator[str]:
     yield from to_source(node.test, level)
     yield ":"
     yield from render_body(node.body, level + 1)
-    yield from render_else(node, level)
+    yield from render_else_or_elif(node, level)
 
 
 @to_source.register
@@ -594,6 +594,19 @@ def render_body(statements: Sequence[ast.AST], level: int) -> Iterator[str]:
     for statement in statements:
         yield start_line("", level)
         yield from to_source(statement, level)
+
+
+def render_else_or_elif(node: NodeWithElse, level: int) -> Iterator[str]:
+    if not node.orelse:
+        return
+    if len(node.orelse) == 1 and isinstance(orelse := node.orelse[0], ast.If):
+        yield start_line("elif ", level)
+        yield from to_source(orelse.test, level)
+        yield ":"
+        yield from render_body(orelse.body, level + 1)
+        yield from render_else_or_elif(orelse, level)
+    else:
+        yield from render_else(node, level)
 
 
 def render_else(node: NodeWithElse, level: int) -> Iterator[str]:

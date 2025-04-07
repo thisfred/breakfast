@@ -9,7 +9,14 @@ from breakfast.source import Source
 from tests.conftest import make_source
 
 
-@mark.parametrize("code", ('f"{{{2}}}"', "from .foo import bar"))
+@mark.parametrize(
+    "code",
+    (
+        'f"{{{2}}}"',
+        "from .foo import bar",
+        "if a:\n    print(a)\nelif b:\n    print(b)\nelse:    print(c)",
+    ),
+)
 def test_roundtrip_string_should_result_in_same_ast(code):
     source = make_source(code)
     new_source = "".join(to_source(source.ast, 0))
