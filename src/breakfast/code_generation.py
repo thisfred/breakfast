@@ -1,6 +1,6 @@
 import ast
 import logging
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from functools import singledispatch
 from itertools import repeat
 from typing import Protocol
@@ -75,17 +75,23 @@ def expr(node: ast.Expr, level: int) -> Iterator[str]:
 
 @to_source.register
 def bin_op(node: ast.BinOp, level: int) -> Iterator[str]:
-    yield "("
-    yield from to_source(node.left, level)
+    yield from maybe_parenthesize(node.left, level)
     yield f" {BINARY_OPERATORS[type(node.op)]} "
-    yield from to_source(node.right, level)
-    yield ")"
+    yield from maybe_parenthesize(node.right, level)
+
+
+def maybe_parenthesize(node: ast.AST, level: int) -> Iterator[str]:
+    if not isinstance(node, ast.Name | ast.Constant):
+        yield "("
+    yield from to_source(node, level)
+    if not isinstance(node, ast.Name | ast.Constant):
+        yield ")"
 
 
 @to_source.register
 def unary_op(node: ast.UnaryOp, level: int) -> Iterator[str]:
     yield f"{UNARY_OPERATORS[type(node.op)]}"
-    yield from to_source(node.operand, level)
+    yield from maybe_parenthesize(node.operand, level)
 
 
 @to_source.register
@@ -102,11 +108,12 @@ def slice_node(node: ast.Slice, level: int) -> Iterator[str]:
 
 @to_source.register
 def bool_op(node: ast.BoolOp, level: int) -> Iterator[str]:
-    yield "("
     yield from with_separators(
-        node.values, level, separator=BOOLEAN_OPERATORS[type(node.op)]
+        node.values,
+        level,
+        separator=BOOLEAN_OPERATORS[type(node.op)],
+        render_function=maybe_parenthesize,
     )
-    yield ")"
 
 
 @to_source.register
@@ -211,10 +218,10 @@ def import_from(node: ast.ImportFrom, level: int) -> Iterator[str]:
 
 @to_source.register
 def compare(node: ast.Compare, level: int) -> Iterator[str]:
-    yield from to_source(node.left, level)
+    yield from maybe_parenthesize(node.left, level)
     for op, comparator in zip(node.ops, node.comparators, strict=True):
         yield f" {COMPARISONS[type(op)]} "
-        yield from to_source(comparator, level)
+        yield from maybe_parenthesize(comparator, level)
 
 
 @to_source.register
@@ -756,13 +763,14 @@ def with_separators(
     level: int,
     include_final_separator: bool = False,
     separator: str = ", ",
+    render_function: Callable[[ast.AST, int], Iterator[str]] = to_source,
 ) -> Iterator[str]:
     for node, comma in zip(
         nodes,
         separators(nodes, include_final_separator, separator),
         strict=True,
     ):
-        yield from to_source(node, level)
+        yield from render_function(node, level)
         yield comma
 
 
