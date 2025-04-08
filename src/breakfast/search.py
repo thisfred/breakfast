@@ -1,10 +1,13 @@
 import ast
+import logging
 from collections.abc import Iterable, Iterator
 from functools import singledispatch
 from typing import Any, Protocol
 
 from breakfast.types import NodeType, Occurrence, Position, Source
 from breakfast.visitor import generic_visit
+
+logger = logging.getLogger(__name__)
 
 
 def find_nested_statements(
@@ -159,14 +162,18 @@ def find_names_in_function(
         ast=node,
         node_type=NodeType.DEFINITION,
     )
-    for arg in node.args.args:
-        yield Occurrence(
-            name=arg.arg,
-            position=source.position(arg.lineno - 1, arg.col_offset),
-            ast=arg,
-            node_type=NodeType.DEFINITION,
-        )
+    yield from find_names(node.args, source)
     yield from generic_visit(find_names, node, source)
+
+
+@find_names.register
+def find_names_in_arg(node: ast.arg, source: Source) -> Iterator[Occurrence]:
+    yield Occurrence(
+        name=node.arg,
+        position=source.position(node.lineno - 1, node.col_offset),
+        ast=node,
+        node_type=NodeType.DEFINITION,
+    )
 
 
 @find_names.register

@@ -179,6 +179,7 @@ class UsageCollector:
         for i, occurrence in enumerate(
             find_names(self.enclosing_scope.node, self.code_selection.source)
         ):
+            print(f"{occurrence=} {self.code_selection.text_range.start=}")
             if (
                 occurrence.position < self.code_selection.text_range.start
                 and occurrence.node_type is NodeType.DEFINITION

@@ -1923,6 +1923,29 @@ def test_inline_call_should_replace_completely_redundant_body_with_pass():
     )
 
 
+def test_extract_function_should_pass_keyword_only_args_as_args():
+    assert_refactors_to(
+        refactoring=ExtractFunction,
+        target='plays[performance["play_id"]]',
+        code="""
+        def statement(*, invoice, plays) -> str:
+            for performance in invoice["performances"]:
+                play = plays[performance["play_id"]]
+                print(play)
+        """,
+        expected="""
+        def statement(*, invoice, plays) -> str:
+            for performance in invoice["performances"]:
+                play = f(plays=plays, performance=performance)
+                print(play)
+
+        def f(plays, performance):
+            play = plays[performance["play_id"]]
+            return play
+        """,
+    )
+
+
 @mark.xfail
 def test_replace_with_method_object_should_create_new_class():
     # Not yet sure we need/want this.
