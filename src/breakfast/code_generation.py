@@ -521,6 +521,21 @@ def match_sequence(node: ast.MatchSequence, level: int) -> Iterator[str]:
 
 
 @to_source.register
+def match_mapping(node: ast.MatchMapping, level: int) -> Iterator[str]:
+    yield "{"
+    for key, value, comma in zip(
+        node.keys, node.patterns, separators(node.keys), strict=True
+    ):
+        if key and value:
+            yield from to_source(key, level)
+            yield ": "
+            yield from to_source(value, level)
+            yield comma
+    yield "}"
+    yield from ()
+
+
+@to_source.register
 def joined_str(node: ast.JoinedStr, level: int) -> Iterator[str]:
     strings = [
         part for value in node.values for part in to_source(value, level)
@@ -553,7 +568,14 @@ def if_exp(node: ast.IfExp, level: int) -> Iterator[str]:
 @to_source.register
 def formatted_value(node: ast.FormattedValue, level: int) -> Iterator[str]:
     conversion = FORMATTING_CONVERSIONS[node.conversion]
-    yield "".join(('f"{', *to_source(node.value, level), conversion, '}"'))
+    format_spec = (
+        ":" + "".join(to_source(node.format_spec, level)).strip('"')
+        if node.format_spec
+        else ""
+    )
+    yield "".join(
+        ('f"{', *to_source(node.value, level), format_spec, conversion, '}"')
+    )
 
 
 @to_source.register

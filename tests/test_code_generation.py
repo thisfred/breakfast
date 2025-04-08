@@ -1,5 +1,3 @@
-# Inspired by Armin Ronacher's codegen.py, but shares no code with it.
-
 import ast
 
 from pytest import mark
@@ -15,6 +13,8 @@ from tests.conftest import make_source
         'f"{{{2}}}"',
         "from .foo import bar",
         "if a:\n    print(a)\nelif b:\n    print(b)\nelse:    print(c)",
+        'f = lambda n: f"${n:,.2f}"',
+        'match play:\n    case {"type": "tragedy"}:\n        print(play)',
     ),
 )
 def test_roundtrip_string_should_result_in_same_ast(code):

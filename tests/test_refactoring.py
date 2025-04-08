@@ -1,3 +1,6 @@
+from pytest import mark
+
+from breakfast import refactoring
 from breakfast.refactoring import (
     CodeSelection,
     Edit,
@@ -1916,5 +1919,74 @@ def test_inline_call_should_replace_completely_redundant_body_with_pass():
                 is_sulfuras = item.name == SULFURAS
                 if is_sulfuras:
                     pass
+        """,
+    )
+
+
+@mark.xfail
+def test_replace_with_method_object_should_create_new_class():
+    # Not yet sure we need/want this.
+    @refactoring.register
+    class ReplaceWithMethodObject:
+        name = "replace with method object"
+
+        def __init__(
+            self,
+            code_selection: CodeSelection,
+        ):
+            self.text_range = code_selection.text_range
+            self.code_selection = code_selection
+
+        @classmethod
+        def applies_to(cls, selection: CodeSelection) -> bool:
+            return (
+                selection.text_range.end > selection.text_range.start
+                and selection.in_method
+                and not selection.in_static_method
+            )
+
+        @property
+        def edits(self) -> tuple[Edit, ...]:
+            return ()
+
+    assert_refactors_to(
+        refactoring=ReplaceWithMethodObject,
+        target="gamma",
+        code="""
+        class Account:
+
+            def gamma(self, input_val: int, quantity: int, year_to_date: int) -> int:
+                important_value1 = input_val * quantity + self.delta()
+                important_value2 = input_val * year_to_date + 100
+                if year_to_date - important_value1 > 100:
+                    important_value2 -= 20
+                important_value3 = important_value2 * 7
+                return important_value3 - 2 * important_value1
+        """,
+        expected="""
+        from dataclasses import dataclass
+
+        class Account:
+            def gamma(self, input_val: int, quantity: int, year_to_date: int):
+                return Gamma(self, input_val, quantity, year_to_date).compute()
+
+        @dataclass
+        class Gamma:
+            account: Account
+            input_val: int
+            quantity: int
+            year_to_date: int
+            important_value1: int = 0
+            important_value2: int = 0
+            important_value3: int = 0
+
+            def compute(self) -> int:
+                self.important_value1 = self.input_val * self.quantity + self.account.delta()
+                self.important_value2 = self.input_val * self.year_to_date + 100
+                if self.year_to_date - self.important_value1 > 100:
+                    self.important_value2 -= 20
+                self.important_value3 = self.important_value2 * 7
+                return self.important_value3 - 2 * self.important_value1
+
         """,
     )

@@ -218,6 +218,7 @@ class Refactoring(Protocol):
     name: str
 
     def __init__(self, selection: CodeSelection): ...
+
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool: ...
 
