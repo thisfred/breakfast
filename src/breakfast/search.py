@@ -162,7 +162,6 @@ def find_names_in_function(
         ast=node,
         node_type=NodeType.DEFINITION,
     )
-    yield from find_names(node.args, source)
     yield from generic_visit(find_names, node, source)
 
 
