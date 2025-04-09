@@ -1,6 +1,5 @@
 from pytest import mark
 
-from breakfast import refactoring
 from breakfast.refactoring import (
     CodeSelection,
     Edit,
@@ -1946,10 +1945,269 @@ def test_extract_function_should_pass_keyword_only_args_as_args():
     )
 
 
+def test_inline_callable_should_work_with_newline_literals_in_strings():
+    assert_refactors_to(
+        refactoring=InlineCall,
+        target="function",
+        occurrence=2,
+        code=r"""
+        def function(a):
+            while a is "":
+                a = "\n"
+
+            return a or True
+
+        b = function("\n")
+        """,
+        expected=r"""
+        while a is "":
+            a = "\n"
+
+        result = a or True
+        b = result
+        """,
+    )
+
+
+@mark.xfail
+def test_encapsulate_record_should_create_dataclass():
+    class EncapsulateRecord:
+        name = "encapsulate record"
+
+        def __init__(
+            self,
+            code_selection: CodeSelection,
+        ):
+            self.text_range = code_selection.text_range
+            self.code_selection = code_selection
+
+        @classmethod
+        def applies_to(cls, selection: CodeSelection) -> bool:
+            return False
+
+        @property
+        def edits(self) -> tuple[Edit, ...]:
+            return ()
+
+    assert_refactors_to(
+        refactoring=EncapsulateRecord,
+        target='{"name":',
+        code=r"""
+        organization = {"name": "Acme Gooseberries", "country": "GB"}
+
+        result = f"<h1>{organization['name']}</h1>"
+
+        organization["name"] = "new name"
+        """,
+        expected=r"""
+        from dataclasses import dataclass
+
+        @dataclass
+        class Organization:
+            name = None
+            country = None
+
+        organization = Organization(name="Acme Gooseberries", country="GB")
+
+        result = f"<h1>{organization.name}</h1>"
+
+        organization.name = "new name"
+        """,
+    )
+
+
+@mark.xfail
+def test_remove_parameter_should_remove_unused_parameter():
+    class RemoveParameter:
+        name = "remove parameter"
+
+        def __init__(
+            self,
+            code_selection: CodeSelection,
+        ):
+            self.text_range = code_selection.text_range
+            self.code_selection = code_selection
+
+        @classmethod
+        def applies_to(cls, selection: CodeSelection) -> bool:
+            return False
+
+        @property
+        def edits(self) -> tuple[Edit, ...]:
+            return ()
+
+    assert_refactors_to(
+        refactoring=RemoveParameter,
+        target="b",
+        code=r"""
+        def function(a, b, c):
+            return a or c
+
+        d = function(1, 2, 3)
+        e = function(a=1, c=3, b=2)
+        """,
+        expected=r"""
+        def function(a, c):
+            return a or c
+
+        d = function(1, 3)
+        e = function(a=1, c=3)
+        """,
+    )
+
+
+@mark.xfail
+def test_add_parameter_should_pass_none_in_callers():
+    class AddParameter:
+        name = "add parameter"
+
+        def __init__(
+            self,
+            code_selection: CodeSelection,
+        ):
+            self.text_range = code_selection.text_range
+            self.code_selection = code_selection
+
+        @classmethod
+        def applies_to(cls, selection: CodeSelection) -> bool:
+            return False
+
+        @property
+        def edits(self) -> tuple[Edit, ...]:
+            return ()
+
+    assert_refactors_to(
+        refactoring=AddParameter,
+        target="b",
+        code=r"""
+        def function(a, b):
+            return a or b
+
+        d = function(1, 2)
+        """,
+        expected=r"""
+        def function(a, b, p):
+            return a or b
+
+        d = function(1, 2, p=None)
+        """,
+    )
+
+
+@mark.xfail
+def test_extract_class_should_create_class():
+    class ExtractClass:
+        name = "extract class"
+
+        def __init__(
+            self,
+            code_selection: CodeSelection,
+        ):
+            self.text_range = code_selection.text_range
+            self.code_selection = code_selection
+
+        @classmethod
+        def applies_to(cls, selection: CodeSelection) -> bool:
+            return False
+
+        @property
+        def edits(self) -> tuple[Edit, ...]:
+            return ()
+
+    assert_refactors_to(
+        refactoring=ExtractClass,
+        target=("self._office_area_code", "= office_number"),
+        code=r"""
+        class Person:
+            def __init__(self, office_area_code, office_number):
+                self._office_area_code = office_area_code
+                self._office_number = office_number
+
+            def office_area_code(self):
+                return self._office_area_code
+
+            def office_number(self):
+                return self._office_number
+        """,
+        expected=r"""
+        from dataclasses import dataclass
+
+        @dataclass
+        class C:
+            office_area_code = None
+            office_number = None
+
+        class Person:
+            def __init__(self, office_area_code, office_number):
+                self.c = C(
+                    office_area_code=office_area_code,
+                    office_number=office_number
+                )
+
+            def office_area_code(self):
+                return self.c.office_area_code
+
+            def office_number(self):
+                return self.c.office_number
+        """,
+    )
+
+
+@mark.xfail
+def test_inline_class_should_move_properties():
+    class InlineClass:
+        name = "inline class"
+
+        def __init__(
+            self,
+            code_selection: CodeSelection,
+        ):
+            self.text_range = code_selection.text_range
+            self.code_selection = code_selection
+
+        @classmethod
+        def applies_to(cls, selection: CodeSelection) -> bool:
+            return False
+
+        @property
+        def edits(self) -> tuple[Edit, ...]:
+            return ()
+
+    assert_refactors_to(
+        refactoring=InlineClass,
+        target=("self._office_area_code", "= office_number"),
+        code=r"""
+        class Person:
+            def __init__(self, office_area_code, office_number):
+                self.c = C(
+                    office_area_code=office_area_code,
+                    office_number=office_number
+                )
+
+            def office_area_code(self):
+                return self.c.office_area_code
+
+            def office_number(self):
+                return self.c.office_number
+
+        """,
+        expected=r"""
+        class Person:
+            def __init__(self, office_area_code, office_number):
+                self._office_area_code = office_area_code
+                self._office_number = office_number
+
+            def office_area_code(self):
+                return self._office_area_code
+
+            def office_number(self):
+                return self._office_number
+        """,
+    )
+
+
 @mark.xfail
 def test_replace_with_method_object_should_create_new_class():
-    # Not yet sure we need/want this.
-    @refactoring.register
     class ReplaceWithMethodObject:
         name = "replace with method object"
 
@@ -2011,29 +2269,5 @@ def test_replace_with_method_object_should_create_new_class():
                 self.important_value3 = self.important_value2 * 7
                 return self.important_value3 - 2 * self.important_value1
 
-        """,
-    )
-
-
-def test_inline_callable_should_work_with_newline_literals_in_strings():
-    assert_refactors_to(
-        refactoring=InlineCall,
-        target="function",
-        occurrence=2,
-        code=r"""
-        def function(a):
-            while a is "":
-                a = "\n"
-
-            return a or True
-
-        b = function("\n")
-        """,
-        expected=r"""
-        while a is "":
-            a = "\n"
-
-        result = a or True
-        b = result
         """,
     )

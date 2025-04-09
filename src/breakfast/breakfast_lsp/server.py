@@ -123,7 +123,6 @@ def find_identifier_end(line: str, position: Position) -> int:
 @LSP_SERVER.feature(INITIALIZE)
 def initialize(server: LanguageServer, params: InitializeParams) -> None:
     logger.debug(f"{server.workspace.root_uri=}")
-    logger.debug(f"{server.workspace.text_documents=}")
 
 
 @LSP_SERVER.feature(TEXT_DOCUMENT_PREPARE_RENAME)
@@ -267,9 +266,7 @@ def code_action(
         selection = CodeSelection(text_range=TextRange(start, end))
 
         for refactoring in selection.refactorings:
-            logger.debug(f"getting edits for {refactoring}")
             edits = get_edits(refactoring(selection), document_uri, version)
-            logger.debug(f"got edits for {refactoring}: {edits}")
             if edits:
                 actions.append(
                     CodeAction(
