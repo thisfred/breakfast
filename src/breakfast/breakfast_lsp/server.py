@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 BREAKFAST_DEBUG = bool(os.environ.get("BREAKFAST_DEBUG", False))
 if BREAKFAST_DEBUG:
     log_file = Path(__file__).parent.parent / "breakfast-lsp.log"
-    logging.basicConfig(filename=log_file, filemode="w", level=logging.INFO)
+    logging.basicConfig(filename=log_file, filemode="w", level=logging.DEBUG)
 
 MAX_WORKERS = 2
 LSP_SERVER = LanguageServer(
@@ -266,30 +266,38 @@ def code_action(
         )
         selection = CodeSelection(text_range=TextRange(start, end))
 
-        for new_refactoring in selection.refactorings:
-            actions.append(
-                CodeAction(
-                    title=f"breakfast: {new_refactoring.name}",
-                    kind=CodeActionKind.RefactorExtract
-                    if "extract" in new_refactoring.name
-                    else CodeActionKind.Refactor,
-                    data=document_uri,
-                    edit=get_edits(
-                        new_refactoring(selection), document_uri, version
-                    ),
-                    diagnostics=[],
+        for refactoring in selection.refactorings:
+            logger.debug(f"getting edits for {refactoring}")
+            edits = get_edits(refactoring(selection), document_uri, version)
+            logger.debug(f"got edits for {refactoring}: {edits}")
+            if edits:
+                actions.append(
+                    CodeAction(
+                        title=f"breakfast: {refactoring.name}",
+                        kind=CodeActionKind.RefactorExtract
+                        if "extract" in refactoring.name
+                        else CodeActionKind.Refactor,
+                        data=document_uri,
+                        edit=edits,
+                        diagnostics=[],
+                    )
                 )
-            )
 
+    logger.debug(f"Found {len(actions)} available refactoring actions.")
     return actions
 
 
 def get_edits(
     refactoring: Refactoring, document_uri: str, version: None
-) -> WorkspaceEdit:
+) -> WorkspaceEdit | None:
+    if not refactoring.edits:
+        logger.debug(f"Refactoring: {refactoring}. No edits found.")
+        return None
+
     text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(
         refactoring.edits
     )
+
     document_changes: list[
         TextDocumentEdit | CreateFile | RenameFile | DeleteFile
     ] = [

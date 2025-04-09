@@ -2013,3 +2013,27 @@ def test_replace_with_method_object_should_create_new_class():
 
         """,
     )
+
+
+def test_inline_callable_should_work_with_newline_literals_in_strings():
+    assert_refactors_to(
+        refactoring=InlineCall,
+        target="function",
+        occurrence=2,
+        code=r"""
+        def function(a):
+            while a is "":
+                a = "\n"
+
+            return a or True
+
+        b = function("\n")
+        """,
+        expected=r"""
+        while a is "":
+            a = "\n"
+
+        result = a or True
+        b = result
+        """,
+    )

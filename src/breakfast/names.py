@@ -186,7 +186,6 @@ def generic_visit(
 
     https://github.com/python/cpython/blob/master/Lib/ast.py
     """
-    logger.debug(f"{node!r} not matched")
     for _, value in ast.iter_fields(node):
         if isinstance(value, list):
             yield from visit_all(value, source, graph, state)

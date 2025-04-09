@@ -325,7 +325,6 @@ class ScopeGraph:
                 continue
             seen.add((node, stack))
 
-            logger.info("node: %r", node)
             if node.action:
                 stack = node.action(stack)
 

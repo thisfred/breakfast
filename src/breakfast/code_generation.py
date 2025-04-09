@@ -1,5 +1,6 @@
 import ast
 import logging
+import sys
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from functools import singledispatch
 from itertools import repeat
@@ -567,7 +568,17 @@ def if_exp(node: ast.IfExp, level: int) -> Iterator[str]:
 
 @to_source.register
 def formatted_value(node: ast.FormattedValue, level: int) -> Iterator[str]:
-    conversion = FORMATTING_CONVERSIONS[node.conversion]
+    try:
+        conversion = FORMATTING_CONVERSIONS[node.conversion]
+    except AttributeError:
+        conversion = ""
+        logger.warning(
+            f"{ast.dump(node)=} did not have conversion\npython version: {sys.version}"
+        )
+    except KeyError:
+        conversion = ""
+        logger.warning(f"{node.conversion=} not handled")
+
     format_spec = (
         ":" + "".join(to_source(node.format_spec, level)).strip('"')
         if node.format_spec
