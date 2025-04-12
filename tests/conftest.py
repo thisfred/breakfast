@@ -57,6 +57,7 @@ def assert_refactors_to(
     source = make_source(code) if isinstance(code, str) else code
     selection_range = range_for(target, source, occurrence)
     selection = CodeSelection(selection_range)
+    assert refactoring.applies_to(selection)
     edits = refactoring(selection).edits
     actual = apply_edits(source=source, edits=edits)
     expected = dedent(expected).strip()

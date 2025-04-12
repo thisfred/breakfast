@@ -40,7 +40,7 @@ from breakfast.types import (
 
 logger = logging.getLogger(__name__)
 
-FOUR_SPACES = "    "
+INDENTATION = "    "
 NEWLINE = "\n"
 STATIC_METHOD = "staticmethod"
 CLASS_METHOD = "classmethod"
@@ -179,7 +179,6 @@ class UsageCollector:
         for i, occurrence in enumerate(
             find_names(self.enclosing_scope.node, self.code_selection.source)
         ):
-            print(f"{occurrence=} {self.code_selection.text_range.start=}")
             if (
                 occurrence.position < self.code_selection.text_range.start
                 and occurrence.node_type is NodeType.DEFINITION
@@ -258,42 +257,26 @@ class ExtractFunction:
         enclosing_scope: ScopeWithRange,
         start_of_scope: Position,
     ) -> int:
-        new_level = start_of_scope.column // 4
-        if not isinstance(enclosing_scope.node, ast.Module):
-            match self.code_selection.text_range.enclosing_scopes:
-                case [
-                    NodeWithRange(node=ast.Module()),
-                    NodeWithRange(node=ast.ClassDef()),
-                    *_,
-                ]:
-                    new_level = 0
+        if isinstance(enclosing_scope.node, ast.Module | ast.FunctionDef):
+            insert_position = self.code_selection.source.node_position(
+                enclosing_scope.node.body[0]
+            )
+        else:
+            insert_position = self.code_selection.text_range.start.line.start
+
+        new_level = insert_position.column // 4
         return new_level
 
     def get_insert_position(
         self,
         enclosing_scope: ScopeWithRange,
     ) -> Position:
-        if isinstance(enclosing_scope.node, ast.Module):
-            insert_position = self.code_selection.text_range.start.line.start
-        else:
-            match self.code_selection.text_range.enclosing_scopes:
-                case (
-                    [
-                        NodeWithRange(node=ast.Module()),
-                        NodeWithRange(node=ast.ClassDef()),
-                        *_,
-                    ] as matched
-                ):
-                    last_line = matched[1].range.end.line
-                case _:
-                    last_line = self.code_selection.text_range.enclosing_scopes[
-                        -1
-                    ].range.end.line
-            insert_position = (
-                next_line.start
-                if (next_line := last_line.next)
-                else last_line.end
+        if isinstance(enclosing_scope.node, ast.Module | ast.FunctionDef):
+            insert_position = self.code_selection.source.node_position(
+                enclosing_scope.node.body[0]
             )
+        else:
+            insert_position = self.code_selection.text_range.start.line.start
         return insert_position
 
     def make_decorators(self, usages: UsageCollector) -> list[ast.expr]:
@@ -441,7 +424,7 @@ def make_extract_callable_edits(
     new_level = refactoring.compute_new_level(
         enclosing_scope=enclosing_scope, start_of_scope=start_of_scope
     )
-    definition_text = f"{NEWLINE}{"".join(to_source(callable_definition, level=new_level))}{NEWLINE}"
+    definition_text = f"{NEWLINE}{"".join(to_source(callable_definition, level=new_level))}{NEWLINE}{INDENTATION * new_level}"
     has_returns = any(
         found
         for node in refactoring.code_selection.text_range.statements
@@ -1078,3 +1061,31 @@ class SlideStatementsDown:
             return first_usage_after_range.start_of_line
 
         return None
+
+
+@register
+class EncapsulateRecord:
+    name = "encapsulate record"
+
+    def __init__(
+        self,
+        code_selection: CodeSelection,
+    ):
+        self.text_range = code_selection.text_range
+        self.selection = code_selection
+
+    @classmethod
+    def applies_to(cls, selection: CodeSelection) -> bool:
+        return bool(selection.text_range.enclosing_nodes_by_type(ast.Dict))
+
+    @property
+    def edits(self) -> tuple[Edit, ...]:
+        # dict_node = self.selection.text_range.enclosing_nodes_by_type(ast.Dict)[
+        #     -1
+        # ]
+        # mapping = mapping_from(dict_node)
+        # edits = replace_record(dict_node, mapping)
+        # assignment = find_assignment(dict_node)
+        # edits = (*edits, replace_usages(assignment, dict_node, mapping))
+        # print(ast.dump(dict_node.node))
+        return ()
