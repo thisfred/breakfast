@@ -9,6 +9,7 @@ from breakfast.refactoring import (
     ExtractVariable,
     InlineCall,
     InlineVariable,
+    MoveFunctionToOuterScope,
     SlideStatementsDown,
     SlideStatementsUp,
 )
@@ -1947,6 +1948,32 @@ def test_inline_callable_should_work_with_newline_literals_in_strings():
 
         result = a or True
         b = result
+        """,
+    )
+
+
+def test_move_function_should_move_function_defintion_to_next_enclosing_scope():
+    assert_refactors_to(
+        refactoring=MoveFunctionToOuterScope,
+        target="function",
+        code=r"""
+        def statement(*, invoice, plays) -> str:
+            def function(plays, performance):
+                play = plays[performance["play_id"]]
+                return play
+            for performance in invoice["performances"]:
+                play = f(plays=plays, performance=performance)
+                print(play)
+        """,
+        expected=r"""
+        def statement(*, invoice, plays) -> str:
+            for performance in invoice["performances"]:
+                play = f(plays=plays, performance=performance)
+                print(play)
+
+        def function(plays, performance):
+            play = plays[performance["play_id"]]
+            return play
         """,
     )
 

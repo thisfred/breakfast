@@ -1089,3 +1089,51 @@ class EncapsulateRecord:
         # edits = (*edits, replace_usages(assignment, dict_node, mapping))
         # print(ast.dump(dict_node.node))
         return ()
+
+
+@register
+class MoveFunctionToOuterScope:
+    name = "move function to outer scope"
+
+    def __init__(
+        self,
+        code_selection: CodeSelection,
+    ):
+        self.text_range = code_selection.text_range
+        self.selection = code_selection
+
+    @classmethod
+    def applies_to(cls, selection: CodeSelection) -> bool:
+        return len(selection.text_range.enclosing_scopes) >= 3 and isinstance(
+            selection.text_range.enclosing_scopes[-1].node,
+            ast.FunctionDef | ast.AsyncFunctionDef,
+        )
+
+    @property
+    def edits(self) -> tuple[Edit, ...]:
+        v = self.selection.text_range.enclosing_scopes[-1]
+        result: tuple[Edit, ...] = (Edit(v.range, ""),)
+
+        i = len(self.selection.text_range.enclosing_scopes) - 3
+        while i >= 0 and isinstance(
+            (scope := self.selection.text_range.enclosing_scopes[i]),
+            ast.ClassDef,
+        ):
+            i -= 1
+
+        if not scope:
+            return ()
+        insert_position = (
+            scope.range.end.line.next.start
+            if scope.range.end.line.next
+            else scope.range.end.line.end
+        )
+        result = (
+            *result,
+            Edit(
+                insert_position.as_range,
+                "".join(to_source(v.node, level=0)),
+            ),
+        )
+
+        return result
