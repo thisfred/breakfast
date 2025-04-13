@@ -1125,33 +1125,36 @@ class EncapsulateRecord:
             ],
             type_ignores=[],
         )
-        edit1 = Edit(
+        definition = Edit(
             enclosing_assignment.range.start.as_range,
             "".join(to_source(fake_module, level=0)) + NEWLINE,
         )
-
-        assignment = ast.Assign(
-            targets=enclosing_assignment.node.targets,
-            value=ast.Call(
-                func=ast.Name(id=class_name),
-                args=[],
-                keywords=[
-                    ast.keyword(arg=key.value, value=value)
-                    for key, value in mapping.items()
-                    if isinstance(key, ast.Constant)
-                ],
+        assignment = Edit(
+            enclosing_assignment.range,
+            "".join(
+                to_source(
+                    ast.Assign(
+                        targets=enclosing_assignment.node.targets,
+                        value=ast.Call(
+                            func=ast.Name(id=class_name),
+                            args=[],
+                            keywords=[
+                                ast.keyword(arg=key.value, value=value)
+                                for (key, value) in mapping.items()
+                                if isinstance(key, ast.Constant)
+                            ],
+                        ),
+                    ),
+                    level=0,
+                )
             ),
         )
-        edit2 = Edit(
-            enclosing_assignment.range, "".join(to_source(assignment, level=0))
-        )
-        # TODO: handle all targets
         target = enclosing_assignment.node.targets[0]
         usages = UsageCollector(
             self.selection, self.text_range.enclosing_scopes[-1]
         )
 
-        reference_edits = []
+        references = []
         if isinstance(target, ast.Name):
             for occurrence in usages.used_after_extraction[target.id]:
                 subscripts = (
@@ -1161,7 +1164,7 @@ class EncapsulateRecord:
                 )
                 node = subscripts[0].node
                 if isinstance(node.slice, ast.Constant):
-                    reference_edits.append(
+                    references.append(
                         Edit(
                             subscripts[0].range,
                             "".join(
@@ -1175,12 +1178,7 @@ class EncapsulateRecord:
                             ),
                         )
                     )
-
-        # edits = replace_record(dict_node, mapping)
-        # assignment = find_assignment(dict_node)
-        # edits = (*edits, replace_usages(assignment, dict_node, mapping))
-        # print(ast.dump(dict_node.node))
-        return (edit1, edit2, *reference_edits)
+        return (definition, assignment, *references)
 
     def make_class_name(self, assignment: ast.Assign) -> str | None:
         if not (assignment and isinstance(assignment.targets[0], ast.Name)):
