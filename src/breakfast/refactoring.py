@@ -1113,13 +1113,7 @@ class MoveFunctionToOuterScope:
     def edits(self) -> tuple[Edit, ...]:
         def target_scope(
             selection: CodeSelection,
-        ) -> (
-            NodeWithRange[ast.Module]
-            | NodeWithRange[ast.ClassDef]
-            | NodeWithRange[ast.FunctionDef]
-            | NodeWithRange[ast.AsyncFunctionDef]
-            | None
-        ):
+        ) -> ScopeWithRange | None:
             scope = None
             i = (len(selection.text_range.enclosing_scopes)) - 3
             while (i >= 0) and (
@@ -1133,6 +1127,7 @@ class MoveFunctionToOuterScope:
 
         enclosing_scope = self.selection.text_range.enclosing_scopes[-1]
         result: tuple[Edit, ...] = (Edit(enclosing_scope.range, ""),)
+        print(f"{enclosing_scope.range=}")
 
         scope = target_scope(selection=self.selection)
         if not scope:
@@ -1143,6 +1138,7 @@ class MoveFunctionToOuterScope:
             if scope.range.end.line.next
             else scope.range.end.line.end
         )
+        print(f"{insert_position=}")
         result = (
             *result,
             Edit(

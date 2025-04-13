@@ -2493,3 +2493,47 @@ def test_replace_with_method_object_should_create_new_class():
 
         """,
     )
+
+
+def test_move_function_to_outer_scope_should_move_selection_including_indentation():
+    assert_refactors_to(
+        refactoring=MoveFunctionToOuterScope,
+        target=("        def target_scope", "            return scope"),
+        code="""
+        class C:
+            @property
+            def edits(self) -> tuple[Edit, ...]:
+                def target_scope(
+                    selection: CodeSelection,
+                ) -> ScopeWithRange | None:
+                    scope = None
+                    i = (len(selection.text_range.enclosing_scopes)) - 3
+                    while (i >= 0) and (
+                        isinstance(
+                            (scope := selection.text_range.enclosing_scopes[i]),
+                            ast.ClassDef,
+                        )
+                    ):
+                        i -= 1
+                    return scope
+                scope = target_scope(selection=self.selection)
+        """,
+        expected="""
+        class C:
+            @property
+            def edits(self) -> tuple[Edit, ...]:
+                scope = target_scope(selection=self.selection)
+
+        def target_scope(selection: CodeSelection) -> ScopeWithRange | None:
+            scope = None
+            i = (len(selection.text_range.enclosing_scopes)) - 3
+            while (i >= 0) and (
+                isinstance(
+                    (scope := selection.text_range.enclosing_scopes[i]),
+                    ast.ClassDef,
+                )
+            ):
+                i -= 1
+            return scope
+        """,
+    )

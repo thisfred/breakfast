@@ -119,6 +119,31 @@ class TextRange:
     def source(self) -> types.Source:
         return self.start.source
 
+    @property
+    def stripped(self) -> types.TextRange:
+        lines = self.text.split("\n")
+
+        start = self.start
+        for line in lines:
+            if line.lstrip() == line:
+                break
+            if line.strip():
+                start += len(line) - len(line.lstrip())
+                break
+            else:
+                start = start.line.next.start if start.line.next else start
+        end = self.end
+
+        for line in lines[::-1]:
+            if line.rstrip() == line:
+                break
+            if line.strip():
+                end -= len(line) - len(line.rstrip())
+                break
+            else:
+                end = end.line.previous.end if end.line.previous else end
+        return start.to(end)
+
     @cached_property
     def names(self) -> Sequence[types.Occurrence]:
         names = []
@@ -167,13 +192,14 @@ class TextRange:
     def enclosing_nodes(self) -> Sequence[types.NodeWithRange[ast.AST]]:
         source = self.source
         scopes = []
+        stripped = self.stripped
         for node in get_nodes(source.ast):
             if hasattr(node, "end_lineno"):
                 if source.node_position(node) > self.end:
                     break
                 if (
                     node_range := source.node_range(node)
-                ) and self in node_range:
+                ) and stripped in node_range:
                     scopes.append(types.NodeWithRange(node, node_range))
             elif isinstance(node, ast.Module):
                 scopes.append(
