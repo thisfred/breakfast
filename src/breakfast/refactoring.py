@@ -8,7 +8,7 @@ from collections.abc import (
     MutableMapping,
     Sequence,
 )
-from functools import cached_property
+from functools import cached_property, singledispatch
 from itertools import dropwhile, takewhile
 from typing import ClassVar, Protocol
 
@@ -1072,6 +1072,7 @@ class EncapsulateRecord:
         code_selection: CodeSelection,
     ):
         self.text_range = code_selection.text_range
+        self.source = self.text_range.start.source
         self.selection = code_selection
 
     @classmethod
@@ -1080,15 +1081,117 @@ class EncapsulateRecord:
 
     @property
     def edits(self) -> tuple[Edit, ...]:
-        # dict_node = self.selection.text_range.enclosing_nodes_by_type(ast.Dict)[
-        #     -1
-        # ]
-        # mapping = mapping_from(dict_node)
+        enclosing_assignment = self.selection.text_range.enclosing_assignment
+        if enclosing_assignment is None:
+            logger.warning("Dictionary value not assigned to a name.")
+            return ()
+
+        dict_node = self.selection.text_range.enclosing_nodes_by_type(ast.Dict)[
+            -1
+        ]
+        mapping = dict(
+            zip(dict_node.node.keys, dict_node.node.values, strict=True)
+        )
+
+        class_name = self.make_class_name(enclosing_assignment.node) or "Record"
+        fake_module = ast.Module(
+            body=[
+                ast.ImportFrom(
+                    module="dataclasses",
+                    names=[ast.alias(name="dataclass")],
+                    level=0,
+                ),
+                ast.ClassDef(
+                    name=class_name,
+                    body=[
+                        ast.AnnAssign(
+                            target=ast.Name(id=key.value),
+                            annotation=annotation,
+                            simple=1,
+                        )
+                        if (annotation := type_from(value))
+                        else ast.Assign(
+                            targets=[ast.Name(id=key.value)],
+                            value=ast.Constant(value=None),
+                        )
+                        for key, value in mapping.items()
+                        if isinstance(key, ast.Constant)
+                    ],
+                    decorator_list=[ast.Name(id="dataclass")],
+                    bases=[],
+                    keywords=[],
+                    type_params=[],
+                ),
+            ],
+            type_ignores=[],
+        )
+        edit1 = Edit(
+            enclosing_assignment.range.start.as_range,
+            "".join(to_source(fake_module, level=0)) + NEWLINE,
+        )
+
+        assignment = ast.Assign(
+            targets=enclosing_assignment.node.targets,
+            value=ast.Call(
+                func=ast.Name(id=class_name),
+                args=[],
+                keywords=[
+                    ast.keyword(arg=key.value, value=value)
+                    for key, value in mapping.items()
+                    if isinstance(key, ast.Constant)
+                ],
+            ),
+        )
+        edit2 = Edit(
+            enclosing_assignment.range, "".join(to_source(assignment, level=0))
+        )
+        # TODO: handle all targets
+        target = enclosing_assignment.node.targets[0]
+        usages = UsageCollector(
+            self.selection, self.text_range.enclosing_scopes[-1]
+        )
+
+        reference_edits = []
+        if isinstance(target, ast.Name):
+            for occurrence in usages.used_after_extraction[target.id]:
+                subscripts = (
+                    occurrence.position.as_range.enclosing_nodes_by_type(
+                        ast.Subscript
+                    )
+                )
+                node = subscripts[0].node
+                if isinstance(node.slice, ast.Constant):
+                    reference_edits.append(
+                        Edit(
+                            subscripts[0].range,
+                            "".join(
+                                to_source(
+                                    ast.Attribute(
+                                        value=node.value,
+                                        attr=node.slice.value,
+                                    ),
+                                    level=0,
+                                ),
+                            ),
+                        )
+                    )
+
         # edits = replace_record(dict_node, mapping)
         # assignment = find_assignment(dict_node)
         # edits = (*edits, replace_usages(assignment, dict_node, mapping))
         # print(ast.dump(dict_node.node))
-        return ()
+        return (edit1, edit2, *reference_edits)
+
+    def make_class_name(self, assignment: ast.Assign) -> str | None:
+        if not (assignment and isinstance(assignment.targets[0], ast.Name)):
+            return None
+
+        var_name = assignment.targets[0].id
+        return to_class_name(var_name)
+
+
+def to_class_name(var_name: str) -> str:
+    return "".join(s.lower().title() for s in var_name.split("_"))
 
 
 @register
@@ -1111,26 +1214,14 @@ class MoveFunctionToOuterScope:
 
     @property
     def edits(self) -> tuple[Edit, ...]:
-        def target_scope(
-            selection: CodeSelection,
-        ) -> ScopeWithRange | None:
-            scope = None
-            i = (len(selection.text_range.enclosing_scopes)) - 3
-            while (i >= 0) and (
-                isinstance(
-                    (scope := selection.text_range.enclosing_scopes[i]),
-                    ast.ClassDef,
-                )
-            ):
-                i -= 1
-            return scope
-
         enclosing_scope = self.selection.text_range.enclosing_scopes[-1]
         result: tuple[Edit, ...] = (Edit(enclosing_scope.range, ""),)
-        print(f"{enclosing_scope.range=}")
 
-        scope = target_scope(selection=self.selection)
-        if not scope:
+        if not (
+            scope := self.closest_enclosing_non_class_scope(
+                selection=self.selection
+            )
+        ):
             return ()
 
         insert_position = (
@@ -1138,7 +1229,6 @@ class MoveFunctionToOuterScope:
             if scope.range.end.line.next
             else scope.range.end.line.end
         )
-        print(f"{insert_position=}")
         result = (
             *result,
             Edit(
@@ -1148,3 +1238,25 @@ class MoveFunctionToOuterScope:
         )
 
         return result
+
+    @staticmethod
+    def closest_enclosing_non_class_scope(
+        selection: CodeSelection,
+    ) -> ScopeWithRange | None:
+        scope = None
+        i = len(selection.text_range.enclosing_scopes) - 3
+        while i >= 0 and isinstance(
+            (scope := selection.text_range.enclosing_scopes[i]), ast.ClassDef
+        ):
+            i -= 1
+        return scope
+
+
+@singledispatch
+def type_from(node: ast.AST) -> ast.expr | None:
+    return None
+
+
+@type_from.register
+def type_from_constant(node: ast.Constant) -> ast.expr | None:
+    return ast.Name(id=type(node.value).__name__)

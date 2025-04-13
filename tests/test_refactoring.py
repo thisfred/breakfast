@@ -2209,7 +2209,6 @@ def test_replace_inheritance_should_move_superclass_to_init():
     )
 
 
-@mark.xfail
 def test_encapsulate_record_should_create_dataclass():
     assert_refactors_to(
         refactoring=EncapsulateRecord,
