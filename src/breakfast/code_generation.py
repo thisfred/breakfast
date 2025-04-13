@@ -1,7 +1,7 @@
 import ast
 import logging
 import sys
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from functools import singledispatch
 from itertools import repeat
 from typing import Protocol
@@ -40,6 +40,31 @@ BINARY_OPERATORS = {
     ast.RShift: ">>",
     ast.Sub: "-",
 }
+
+PRECEDENCE: dict[type[ast.AST], int] = {
+    ast.Await: 0,
+    ast.Pow: 1,
+    ast.UAdd: 2,
+    ast.USub: 2,
+    ast.Invert: 2,
+    ast.Mult: 3,
+    ast.MatMult: 3,
+    ast.Div: 3,
+    ast.FloorDiv: 3,
+    ast.Mod: 3,
+    ast.Add: 4,
+    ast.Sub: 4,
+    ast.LShift: 5,
+    ast.RShift: 5,
+    ast.BitAnd: 6,
+    ast.BitXor: 7,
+    ast.BitOr: 8,
+    ast.Compare: 9,
+    ast.Not: 10,
+    ast.And: 11,
+    ast.Or: 12,
+}
+
 UNARY_OPERATORS = {
     ast.UAdd: "+",
     ast.USub: "-",
@@ -56,6 +81,16 @@ class NodeWithElse(Protocol):
 
 def unparse(node: ast.AST) -> str:
     return "".join(to_source(node, level=0)).strip()
+
+
+@singledispatch
+def get_precedence(node: ast.AST) -> int | None:
+    return PRECEDENCE.get(type(node))
+
+
+@get_precedence.register
+def in_op(node: ast.BinOp | ast.BoolOp | ast.UnaryOp) -> int | None:
+    return get_precedence(node.op)
 
 
 @singledispatch
@@ -76,23 +111,33 @@ def expr(node: ast.Expr, level: int) -> Iterator[str]:
 
 @to_source.register
 def bin_op(node: ast.BinOp, level: int) -> Iterator[str]:
-    yield from maybe_parenthesize(node.left, level)
+    yield from maybe_parenthesize(node.left, node.op, level)
     yield f" {BINARY_OPERATORS[type(node.op)]} "
-    yield from maybe_parenthesize(node.right, level)
+    yield from maybe_parenthesize(node.right, node.op, level)
 
 
-def maybe_parenthesize(node: ast.AST, level: int) -> Iterator[str]:
-    if not isinstance(node, ast.Name | ast.Constant):
+def maybe_parenthesize(node: ast.AST, op: ast.AST, level: int) -> Iterator[str]:
+    node_precedence = get_precedence(node)
+    op_precedence = get_precedence(op)
+    parenthesize = (
+        node_precedence is not None
+        and op_precedence is not None
+        and node_precedence > op_precedence
+    )
+    print(
+        f"{type(node)=}: {PRECEDENCE.get(type(node))=}, {type(op)=}: {PRECEDENCE.get(type(op))=}"
+    )
+    if parenthesize:
         yield "("
     yield from to_source(node, level)
-    if not isinstance(node, ast.Name | ast.Constant):
+    if parenthesize:
         yield ")"
 
 
 @to_source.register
 def unary_op(node: ast.UnaryOp, level: int) -> Iterator[str]:
     yield f"{UNARY_OPERATORS[type(node.op)]}"
-    yield from maybe_parenthesize(node.operand, level)
+    yield from maybe_parenthesize(node.operand, node.op, level)
 
 
 @to_source.register
@@ -109,12 +154,11 @@ def slice_node(node: ast.Slice, level: int) -> Iterator[str]:
 
 @to_source.register
 def bool_op(node: ast.BoolOp, level: int) -> Iterator[str]:
-    yield from with_separators(
-        node.values,
-        level,
-        separator=BOOLEAN_OPERATORS[type(node.op)],
-        render_function=maybe_parenthesize,
-    )
+    op = f"{BOOLEAN_OPERATORS[type(node.op)]}"
+    for i, sub_node in enumerate(node.values):
+        if i > 0:
+            yield op
+        yield from maybe_parenthesize(sub_node, node, level)
 
 
 @to_source.register
@@ -219,10 +263,10 @@ def import_from(node: ast.ImportFrom, level: int) -> Iterator[str]:
 
 @to_source.register
 def compare(node: ast.Compare, level: int) -> Iterator[str]:
-    yield from maybe_parenthesize(node.left, level)
+    yield from maybe_parenthesize(node.left, node.ops[0], level)
     for op, comparator in zip(node.ops, node.comparators, strict=True):
         yield f" {COMPARISONS[type(op)]} "
-        yield from maybe_parenthesize(comparator, level)
+        yield from maybe_parenthesize(comparator, op, level)
 
 
 @to_source.register
@@ -796,14 +840,13 @@ def with_separators(
     level: int,
     include_final_separator: bool = False,
     separator: str = ", ",
-    render_function: Callable[[ast.AST, int], Iterator[str]] = to_source,
 ) -> Iterator[str]:
     for node, comma in zip(
         nodes,
         separators(nodes, include_final_separator, separator),
         strict=True,
     ):
-        yield from render_function(node, level)
+        yield from to_source(node, level)
         yield comma
 
 

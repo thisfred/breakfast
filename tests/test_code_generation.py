@@ -15,6 +15,9 @@ from tests.conftest import make_source
         "if a:\n    print(a)\nelif b:\n    print(b)\nelse:    print(c)",
         'f = lambda n: f"${n:,.2f}"',
         'match play:\n    case {"type": "tragedy"}:\n        print(play)',
+        "node_end and node_end >= text_range.end "
+        "and not (node_start == text_range.start "
+        "and node_end == text_range.end)",
     ),
 )
 def test_roundtrip_string_should_result_in_same_ast(code):
@@ -23,10 +26,21 @@ def test_roundtrip_string_should_result_in_same_ast(code):
     assert ast.unparse(source.ast) == ast.unparse(ast.parse(new_source))
 
 
-def test_to_source_should_add_parentheses_around_sub_clauses_only():
-    source = make_source("a = 2 - 8 + 5 * 10")
+@mark.parametrize(
+    "code",
+    (
+        "foo() + 2",
+        "a: A | B | C = x",
+        "a = 2 - 8 + 5 * 10",
+        "node_end and node_end >= text_range.end "
+        "and not (node_start == text_range.start "
+        "and node_end == text_range.end)",
+    ),
+)
+def test_to_source_should_not_add_unnecessary_parentheses(code):
+    source = make_source(code)
     new_source = "".join(to_source(source.ast, 0))
-    assert new_source.strip() == "a = (2 - 8) + (5 * 10)"
+    assert new_source.strip() == code
 
 
 @mark.parametrize(
