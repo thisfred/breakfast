@@ -2246,7 +2246,6 @@ def test_encapsulate_record_should_create_dataclass():
     )
 
 
-@mark.xfail
 def test_remove_parameter_should_remove_unused_parameter():
     assert_refactors_to(
         refactoring=RemoveParameter,

@@ -134,47 +134,39 @@ class UsageCollector:
     ) -> None:
         self.code_selection = code_selection
         self.enclosing_scope = enclosing_scope
-        self._defined_before_extraction: dict[str, list[Occurrence]] = (
-            defaultdict(list)
-        )
-        self._used_in_extraction: dict[str, list[Occurrence]] = defaultdict(
-            list
-        )
-        self._modified_in_extraction: dict[str, list[Occurrence]] = defaultdict(
-            list
-        )
-        self._used_after_extraction: dict[str, list[Occurrence]] = defaultdict(
-            list
-        )
+        self._defined_before: dict[str, list[Occurrence]] = defaultdict(list)
+        self._used_in: dict[str, list[Occurrence]] = defaultdict(list)
+        self._modified_in: dict[str, list[Occurrence]] = defaultdict(list)
+        self._used_after: dict[str, list[Occurrence]] = defaultdict(list)
         self.self_or_cls: Occurrence | None = None
 
     @property
-    def defined_before_extraction(self) -> Mapping[str, Sequence[Occurrence]]:
-        if not self._defined_before_extraction:
+    def defined_before_selection(self) -> Mapping[str, Sequence[Occurrence]]:
+        if not self._defined_before:
             self._collect()
 
-        return self._defined_before_extraction or {}
+        return self._defined_before or {}
 
     @property
-    def used_in_extraction(self) -> Mapping[str, Sequence[Occurrence]]:
-        if not self._used_in_extraction:
+    def used_in_selection(self) -> Mapping[str, Sequence[Occurrence]]:
+        if not self._used_in:
             self._collect()
 
-        return self._used_in_extraction or {}
+        return self._used_in or {}
 
     @property
-    def modified_in_extraction(self) -> Mapping[str, Sequence[Occurrence]]:
-        if not self._modified_in_extraction:
+    def modified_in_selection(self) -> Mapping[str, Sequence[Occurrence]]:
+        if not self._modified_in:
             self._collect()
 
-        return self._modified_in_extraction or {}
+        return self._modified_in or {}
 
     @property
-    def used_after_extraction(self) -> Mapping[str, Sequence[Occurrence]]:
-        if not self._used_after_extraction:
+    def used_after_selection(self) -> Mapping[str, Sequence[Occurrence]]:
+        if not self._used_after:
             self._collect()
 
-        return self._used_after_extraction or {}
+        return self._used_after or {}
 
     def _collect(self) -> None:
         for i, occurrence in enumerate(
@@ -186,17 +178,13 @@ class UsageCollector:
             ):
                 if i == 1 and not (self.code_selection.in_static_method):
                     self.self_or_cls = occurrence
-                self._defined_before_extraction[occurrence.name].append(
-                    occurrence
-                )
+                self._defined_before[occurrence.name].append(occurrence)
             if occurrence.position in self.code_selection.text_range:
-                self._used_in_extraction[occurrence.name].append(occurrence)
+                self._used_in[occurrence.name].append(occurrence)
                 if occurrence.node_type is NodeType.DEFINITION:
-                    self._modified_in_extraction[occurrence.name].append(
-                        occurrence
-                    )
+                    self._modified_in[occurrence.name].append(occurrence)
             if occurrence.position > self.code_selection.text_range.end:
-                self._used_after_extraction[occurrence.name].append(occurrence)
+                self._used_after[occurrence.name].append(occurrence)
 
     def get_subsequent_usage(
         self,
@@ -206,7 +194,7 @@ class UsageCollector:
             [
                 o.position
                 for n in names_defined_in_range
-                for o in self.used_after_extraction.get(n.name, [])
+                for o in self.used_after_selection.get(n.name, [])
             ]
         )
         first_usage_after_range = (
@@ -383,7 +371,7 @@ class ExtractMethod:
     def make_decorators(self, usages: UsageCollector) -> list[ast.expr]:
         if (
             usages.self_or_cls
-            and usages.self_or_cls.name not in usages.used_in_extraction
+            and usages.self_or_cls.name not in usages.used_in_selection
         ):
             decorator_list: list[ast.expr] = [ast.Name(STATIC_METHOD)]
         else:
@@ -400,7 +388,7 @@ def make_extract_callable_edits(
     enclosing_scope = refactoring.code_selection.text_range.enclosing_scopes[-1]
     usages = UsageCollector(refactoring.code_selection, enclosing_scope)
     return_node = make_return_node(
-        usages.modified_in_extraction, usages.used_after_extraction
+        usages.modified_in_selection, usages.used_after_selection
     )
     body = make_body(
         selection=refactoring.code_selection, return_node=return_node
@@ -415,7 +403,7 @@ def make_extract_callable_edits(
         ],
     )
     arguments = make_arguments(
-        usages.defined_before_extraction, usages.used_in_extraction
+        usages.defined_before_selection, usages.used_in_selection
     )
     decorator_list = refactoring.make_decorators(usages=usages)
     callable_definition = make_function(
@@ -1133,7 +1121,7 @@ class RemoveParameter:
         code_selection: CodeSelection,
     ):
         self.text_range = code_selection.text_range
-        self.code_selection = code_selection
+        self.selection = code_selection
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -1145,14 +1133,64 @@ class RemoveParameter:
         if not parameter_unused:
             return ()
 
-        edits = ()
-        # remove_parameter = Edit()
-        # edits = (remove_parameter,)
+        function_definition = self.selection.text_range.enclosing_nodes_by_type(
+            ast.FunctionDef
+        )[-1]
+        arg = self.selection.text_range.enclosing_nodes_by_type(ast.arg)[-1]
 
-        # calls = ()
-        # edits = (*edits, *(Edit() for call in calls))
+        index = function_definition.node.args.args.index(arg.node)
+        new_function = ast.FunctionDef(
+            name=function_definition.node.name,
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[
+                    a
+                    for a in function_definition.node.args.args
+                    if a != arg.node
+                ],
+                vararg=None,
+                kwonlyargs=[],
+                kw_defaults=[],
+                kwarg=None,
+                defaults=[],
+            ),
+            body=function_definition.node.body,
+            decorator_list=function_definition.node.decorator_list,
+            returns=function_definition.node.returns,
+            type_params=function_definition.node.type_params,
+        )
+        definition_edit = Edit(function_definition.range, unparse(new_function))
+        call_edits = []
+        for occurrence in all_occurrences(
+            self.selection.source.node_position(function_definition.node)
+            + len("def ")
+        ):
+            if occurrence.node_type is not NodeType.REFERENCE:
+                continue
 
-        return edits
+            calls = occurrence.position.as_range.enclosing_nodes_by_type(
+                ast.Call
+            )
+            if calls:
+                call = calls[-1].node
+                if call.args:
+                    new_call = ast.Call(
+                        func=call.func,
+                        args=call.args[:index] + call.args[index + 1 :],
+                        keywords=call.keywords,
+                    )
+                    call_edits.append(Edit(calls[-1].range, unparse(new_call)))
+                elif call.keywords:
+                    new_call = ast.Call(
+                        func=call.func,
+                        args=call.args,
+                        keywords=[
+                            kw for kw in call.keywords if kw.arg != arg.node.arg
+                        ],
+                    )
+                    call_edits.append(Edit(calls[-1].range, unparse(new_call)))
+
+        return (definition_edit, *call_edits)
 
 
 @register
@@ -1246,7 +1284,7 @@ class EncapsulateRecord:
 
         references = []
         if isinstance(target, ast.Name):
-            for occurrence in usages.used_after_extraction[target.id]:
+            for occurrence in usages.used_after_selection[target.id]:
                 subscripts = (
                     occurrence.position.as_range.enclosing_nodes_by_type(
                         ast.Subscript
