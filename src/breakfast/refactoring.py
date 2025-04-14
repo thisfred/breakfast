@@ -1142,17 +1142,17 @@ class RemoveParameter:
         new_function = ast.FunctionDef(
             name=function_definition.node.name,
             args=ast.arguments(
-                posonlyargs=[],
+                posonlyargs=function_definition.node.args.posonlyargs,
                 args=[
                     a
                     for a in function_definition.node.args.args
                     if a != arg.node
                 ],
-                vararg=None,
-                kwonlyargs=[],
-                kw_defaults=[],
-                kwarg=None,
-                defaults=[],
+                vararg=function_definition.node.args.vararg,
+                kwonlyargs=function_definition.node.args.kwonlyargs,
+                kw_defaults=function_definition.node.args.kw_defaults,
+                kwarg=function_definition.node.args.kwarg,
+                defaults=function_definition.node.args.defaults,
             ),
             body=function_definition.node.body,
             decorator_list=function_definition.node.decorator_list,
