@@ -6,12 +6,14 @@ from functools import singledispatch
 from itertools import repeat
 from typing import Protocol
 
+from breakfast.configuration import configuration
 from breakfast.visitor import generic_visit
 
 logger = logging.getLogger(__name__)
 
 NEWLINE = "\n"
-INDENTATION = "    "
+INDENTATION = " " * configuration["code_generation"]["indentation"]
+QUOTE = '"' if configuration["code_generation"]["use_double_quotes"] else "'"
 
 COMPARISONS = {
     ast.Eq: "==",
@@ -585,17 +587,17 @@ def joined_str(node: ast.JoinedStr, level: int) -> Iterator[str]:
     strings = [
         part for value in node.values for part in to_source(value, level)
     ]
-    f_string = any(s.startswith('f"') for s in strings)
-    yield 'f"' if f_string else '"'
+    f_string = any(s.startswith("f'") or s.startswith('f"') for s in strings)
+    yield f"f{QUOTE}" if f_string else QUOTE
     for string in strings:
-        if string.startswith('f"'):
+        if string.startswith('f"') or string.startswith("f'"):
             yield string[2:-1]
         else:
             if f_string:
                 string = string.replace("{", "{{")
                 string = string.replace("}", "}}")
             yield string[1:-1]
-    yield '"'
+    yield QUOTE
 
 
 @to_source.register
@@ -629,7 +631,13 @@ def formatted_value(node: ast.FormattedValue, level: int) -> Iterator[str]:
         else ""
     )
     yield "".join(
-        ('f"{', *to_source(node.value, level), format_spec, conversion, '}"')
+        (
+            f"f{QUOTE}{{",
+            *to_source(node.value, level),
+            format_spec,
+            conversion,
+            f"}}{QUOTE}",
+        )
     )
 
 
@@ -667,8 +675,9 @@ def constant(node: ast.Constant, level: int) -> Iterator[str]:
         yield "..."
     elif isinstance(node.value, str):
         result = repr(node.value)
-        if '"' not in result:
-            result = result.replace("'", '"')
+        if configuration["code_generation"]["use_double_quotes"]:
+            if '"' not in result:
+                result = result.replace("'", '"')
         yield result
     else:
         yield repr(node.value)
