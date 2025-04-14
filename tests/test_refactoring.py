@@ -10,6 +10,7 @@ from breakfast.refactoring import (
     InlineCall,
     InlineVariable,
     MoveFunctionToOuterScope,
+    RemoveParameter,
     SlideStatementsDown,
     SlideStatementsUp,
 )
@@ -2199,12 +2200,20 @@ def test_replace_inheritance_should_move_superclass_to_init():
             def method(self):
                 return a + b
 
-        class B::
+        class B:
             def  __init__(self, a, b):
-                self.a = A(a, b)
+                self.s = A(a, b)
+
+            @property
+            def a(self):
+                return self.s.a
+
+            @property
+            def a(self):
+                return self.s.b
 
             def method(self):
-                return self.a.method() + 1
+                return self.s.method() + 1
         """,
     )
 
@@ -2239,24 +2248,6 @@ def test_encapsulate_record_should_create_dataclass():
 
 @mark.xfail
 def test_remove_parameter_should_remove_unused_parameter():
-    class RemoveParameter:
-        name = "remove parameter"
-
-        def __init__(
-            self,
-            code_selection: CodeSelection,
-        ):
-            self.text_range = code_selection.text_range
-            self.code_selection = code_selection
-
-        @classmethod
-        def applies_to(cls, selection: CodeSelection) -> bool:
-            return False
-
-        @property
-        def edits(self) -> tuple[Edit, ...]:
-            return ()
-
     assert_refactors_to(
         refactoring=RemoveParameter,
         target="b",

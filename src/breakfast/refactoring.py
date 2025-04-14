@@ -12,7 +12,8 @@ from functools import cached_property, singledispatch
 from itertools import dropwhile, takewhile
 from typing import ClassVar, Protocol
 
-from breakfast.code_generation import to_source, unparse
+from breakfast.code_generation import unparse
+from breakfast.configuration import configuration
 from breakfast.names import (
     all_occurrences,
     build_graph,
@@ -40,7 +41,7 @@ from breakfast.types import (
 
 logger = logging.getLogger(__name__)
 
-INDENTATION = "    "
+INDENTATION = " " * configuration["code_generation"]["indentation"]
 NEWLINE = "\n"
 STATIC_METHOD = "staticmethod"
 CLASS_METHOD = "classmethod"
@@ -424,7 +425,7 @@ def make_extract_callable_edits(
     new_level = refactoring.compute_new_level(
         enclosing_scope=enclosing_scope, start_of_scope=start_of_scope
     )
-    definition_text = f"{NEWLINE}{"".join(to_source(callable_definition, level=new_level))}{NEWLINE}{INDENTATION * new_level}"
+    definition_text = f"{NEWLINE}{unparse(callable_definition, level=new_level)}{NEWLINE}{INDENTATION * new_level}"
     has_returns = any(
         found
         for node in refactoring.code_selection.text_range.statements
@@ -439,7 +440,7 @@ def make_extract_callable_edits(
             usages.self_or_cls.name if usages.self_or_cls else None
         ),
     )
-    call_text = "".join(to_source(calling_statement, level=0))
+    call_text = unparse(calling_statement, level=0)
     original_indentation = (
         refactoring.code_selection.text_range.start.indentation
     )
@@ -777,11 +778,9 @@ class InlineCall:
             if return_ranges
             else call.range
         )
-        body = "".join(
-            to_source(
-                ast.Module(body=new_statements, type_ignores=[]),
-                level=len(indentation) // 4,
-            )
+        body = unparse(
+            ast.Module(body=new_statements, type_ignores=[]),
+            level=len(indentation) // 4,
         )
         result = (
             Edit(
@@ -917,12 +916,15 @@ class InlineCall:
         returned_names: Container[str],
     ) -> None:
         occurrences = self.get_occurrences(argument, body_range)
-        if argument.arg in returned_names or all(
-            o.node_type is NodeType.REFERENCE for o in occurrences
+        if not (
+            argument.arg in returned_names
+            or all(o.node_type is NodeType.REFERENCE for o in occurrences)
         ):
-            for occurrence in occurrences:
-                if occurrence.ast:
-                    substitutions[occurrence.ast] = value
+            return
+
+        for occurrence in occurrences:
+            if occurrence.ast:
+                substitutions[occurrence.ast] = value
 
     def get_occurrences(
         self, argument: ast.keyword | ast.arg, body_range: TextRange
@@ -1064,6 +1066,96 @@ class SlideStatementsDown:
 
 
 @register
+class MoveFunctionToOuterScope:
+    name = "move function to outer scope"
+
+    def __init__(
+        self,
+        code_selection: CodeSelection,
+    ):
+        self.text_range = code_selection.text_range
+        self.selection = code_selection
+
+    @classmethod
+    def applies_to(cls, selection: CodeSelection) -> bool:
+        return len(selection.text_range.enclosing_scopes) >= 3 and isinstance(
+            selection.text_range.enclosing_scopes[-1].node,
+            ast.FunctionDef | ast.AsyncFunctionDef,
+        )
+
+    @property
+    def edits(self) -> tuple[Edit, ...]:
+        enclosing_scope = self.selection.text_range.enclosing_scopes[-1]
+        result: tuple[Edit, ...] = (Edit(enclosing_scope.range, ""),)
+
+        if not (
+            scope := self.closest_enclosing_non_class_scope(
+                selection=self.selection
+            )
+        ):
+            logger.warning("Not inside an appropriately nested scope.")
+            return ()
+
+        insert_position = (
+            scope.range.end.line.next.start
+            if scope.range.end.line.next
+            else scope.range.end.line.end
+        )
+        result = (
+            *result,
+            Edit(
+                insert_position.as_range,
+                unparse(enclosing_scope.node, level=0),
+            ),
+        )
+
+        return result
+
+    @staticmethod
+    def closest_enclosing_non_class_scope(
+        selection: CodeSelection,
+    ) -> ScopeWithRange | None:
+        scope = None
+        i = len(selection.text_range.enclosing_scopes) - 3
+        while i >= 0 and isinstance(
+            (scope := selection.text_range.enclosing_scopes[i]), ast.ClassDef
+        ):
+            i -= 1
+        return scope
+
+
+@register
+class RemoveParameter:
+    name = "remove parameter"
+
+    def __init__(
+        self,
+        code_selection: CodeSelection,
+    ):
+        self.text_range = code_selection.text_range
+        self.code_selection = code_selection
+
+    @classmethod
+    def applies_to(cls, selection: CodeSelection) -> bool:
+        return bool(selection.text_range.enclosing_nodes_by_type(ast.arg))
+
+    @property
+    def edits(self) -> tuple[Edit, ...]:
+        parameter_unused = True
+        if not parameter_unused:
+            return ()
+
+        edits = ()
+        # remove_parameter = Edit()
+        # edits = (remove_parameter,)
+
+        # calls = ()
+        # edits = (*edits, *(Edit() for call in calls))
+
+        return edits
+
+
+@register
 class EncapsulateRecord:
     name = "encapsulate record"
 
@@ -1127,26 +1219,24 @@ class EncapsulateRecord:
         )
         definition = Edit(
             enclosing_assignment.range.start.as_range,
-            "".join(to_source(fake_module, level=0)) + NEWLINE,
+            unparse(fake_module, level=0) + NEWLINE,
         )
         assignment = Edit(
             enclosing_assignment.range,
-            "".join(
-                to_source(
-                    ast.Assign(
-                        targets=enclosing_assignment.node.targets,
-                        value=ast.Call(
-                            func=ast.Name(id=class_name),
-                            args=[],
-                            keywords=[
-                                ast.keyword(arg=key.value, value=value)
-                                for (key, value) in mapping.items()
-                                if isinstance(key, ast.Constant)
-                            ],
-                        ),
+            unparse(
+                ast.Assign(
+                    targets=enclosing_assignment.node.targets,
+                    value=ast.Call(
+                        func=ast.Name(id=class_name),
+                        args=[],
+                        keywords=[
+                            ast.keyword(arg=key.value, value=value)
+                            for (key, value) in mapping.items()
+                            if isinstance(key, ast.Constant)
+                        ],
                     ),
-                    level=0,
-                )
+                ),
+                level=0,
             ),
         )
         target = enclosing_assignment.node.targets[0]
@@ -1167,14 +1257,12 @@ class EncapsulateRecord:
                     references.append(
                         Edit(
                             subscripts[0].range,
-                            "".join(
-                                to_source(
-                                    ast.Attribute(
-                                        value=node.value,
-                                        attr=node.slice.value,
-                                    ),
-                                    level=0,
+                            unparse(
+                                ast.Attribute(
+                                    value=node.value,
+                                    attr=node.slice.value,
                                 ),
+                                level=0,
                             ),
                         )
                     )
@@ -1190,64 +1278,6 @@ class EncapsulateRecord:
 
 def to_class_name(var_name: str) -> str:
     return "".join(s.lower().title() for s in var_name.split("_"))
-
-
-@register
-class MoveFunctionToOuterScope:
-    name = "move function to outer scope"
-
-    def __init__(
-        self,
-        code_selection: CodeSelection,
-    ):
-        self.text_range = code_selection.text_range
-        self.selection = code_selection
-
-    @classmethod
-    def applies_to(cls, selection: CodeSelection) -> bool:
-        return len(selection.text_range.enclosing_scopes) >= 3 and isinstance(
-            selection.text_range.enclosing_scopes[-1].node,
-            ast.FunctionDef | ast.AsyncFunctionDef,
-        )
-
-    @property
-    def edits(self) -> tuple[Edit, ...]:
-        enclosing_scope = self.selection.text_range.enclosing_scopes[-1]
-        result: tuple[Edit, ...] = (Edit(enclosing_scope.range, ""),)
-
-        if not (
-            scope := self.closest_enclosing_non_class_scope(
-                selection=self.selection
-            )
-        ):
-            return ()
-
-        insert_position = (
-            scope.range.end.line.next.start
-            if scope.range.end.line.next
-            else scope.range.end.line.end
-        )
-        result = (
-            *result,
-            Edit(
-                insert_position.as_range,
-                "".join(to_source(enclosing_scope.node, level=0)),
-            ),
-        )
-
-        return result
-
-    @staticmethod
-    def closest_enclosing_non_class_scope(
-        selection: CodeSelection,
-    ) -> ScopeWithRange | None:
-        scope = None
-        i = len(selection.text_range.enclosing_scopes) - 3
-        while i >= 0 and isinstance(
-            (scope := selection.text_range.enclosing_scopes[i]), ast.ClassDef
-        ):
-            i -= 1
-        return scope
 
 
 @singledispatch

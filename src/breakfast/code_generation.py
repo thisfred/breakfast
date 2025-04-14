@@ -81,8 +81,8 @@ class NodeWithElse(Protocol):
     orelse: list[ast.stmt]
 
 
-def unparse(node: ast.AST) -> str:
-    return "".join(to_source(node, level=0)).strip()
+def unparse(node: ast.AST, level: int = 0) -> str:
+    return "".join(to_source(node, level=level))
 
 
 @singledispatch
@@ -125,9 +125,6 @@ def maybe_parenthesize(node: ast.AST, op: ast.AST, level: int) -> Iterator[str]:
         node_precedence is not None
         and op_precedence is not None
         and node_precedence > op_precedence
-    )
-    print(
-        f"{type(node)=}: {PRECEDENCE.get(type(node))=}, {type(op)=}: {PRECEDENCE.get(type(op))=}"
     )
     if parenthesize:
         yield "("
