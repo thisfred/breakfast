@@ -2267,6 +2267,30 @@ def test_remove_parameter_should_remove_unused_parameter():
     )
 
 
+@mark.xfail
+def test_remove_parameter_should_remove_unused_parameter_in_nested_function():
+    assert_refactors_to(
+        refactoring=RemoveParameter,
+        target="b",
+        code=r"""
+        def outer():
+            def function(a, b, c):
+                return a or c
+
+            d = function(1, 2, 3)
+            e = function(a=1, c=3, b=2)
+        """,
+        expected=r"""
+        def outer():
+            def function(a, c):
+                return a or c
+
+            d = function(1, 3)
+            e = function(a=1, c=3)
+        """,
+    )
+
+
 def test_remove_parameter_should_not_remove_used_parameter():
     assert_refactors_to(
         refactoring=RemoveParameter,

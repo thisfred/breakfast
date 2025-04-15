@@ -1133,18 +1133,13 @@ class RemoveParameter:
         function_definition = self.selection.text_range.enclosing_nodes_by_type(
             ast.FunctionDef
         )[-1]
-        parameter_unused = (
-            len(
-                [
-                    o
-                    for o in all_occurrences(arg.range.start)
-                    if o.position in function_definition.range
-                ]
-            )
-            <= 1
-        )
 
-        if not parameter_unused:
+        if not self.is_parameter_unused(
+            function_definition=function_definition, arg=arg
+        ):
+            logger.warning(
+                "Can't remove parameter that is used in function body."
+            )
             return ()
 
         definition_edit = self.function_definition_edit(
@@ -1155,6 +1150,22 @@ class RemoveParameter:
             function_definition=function_definition, arg=arg
         )
         return (definition_edit, *call_edits)
+
+    @staticmethod
+    def is_parameter_unused(
+        function_definition: NodeWithRange[ast.FunctionDef],
+        arg: NodeWithRange[ast.arg],
+    ) -> bool:
+        return (
+            len(
+                [
+                    o
+                    for o in all_occurrences(arg.range.start)
+                    if o.position in function_definition.range
+                ]
+            )
+            <= 1
+        )
 
     def call_edits(
         self,
@@ -1337,7 +1348,8 @@ class EncapsulateRecord:
                 )
         return (definition, assignment, *references)
 
-    def make_class_name(self, assignment: ast.Assign) -> str | None:
+    @staticmethod
+    def make_class_name(assignment: ast.Assign) -> str | None:
         if not (assignment and isinstance(assignment.targets[0], ast.Name)):
             return None
 
