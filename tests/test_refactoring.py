@@ -2267,6 +2267,27 @@ def test_remove_parameter_should_remove_unused_parameter():
     )
 
 
+def test_remove_parameter_should_not_remove_used_parameter():
+    assert_refactors_to(
+        refactoring=RemoveParameter,
+        target="a",
+        code=r"""
+        def function(a, b, c):
+            return a or c
+
+        d = function(1, 2, 3)
+        e = function(a=1, c=3, b=2)
+        """,
+        expected=r"""
+        def function(a, b, c):
+            return a or c
+
+        d = function(1, 2, 3)
+        e = function(a=1, c=3, b=2)
+        """,
+    )
+
+
 @mark.xfail
 def test_add_parameter_should_pass_none_in_callers():
     class AddParameter:

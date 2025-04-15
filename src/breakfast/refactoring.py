@@ -1129,18 +1129,28 @@ class RemoveParameter:
 
     @property
     def edits(self) -> tuple[Edit, ...]:
-        parameter_unused = True
-        if not parameter_unused:
-            return ()
-
+        arg = self.selection.text_range.enclosing_nodes_by_type(ast.arg)[-1]
         function_definition = self.selection.text_range.enclosing_nodes_by_type(
             ast.FunctionDef
         )[-1]
-        arg = self.selection.text_range.enclosing_nodes_by_type(ast.arg)[-1]
+        parameter_unused = (
+            len(
+                [
+                    o
+                    for o in all_occurrences(arg.range.start)
+                    if o.position in function_definition.range
+                ]
+            )
+            <= 1
+        )
+
+        if not parameter_unused:
+            return ()
 
         definition_edit = self.function_definition_edit(
             function_definition=function_definition, arg=arg
         )
+
         call_edits = self.call_edits(
             function_definition=function_definition, arg=arg
         )
