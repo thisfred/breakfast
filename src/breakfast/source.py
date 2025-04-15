@@ -11,6 +11,7 @@ from functools import cached_property
 from typing import Protocol, TypeGuard
 
 from breakfast import types
+from breakfast.configuration import configuration
 from breakfast.search import find_names, find_statements, get_nodes
 
 logger = logging.getLogger(__name__)
@@ -86,6 +87,13 @@ class Position:
             return ""
 
         return groups[0]
+
+    @property
+    def level(self) -> int:
+        indentation = self.indentation
+        return (
+            len(indentation) // configuration["code_generation"]["indentation"]
+        )
 
     @property
     def as_range(self) -> types.TextRange:

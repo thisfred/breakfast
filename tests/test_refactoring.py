@@ -1579,7 +1579,7 @@ def test_extract_method_should_not_use_existing_name():
 def test_extract_method_should_extract_from_for_loop():
     assert_refactors_to(
         refactoring=ExtractMethod,
-        target="            print(self, i)",
+        target="print(self, i)",
         code="""
         class C:
             def method(self):
@@ -2267,7 +2267,6 @@ def test_remove_parameter_should_remove_unused_parameter():
     )
 
 
-@mark.xfail
 def test_remove_parameter_should_remove_unused_parameter_in_nested_function():
     assert_refactors_to(
         refactoring=RemoveParameter,

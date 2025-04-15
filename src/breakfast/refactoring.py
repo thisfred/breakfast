@@ -459,24 +459,18 @@ def make_extract_callable_edits(
             usages.self_or_cls.name if usages.self_or_cls else None
         ),
     )
-    call_text = unparse(calling_statement, level=0)
-    original_indentation = (
-        refactoring.code_selection.text_range.start.indentation
-    )
-    call_text = (
-        f"{original_indentation}{call_text}"
-        if refactoring.code_selection.text_range.start.column == 0
-        else call_text
+    call_text = unparse(
+        calling_statement,
+        level=refactoring.code_selection.text_range.start.level,
     )
     insert_position = refactoring.get_insert_position(
         enclosing_scope=enclosing_scope
     )
+    print(f"{refactoring.code_selection.text_range=}")
     all_edits = (
         Edit(insert_position.as_range, text=definition_text),
         Edit(
-            refactoring.code_selection.text_range.start.to(
-                refactoring.code_selection.text_range.end
-            ),
+            refactoring.code_selection.text_range,
             text=call_text,
         ),
     )
@@ -781,8 +775,6 @@ class InlineCall:
             call=call.node, body_range=body_range, definition_ast=definition.ast
         )
 
-        indentation = self.text_range.start.indentation
-
         return_ranges = [
             return_range
             for statement in definition.ast.body
@@ -799,7 +791,7 @@ class InlineCall:
         )
         body = unparse(
             ast.Module(body=new_statements, type_ignores=[]),
-            level=len(indentation) // 4,
+            level=self.text_range.start.level,
         )
         result = (
             Edit(
@@ -990,11 +982,9 @@ class SlideStatementsUp:
             self.code_selection.text_range.start.line,
             self.code_selection.text_range.end.line,
         )
-        original_indentation = first.start.indentation
+
         line = first
-        while line.previous and len(line.previous.start.indentation) >= len(
-            original_indentation
-        ):
+        while line.previous and line.previous.start.level >= first.start.level:
             line = line.previous
         if line == first:
             return None
@@ -1225,7 +1215,12 @@ class RemoveParameter:
                         if kw.arg != self.arg.node.arg
                     ],
                 )
-                call_edits.append(Edit(calls[-1].range, unparse(new_call)))
+                call_edits.append(
+                    Edit(
+                        calls[-1].range,
+                        unparse(new_call, occurrence.position.level),
+                    )
+                )
         return call_edits
 
     @property
@@ -1249,7 +1244,10 @@ class RemoveParameter:
             type_params=definition.type_params,
         )
         definition_edit = Edit(
-            self.function_definition.range, unparse(new_function)
+            self.function_definition.range,
+            unparse(
+                new_function, level=self.function_definition.range.start.level
+            ),
         )
         return definition_edit
 
