@@ -2,6 +2,7 @@ import ast
 import logging
 import sys
 from collections.abc import Iterable, Iterator, Sequence
+from enum import Enum
 from functools import singledispatch
 from itertools import repeat
 from typing import Protocol
@@ -111,20 +112,30 @@ def expr(node: ast.Expr, level: int) -> Iterator[str]:
     yield from to_source(node.value, level)
 
 
+class Side(Enum):
+    LEFT = "left"
+    RIGHT = "right"
+
+
 @to_source.register
 def bin_op(node: ast.BinOp, level: int) -> Iterator[str]:
-    yield from maybe_parenthesize(node.left, node.op, level)
+    yield from maybe_parenthesize(node.left, node.op, level, side=Side.LEFT)
     yield f" {BINARY_OPERATORS[type(node.op)]} "
-    yield from maybe_parenthesize(node.right, node.op, level)
+    yield from maybe_parenthesize(node.right, node.op, level, side=Side.RIGHT)
 
 
-def maybe_parenthesize(node: ast.AST, op: ast.AST, level: int) -> Iterator[str]:
+def maybe_parenthesize(
+    node: ast.AST, op: ast.AST, level: int, side: Side | None
+) -> Iterator[str]:
     node_precedence = get_precedence(node)
     op_precedence = get_precedence(op)
     parenthesize = (
         node_precedence is not None
         and op_precedence is not None
-        and node_precedence > op_precedence
+        and (
+            node_precedence > op_precedence
+            or (side is Side.RIGHT and node_precedence == op_precedence)
+        )
     )
     if parenthesize:
         yield "("
@@ -136,7 +147,7 @@ def maybe_parenthesize(node: ast.AST, op: ast.AST, level: int) -> Iterator[str]:
 @to_source.register
 def unary_op(node: ast.UnaryOp, level: int) -> Iterator[str]:
     yield f"{UNARY_OPERATORS[type(node.op)]}"
-    yield from maybe_parenthesize(node.operand, node.op, level)
+    yield from maybe_parenthesize(node.operand, node.op, level, side=None)
 
 
 @to_source.register
@@ -157,7 +168,10 @@ def bool_op(node: ast.BoolOp, level: int) -> Iterator[str]:
     for i, sub_node in enumerate(node.values):
         if i > 0:
             yield op
-        yield from maybe_parenthesize(sub_node, node, level)
+            side = Side.RIGHT
+        else:
+            side = Side.LEFT
+        yield from maybe_parenthesize(sub_node, node, level, side)
 
 
 @to_source.register
@@ -262,10 +276,10 @@ def import_from(node: ast.ImportFrom, level: int) -> Iterator[str]:
 
 @to_source.register
 def compare(node: ast.Compare, level: int) -> Iterator[str]:
-    yield from maybe_parenthesize(node.left, node.ops[0], level)
+    yield from maybe_parenthesize(node.left, node, level, side=Side.LEFT)
     for op, comparator in zip(node.ops, node.comparators, strict=True):
         yield f" {COMPARISONS[type(op)]} "
-        yield from maybe_parenthesize(comparator, op, level)
+        yield from maybe_parenthesize(comparator, node, level, side=Side.RIGHT)
 
 
 @to_source.register
