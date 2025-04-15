@@ -136,11 +136,19 @@ class CodeSelection:
             return ()
 
     def remove_trailing_whitespace(self) -> "CodeSelection":
-        text = self.text_range.text
-        offset = len(text) - len(text.rstrip())
+        lines = self.text_range.text.rstrip().split("\n")
+        offset = 0
+        last_line = lines[-1]
+        start_offset = self.text_range.start.column if len(lines) == 1 else 0
+        while (
+            self.text_range.end.column - (start_offset + offset)
+            > len(last_line) - 1
+        ):
+            offset += 1
 
         if offset == 0:
             return self
+
         return CodeSelection(
             text_range=replace(
                 self.text_range,
