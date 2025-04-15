@@ -1178,7 +1178,7 @@ class RemoveParameter:
                     if o.position in self.function_definition.range
                 ]
             )
-            <= 1
+            == 1
         )
 
     @property
