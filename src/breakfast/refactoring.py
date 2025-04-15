@@ -1138,7 +1138,57 @@ class RemoveParameter:
         )[-1]
         arg = self.selection.text_range.enclosing_nodes_by_type(ast.arg)[-1]
 
+        definition_edit = self.function_definition_edit(
+            function_definition=function_definition, arg=arg
+        )
+        call_edits = self.call_edits(
+            function_definition=function_definition, arg=arg
+        )
+        return (definition_edit, *call_edits)
+
+    def call_edits(
+        self,
+        function_definition: NodeWithRange[ast.FunctionDef],
+        arg: NodeWithRange[ast.arg],
+    ) -> Sequence[Edit]:
+        call_edits = []
         index = function_definition.node.args.args.index(arg.node)
+        for occurrence in all_occurrences(
+            self.selection.source.node_position(function_definition.node)
+            + len("def ")
+        ):
+            if occurrence.node_type is not NodeType.REFERENCE:
+                continue
+            if not (
+                calls := occurrence.position.as_range.enclosing_nodes_by_type(
+                    ast.Call
+                )
+            ):
+                continue
+            call = calls[-1].node
+            if call.args:
+                new_call = ast.Call(
+                    func=call.func,
+                    args=call.args[:index] + call.args[index + 1 :],
+                    keywords=call.keywords,
+                )
+                call_edits.append(Edit(calls[-1].range, unparse(new_call)))
+            elif call.keywords:
+                new_call = ast.Call(
+                    func=call.func,
+                    args=call.args,
+                    keywords=[
+                        kw for kw in call.keywords if kw.arg != arg.node.arg
+                    ],
+                )
+                call_edits.append(Edit(calls[-1].range, unparse(new_call)))
+        return call_edits
+
+    @staticmethod
+    def function_definition_edit(
+        function_definition: NodeWithRange[ast.FunctionDef],
+        arg: NodeWithRange[ast.arg],
+    ) -> Edit:
         new_function = ast.FunctionDef(
             name=function_definition.node.name,
             args=ast.arguments(
@@ -1160,38 +1210,7 @@ class RemoveParameter:
             type_params=function_definition.node.type_params,
         )
         definition_edit = Edit(function_definition.range, unparse(new_function))
-        call_edits = []
-        for occurrence in all_occurrences(
-            self.selection.source.node_position(function_definition.node)
-            + len("def ")
-        ):
-            if occurrence.node_type is not NodeType.REFERENCE:
-                continue
-
-            calls = occurrence.position.as_range.enclosing_nodes_by_type(
-                ast.Call
-            )
-            if not calls:
-                continue
-            call = calls[-1].node
-            if call.args:
-                new_call = ast.Call(
-                    func=call.func,
-                    args=call.args[:index] + call.args[index + 1 :],
-                    keywords=call.keywords,
-                )
-                call_edits.append(Edit(calls[-1].range, unparse(new_call)))
-            elif call.keywords:
-                new_call = ast.Call(
-                    func=call.func,
-                    args=call.args,
-                    keywords=[
-                        kw for kw in call.keywords if kw.arg != arg.node.arg
-                    ],
-                )
-                call_edits.append(Edit(calls[-1].range, unparse(new_call)))
-
-        return (definition_edit, *call_edits)
+        return definition_edit
 
 
 @register
@@ -1285,10 +1304,12 @@ class EncapsulateRecord:
         ):
             if occurrence.node_type is not NodeType.REFERENCE:
                 continue
-            subscripts = occurrence.position.as_range.enclosing_nodes_by_type(
-                ast.Subscript
-            )
-            if not subscripts:
+            if not (
+                subscripts
+                := occurrence.position.as_range.enclosing_nodes_by_type(
+                    ast.Subscript
+                )
+            ):
                 continue
             node = subscripts[0].node
             if isinstance(node.slice, ast.Constant):
