@@ -1171,24 +1171,25 @@ class RemoveParameter:
             calls = occurrence.position.as_range.enclosing_nodes_by_type(
                 ast.Call
             )
-            if calls:
-                call = calls[-1].node
-                if call.args:
-                    new_call = ast.Call(
-                        func=call.func,
-                        args=call.args[:index] + call.args[index + 1 :],
-                        keywords=call.keywords,
-                    )
-                    call_edits.append(Edit(calls[-1].range, unparse(new_call)))
-                elif call.keywords:
-                    new_call = ast.Call(
-                        func=call.func,
-                        args=call.args,
-                        keywords=[
-                            kw for kw in call.keywords if kw.arg != arg.node.arg
-                        ],
-                    )
-                    call_edits.append(Edit(calls[-1].range, unparse(new_call)))
+            if not calls:
+                continue
+            call = calls[-1].node
+            if call.args:
+                new_call = ast.Call(
+                    func=call.func,
+                    args=call.args[:index] + call.args[index + 1 :],
+                    keywords=call.keywords,
+                )
+                call_edits.append(Edit(calls[-1].range, unparse(new_call)))
+            elif call.keywords:
+                new_call = ast.Call(
+                    func=call.func,
+                    args=call.args,
+                    keywords=[
+                        kw for kw in call.keywords if kw.arg != arg.node.arg
+                    ],
+                )
+                call_edits.append(Edit(calls[-1].range, unparse(new_call)))
 
         return (definition_edit, *call_edits)
 
@@ -1277,33 +1278,32 @@ class EncapsulateRecord:
                 level=0,
             ),
         )
-        target = enclosing_assignment.node.targets[0]
-        usages = UsageCollector(
-            self.selection, self.text_range.enclosing_scopes[-1]
-        )
 
         references = []
-        if isinstance(target, ast.Name):
-            for occurrence in usages.used_after_selection[target.id]:
-                subscripts = (
-                    occurrence.position.as_range.enclosing_nodes_by_type(
-                        ast.Subscript
+        for occurrence in all_occurrences(
+            self.selection.source.node_position(enclosing_assignment.node)
+        ):
+            if occurrence.node_type is not NodeType.REFERENCE:
+                continue
+            subscripts = occurrence.position.as_range.enclosing_nodes_by_type(
+                ast.Subscript
+            )
+            if not subscripts:
+                continue
+            node = subscripts[0].node
+            if isinstance(node.slice, ast.Constant):
+                references.append(
+                    Edit(
+                        subscripts[0].range,
+                        unparse(
+                            ast.Attribute(
+                                value=node.value,
+                                attr=node.slice.value,
+                            ),
+                            level=0,
+                        ),
                     )
                 )
-                node = subscripts[0].node
-                if isinstance(node.slice, ast.Constant):
-                    references.append(
-                        Edit(
-                            subscripts[0].range,
-                            unparse(
-                                ast.Attribute(
-                                    value=node.value,
-                                    attr=node.slice.value,
-                                ),
-                                level=0,
-                            ),
-                        )
-                    )
         return (definition, assignment, *references)
 
     def make_class_name(self, assignment: ast.Assign) -> str | None:
