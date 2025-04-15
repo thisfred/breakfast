@@ -8,6 +8,7 @@ from collections.abc import (
     MutableMapping,
     Sequence,
 )
+from dataclasses import replace
 from functools import cached_property, singledispatch
 from itertools import dropwhile, takewhile
 from typing import ClassVar, Protocol
@@ -20,7 +21,7 @@ from breakfast.names import (
     find_definition,
 )
 from breakfast.rewrites import substitute_nodes
-from breakfast.scope_graph import NodeType
+from breakfast.scope_graph import NodeType, ScopeGraph
 from breakfast.search import (
     NodeFilter,
     find_names,
@@ -55,12 +56,13 @@ def register(refactoring: "type[Refactoring]") -> "type[Refactoring]":
 class CodeSelection:
     _refactorings: ClassVar[dict[str, "type[Refactoring]"]] = {}
 
-    def __init__(self, text_range: TextRange):
+    def __init__(
+        self,
+        text_range: TextRange,
+    ):
         self.text_range = text_range
         self.source = self.text_range.source
-        self.scope_graph = build_graph(
-            [self.source], follow_redefinitions=False
-        )
+        self._scope_graph: ScopeGraph | None = None
 
     @classmethod
     def register_refactoring(cls, refactoring: "type[Refactoring]") -> None:
@@ -73,6 +75,14 @@ class CodeSelection:
             for refactoring in self._refactorings.values()
             if refactoring.applies_to(self)
         ]
+
+    @property
+    def scope_graph(self) -> ScopeGraph:
+        if self._scope_graph is None:
+            self._scope_graph = build_graph(
+                [self.source], follow_redefinitions=False
+            )
+        return self._scope_graph
 
     @cached_property
     def in_method(self) -> bool:
@@ -124,6 +134,19 @@ class CodeSelection:
             return all_occurrences(self.cursor, graph=self.scope_graph)
         except NotFoundError:
             return ()
+
+    def remove_trailing_whitespace(self) -> "CodeSelection":
+        text = self.text_range.text
+        offset = len(text) - len(text.rstrip())
+
+        if offset == 0:
+            return self
+        return CodeSelection(
+            text_range=replace(
+                self.text_range,
+                end=self.text_range.end - offset,
+            )
+        )
 
 
 class UsageCollector:
@@ -1129,53 +1152,43 @@ class RemoveParameter:
 
     @property
     def edits(self) -> tuple[Edit, ...]:
-        arg = self.selection.text_range.enclosing_nodes_by_type(ast.arg)[-1]
-        function_definition = self.selection.text_range.enclosing_nodes_by_type(
-            ast.FunctionDef
-        )[-1]
-
-        if not self.is_parameter_unused(
-            function_definition=function_definition, arg=arg
-        ):
+        if not self.is_parameter_unused:
             logger.warning(
                 "Can't remove parameter that is used in function body."
             )
             return ()
 
-        definition_edit = self.function_definition_edit(
-            function_definition=function_definition, arg=arg
-        )
+        return (self.function_definition_edit, *self.call_edits)
 
-        call_edits = self.call_edits(
-            function_definition=function_definition, arg=arg
-        )
-        return (definition_edit, *call_edits)
+    @property
+    def function_definition(self) -> NodeWithRange[ast.FunctionDef]:
+        return self.selection.text_range.enclosing_nodes_by_type(
+            ast.FunctionDef
+        )[-1]
 
-    @staticmethod
-    def is_parameter_unused(
-        function_definition: NodeWithRange[ast.FunctionDef],
-        arg: NodeWithRange[ast.arg],
-    ) -> bool:
+    @property
+    def arg(self) -> NodeWithRange[ast.arg]:
+        return self.selection.text_range.enclosing_nodes_by_type(ast.arg)[-1]
+
+    @property
+    def is_parameter_unused(self) -> bool:
         return (
             len(
                 [
                     o
-                    for o in all_occurrences(arg.range.start)
-                    if o.position in function_definition.range
+                    for o in all_occurrences(self.arg.range.start)
+                    if o.position in self.function_definition.range
                 ]
             )
             <= 1
         )
 
-    def call_edits(
-        self,
-        function_definition: NodeWithRange[ast.FunctionDef],
-        arg: NodeWithRange[ast.arg],
-    ) -> Sequence[Edit]:
+    @property
+    def call_edits(self) -> Sequence[Edit]:
         call_edits = []
-        index = function_definition.node.args.args.index(arg.node)
+        index = self.function_definition.node.args.args.index(self.arg.node)
         for occurrence in all_occurrences(
-            self.selection.source.node_position(function_definition.node)
+            self.selection.source.node_position(self.function_definition.node)
             + len("def ")
         ):
             if occurrence.node_type is not NodeType.REFERENCE:
@@ -1199,38 +1212,37 @@ class RemoveParameter:
                     func=call.func,
                     args=call.args,
                     keywords=[
-                        kw for kw in call.keywords if kw.arg != arg.node.arg
+                        kw
+                        for kw in call.keywords
+                        if kw.arg != self.arg.node.arg
                     ],
                 )
                 call_edits.append(Edit(calls[-1].range, unparse(new_call)))
         return call_edits
 
-    @staticmethod
-    def function_definition_edit(
-        function_definition: NodeWithRange[ast.FunctionDef],
-        arg: NodeWithRange[ast.arg],
-    ) -> Edit:
+    @property
+    def function_definition_edit(self) -> Edit:
+        definition = self.function_definition.node
+        arguments = definition.args
         new_function = ast.FunctionDef(
-            name=function_definition.node.name,
+            name=definition.name,
             args=ast.arguments(
-                posonlyargs=function_definition.node.args.posonlyargs,
-                args=[
-                    a
-                    for a in function_definition.node.args.args
-                    if a != arg.node
-                ],
-                vararg=function_definition.node.args.vararg,
-                kwonlyargs=function_definition.node.args.kwonlyargs,
-                kw_defaults=function_definition.node.args.kw_defaults,
-                kwarg=function_definition.node.args.kwarg,
-                defaults=function_definition.node.args.defaults,
+                posonlyargs=arguments.posonlyargs,
+                args=[a for a in arguments.args if a != self.arg.node],
+                vararg=arguments.vararg,
+                kwonlyargs=arguments.kwonlyargs,
+                kw_defaults=arguments.kw_defaults,
+                kwarg=arguments.kwarg,
+                defaults=arguments.defaults,
             ),
-            body=function_definition.node.body,
-            decorator_list=function_definition.node.decorator_list,
-            returns=function_definition.node.returns,
-            type_params=function_definition.node.type_params,
+            body=definition.body,
+            decorator_list=definition.decorator_list,
+            returns=definition.returns,
+            type_params=definition.type_params,
         )
-        definition_edit = Edit(function_definition.range, unparse(new_function))
+        definition_edit = Edit(
+            self.function_definition.range, unparse(new_function)
+        )
         return definition_edit
 
 

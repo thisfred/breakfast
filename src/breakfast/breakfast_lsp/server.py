@@ -264,6 +264,7 @@ def code_action(
             column=max(extraction_range.end.character, 0),
         )
         selection = CodeSelection(text_range=TextRange(start, end))
+        selection = selection.remove_trailing_whitespace()
 
         for refactoring in selection.refactorings:
             edits = get_edits(refactoring(selection), document_uri, version)
