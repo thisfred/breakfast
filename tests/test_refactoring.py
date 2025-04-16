@@ -2611,3 +2611,76 @@ def test_extract_function_should_extract_full_lines():
                 print(new_function)
         """,
     )
+
+
+def test_extract_function_should_extract_full_lines2():
+    assert_refactors_to(
+        refactoring=ExtractFunction,
+        target=("    call_text =", "        ) # end"),
+        code="""
+        def f(refactoring, name):
+            calling_statement = refactoring.make_call(
+                has_returns=has_returns,
+                arguments=arguments,
+                return_node=return_node,
+                name=name,
+                self_or_cls_name=(
+                    usages.self_or_cls.name if usages.self_or_cls else None
+                ),
+            )
+            call_text = unparse(
+                calling_statement,
+                level=refactoring.code_selection.text_range.start.level,
+            )
+            if refactoring.code_selection.text_range.start.column == 0:
+                call_text = (
+                    f"{INDENTATION * refactoring.code_selection.text_range.start.level}"
+                    f"{call_text}"
+                ) # end
+            insert_position = refactoring.get_insert_position(
+                enclosing_scope=enclosing_scope
+            )
+            all_edits = (
+                Edit(insert_position.as_range, text=definition_text),
+                Edit(
+                    refactoring.code_selection.text_range,
+                    text=call_text,
+                ),
+            )
+        """,
+        expected="""
+        def f(refactoring, name):
+            def f0(refactoring, calling_statement):
+                call_text = unparse(
+                    calling_statement,
+                    level=refactoring.code_selection.text_range.start.level,
+                )
+                if refactoring.code_selection.text_range.start.column == 0:
+                    call_text = (
+                        f"{INDENTATION * refactoring.code_selection.text_range.start.level}"
+                        f"{call_text}"
+                    )
+                return call_text
+
+            calling_statement = refactoring.make_call(
+                has_returns=has_returns,
+                arguments=arguments,
+                return_node=return_node,
+                name=name,
+                self_or_cls_name=(
+                    usages.self_or_cls.name if usages.self_or_cls else None
+                ),
+            )
+            call_text = f0(refactoring=refactoring, calling_statement=calling_statement)
+            insert_position = refactoring.get_insert_position(
+                enclosing_scope=enclosing_scope
+            )
+            all_edits = (
+                Edit(insert_position.as_range, text=definition_text),
+                Edit(
+                    refactoring.code_selection.text_range,
+                    text=call_text,
+                ),
+            )
+        """,
+    )

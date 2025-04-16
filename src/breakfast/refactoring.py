@@ -140,9 +140,8 @@ class CodeSelection:
         offset = 0
         last_line = lines[-1]
         start_offset = self.text_range.start.column if len(lines) == 1 else 0
-        while (
-            self.text_range.end.column - (start_offset + offset)
-            > len(last_line) - 1
+        while self.text_range.end.column - (start_offset + offset) > len(
+            last_line
         ):
             offset += 1
 
@@ -459,6 +458,7 @@ def make_extract_callable_edits(
             usages.self_or_cls.name if usages.self_or_cls else None
         ),
     )
+
     call_text = unparse(
         calling_statement,
         level=refactoring.code_selection.text_range.start.level,
@@ -468,6 +468,7 @@ def make_extract_callable_edits(
             f"{INDENTATION * refactoring.code_selection.text_range.start.level}"
             f"{call_text}"
         )
+
     insert_position = refactoring.get_insert_position(
         enclosing_scope=enclosing_scope
     )
