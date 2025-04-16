@@ -1298,11 +1298,13 @@ class AddParameter:
             ):
                 continue
             call = calls[-1].node
-            new_arg = ast.keyword(arg=arg_name, value=ast.Constant(value=None))
             new_call = ast.Call(
                 func=call.func,
                 args=call.args,
-                keywords=[*call.keywords, new_arg],
+                keywords=[
+                    *call.keywords,
+                    ast.keyword(arg=arg_name, value=ast.Constant(value=None)),
+                ],
             )
             call_edits.append(Edit(calls[-1].range, unparse(new_call)))
         return call_edits
@@ -1310,12 +1312,11 @@ class AddParameter:
     def function_definition_edit(self, arg_name: str) -> Edit:
         definition = self.function_definition.node
         arguments = definition.args
-        new_arg = ast.arg(arg_name)
         new_function = ast.FunctionDef(
             name=definition.name,
             args=ast.arguments(
                 posonlyargs=arguments.posonlyargs,
-                args=[*arguments.args, new_arg],
+                args=[*arguments.args, ast.arg(arg_name)],
                 vararg=arguments.vararg,
                 kwonlyargs=arguments.kwonlyargs,
                 kw_defaults=arguments.kw_defaults,
