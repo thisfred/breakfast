@@ -1195,7 +1195,7 @@ class RemoveParameter:
                     args=call.args[:index] + call.args[index + 1 :],
                     keywords=call.keywords,
                 )
-                call_edits.append(Edit(calls[-1].range, unparse(new_call)))
+                call_edits.append(replace_node(new_call, calls[-1].range))
             elif call.keywords:
                 new_call = ast.Call(
                     func=call.func,
@@ -1206,12 +1206,7 @@ class RemoveParameter:
                         if kw.arg != self.arg.node.arg
                     ],
                 )
-                call_edits.append(
-                    Edit(
-                        calls[-1].range,
-                        unparse(new_call, occurrence.position.level),
-                    )
-                )
+                call_edits.append(replace_node(new_call, calls[-1].range))
         return call_edits
 
     @property
