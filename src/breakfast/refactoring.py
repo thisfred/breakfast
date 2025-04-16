@@ -1229,13 +1229,7 @@ class RemoveParameter:
             returns=definition.returns,
             type_params=definition.type_params,
         )
-        definition_edit = Edit(
-            self.function_definition.range,
-            unparse(
-                new_function, level=self.function_definition.range.start.level
-            ),
-        )
-        return definition_edit
+        return replace_node(new_function, self.function_definition.range)
 
 
 @register
@@ -1292,7 +1286,7 @@ class AddParameter:
                     ast.keyword(arg=arg_name, value=ast.Constant(value=None)),
                 ],
             )
-            call_edits.append(Edit(calls[-1].range, unparse(new_call)))
+            call_edits.append(replace_node(new_call, calls[-1].range))
         return call_edits
 
     def function_definition_edit(self, arg_name: str) -> Edit:
@@ -1316,11 +1310,8 @@ class AddParameter:
             type_params=definition.type_params,
         )
 
-        definition_edit = Edit(
-            self.function_definition.range,
-            unparse(
-                new_function, level=self.function_definition.range.start.level
-            ),
+        definition_edit = replace_node(
+            new_function, self.function_definition.range
         )
         return definition_edit
 
@@ -1391,23 +1382,20 @@ class EncapsulateRecord:
             enclosing_assignment.range.start.as_range,
             unparse(fake_module, level=0) + NEWLINE,
         )
-        assignment = Edit(
-            enclosing_assignment.range,
-            unparse(
-                ast.Assign(
-                    targets=enclosing_assignment.node.targets,
-                    value=ast.Call(
-                        func=ast.Name(id=class_name),
-                        args=[],
-                        keywords=[
-                            ast.keyword(arg=key.value, value=value)
-                            for (key, value) in mapping.items()
-                            if isinstance(key, ast.Constant)
-                        ],
-                    ),
+        assignment = replace_node(
+            ast.Assign(
+                targets=enclosing_assignment.node.targets,
+                value=ast.Call(
+                    func=ast.Name(id=class_name),
+                    args=[],
+                    keywords=[
+                        ast.keyword(arg=key.value, value=value)
+                        for (key, value) in mapping.items()
+                        if isinstance(key, ast.Constant)
+                    ],
                 ),
-                level=0,
             ),
+            enclosing_assignment.range,
         )
 
         references = []
@@ -1426,15 +1414,9 @@ class EncapsulateRecord:
             node = subscripts[0].node
             if isinstance(node.slice, ast.Constant):
                 references.append(
-                    Edit(
+                    replace_node(
+                        ast.Attribute(value=node.value, attr=node.slice.value),
                         subscripts[0].range,
-                        unparse(
-                            ast.Attribute(
-                                value=node.value,
-                                attr=node.slice.value,
-                            ),
-                            level=0,
-                        ),
                     )
                 )
         return (definition, assignment, *references)
