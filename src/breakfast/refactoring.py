@@ -1253,6 +1253,90 @@ class RemoveParameter:
 
 
 @register
+class AddParameter:
+    name = "add parameter"
+
+    def __init__(
+        self,
+        code_selection: CodeSelection,
+    ):
+        self.text_range = code_selection.text_range
+        self.selection = code_selection
+
+    @classmethod
+    def applies_to(cls, selection: CodeSelection) -> bool:
+        return bool(
+            selection.text_range.enclosing_nodes_by_type(ast.FunctionDef)
+        )
+
+    @property
+    def function_definition(self) -> NodeWithRange[ast.FunctionDef]:
+        return self.selection.text_range.enclosing_nodes_by_type(
+            ast.FunctionDef
+        )[-1]
+
+    @property
+    def edits(self) -> tuple[Edit, ...]:
+        arg_name = make_unique_name("p", self.function_definition)
+        return (
+            self.function_definition_edit(arg_name),
+            *self.call_edits(arg_name),
+        )
+
+    def call_edits(self, arg_name: str) -> Sequence[Edit]:
+        call_edits = []
+        for occurrence in all_occurrences(
+            self.selection.source.node_position(self.function_definition.node)
+            + len("def ")
+        ):
+            if occurrence.node_type is not NodeType.REFERENCE:
+                continue
+            if not (
+                calls := occurrence.position.as_range.enclosing_nodes_by_type(
+                    ast.Call
+                )
+            ):
+                continue
+            call = calls[-1].node
+            new_arg = ast.keyword(arg=arg_name, value=ast.Constant(value=None))
+            new_call = ast.Call(
+                func=call.func,
+                args=call.args,
+                keywords=[*call.keywords, new_arg],
+            )
+            call_edits.append(Edit(calls[-1].range, unparse(new_call)))
+        return call_edits
+
+    def function_definition_edit(self, arg_name: str) -> Edit:
+        definition = self.function_definition.node
+        arguments = definition.args
+        new_arg = ast.arg(arg_name)
+        new_function = ast.FunctionDef(
+            name=definition.name,
+            args=ast.arguments(
+                posonlyargs=arguments.posonlyargs,
+                args=[*arguments.args, new_arg],
+                vararg=arguments.vararg,
+                kwonlyargs=arguments.kwonlyargs,
+                kw_defaults=arguments.kw_defaults,
+                kwarg=arguments.kwarg,
+                defaults=arguments.defaults,
+            ),
+            body=definition.body,
+            decorator_list=definition.decorator_list,
+            returns=definition.returns,
+            type_params=definition.type_params,
+        )
+        definition_edit = Edit(
+            self.function_definition.range,
+            unparse(
+                new_function, level=self.function_definition.range.start.level
+            ),
+        )
+        return definition_edit
+
+
+@register
 class EncapsulateRecord:
     name = "encapsulate record"
 

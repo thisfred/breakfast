@@ -1,6 +1,7 @@
 from pytest import mark
 
 from breakfast.refactoring import (
+    AddParameter,
     CodeSelection,
     Edit,
     EncapsulateRecord,
@@ -2311,26 +2312,7 @@ def test_remove_parameter_should_not_remove_used_parameter():
     )
 
 
-@mark.xfail
 def test_add_parameter_should_pass_none_in_callers():
-    class AddParameter:
-        name = "add parameter"
-
-        def __init__(
-            self,
-            code_selection: CodeSelection,
-        ):
-            self.text_range = code_selection.text_range
-            self.code_selection = code_selection
-
-        @classmethod
-        def applies_to(cls, selection: CodeSelection) -> bool:
-            return False
-
-        @property
-        def edits(self) -> tuple[Edit, ...]:
-            return ()
-
     assert_refactors_to(
         refactoring=AddParameter,
         target="b",
