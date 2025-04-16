@@ -465,7 +465,7 @@ def make_extract_callable_edits(
     all_edits = (
         Edit(insert_position.as_range, text=definition_text),
         replace_node(
-            calling_statement=calling_statement,
+            node=calling_statement,
             text_range=refactoring.code_selection.text_range,
         ),
     )
@@ -701,7 +701,7 @@ class InlineVariable:
             )
 
         edits: tuple[Edit, ...] = tuple(
-            Edit(name_range, text=unparse(assignment.node.value))
+            replace_node(assignment.node.value, name_range)
             for name_range in to_replace
         )
 
@@ -1471,15 +1471,12 @@ def type_from_constant(node: ast.Constant) -> ast.expr | None:
     return ast.Name(id=type(node.value).__name__)
 
 
-def render_node(text_range: TextRange, node: ast.AST) -> str:
+def render_node(node: ast.AST, text_range: TextRange) -> str:
     call_text = unparse(node, level=text_range.start.level)
     if text_range.start.column == 0:
         call_text = f"{INDENTATION * text_range.start.level}{call_text}"
     return call_text
 
 
-def replace_node(calling_statement: ast.AST, text_range: TextRange) -> Edit:
-    return Edit(
-        text_range,
-        text=render_node(text_range=text_range, node=calling_statement),
-    )
+def replace_node(node: ast.AST, text_range: TextRange) -> Edit:
+    return Edit(text_range, text=render_node(node=node, text_range=text_range))
