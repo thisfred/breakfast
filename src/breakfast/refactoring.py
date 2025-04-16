@@ -443,7 +443,7 @@ def make_extract_callable_edits(
     new_level = refactoring.compute_new_level(
         enclosing_scope=enclosing_scope, start_of_scope=start_of_scope
     )
-    definition_text = f"{NEWLINE}{unparse(callable_definition, level=new_level)}{NEWLINE}{INDENTATION * new_level}"
+
     has_returns = any(
         found
         for node in refactoring.code_selection.text_range.statements
@@ -458,12 +458,19 @@ def make_extract_callable_edits(
             usages.self_or_cls.name if usages.self_or_cls else None
         ),
     )
-
     insert_position = refactoring.get_insert_position(
         enclosing_scope=enclosing_scope
     )
+
     all_edits = (
-        Edit(insert_position.as_range, text=definition_text),
+        replace_with_node(
+            insert_position.as_range,
+            callable_definition,
+            add_newline_before=True,
+            add_newline_after=True,
+            add_indentation_after=True,
+            level=new_level,
+        ),
         replace_with_node(
             text_range=refactoring.code_selection.text_range,
             node=calling_statement,
@@ -1381,7 +1388,7 @@ class EncapsulateRecord:
         definition = replace_with_node(
             enclosing_assignment.range.start.as_range,
             fake_module,
-            add_newline=True,
+            add_newline_after=True,
         )
         assignment = replace_with_node(
             enclosing_assignment.range,
@@ -1445,18 +1452,29 @@ def type_from_constant(node: ast.Constant) -> ast.expr | None:
     return ast.Name(id=type(node.value).__name__)
 
 
-def render_node(node: ast.AST, text_range: TextRange) -> str:
-    call_text = unparse(node, level=text_range.start.level)
+def render_node(node: ast.AST, text_range: TextRange, level: int | None) -> str:
+    call_text = unparse(node, level=level or text_range.start.level)
     if text_range.start.column == 0:
         call_text = f"{INDENTATION * text_range.start.level}{call_text}"
     return call_text
 
 
 def replace_with_node(
-    text_range: TextRange, node: ast.AST, add_newline: bool = False
+    text_range: TextRange,
+    node: ast.AST,
+    add_newline_before: bool = False,
+    add_newline_after: bool = False,
+    add_indentation_after: bool = False,
+    level: int | None = None,
 ) -> Edit:
     return Edit(
         text_range,
-        text=render_node(node=node, text_range=text_range)
-        + (NEWLINE if add_newline else ""),
+        text=(NEWLINE if add_newline_before else "")
+        + render_node(node=node, text_range=text_range, level=level)
+        + (NEWLINE if add_newline_after else "")
+        + (
+            INDENTATION * (level or text_range.start.level)
+            if add_indentation_after
+            else ""
+        ),
     )
