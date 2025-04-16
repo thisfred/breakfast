@@ -466,7 +466,6 @@ def make_extract_callable_edits(
         replace_with_node(
             insert_position.as_range,
             callable_definition,
-            add_newline_before=True,
             add_newline_after=True,
             add_indentation_after=True,
             level=new_level,
@@ -790,15 +789,13 @@ class InlineCall:
             if return_ranges
             else call.range
         )
-        body = unparse(
-            ast.Module(body=new_statements, type_ignores=[]),
-            level=self.text_range.start.level,
+        body = (
+            ast.Module(body=new_statements, type_ignores=[])
+            if new_statements
+            else ast.Pass()
         )
         result = (
-            Edit(
-                insert_range,
-                text=f"{body or 'pass'}{NEWLINE}",
-            ),
+            replace_with_node(insert_range, body, add_newline_after=True),
             *result,
         )
         return result
@@ -1462,15 +1459,13 @@ def render_node(node: ast.AST, text_range: TextRange, level: int | None) -> str:
 def replace_with_node(
     text_range: TextRange,
     node: ast.AST,
-    add_newline_before: bool = False,
     add_newline_after: bool = False,
     add_indentation_after: bool = False,
     level: int | None = None,
 ) -> Edit:
     return Edit(
         text_range,
-        text=(NEWLINE if add_newline_before else "")
-        + render_node(node=node, text_range=text_range, level=level)
+        text=render_node(node=node, text_range=text_range, level=level)
         + (NEWLINE if add_newline_after else "")
         + (
             INDENTATION * (level or text_range.start.level)
