@@ -463,10 +463,14 @@ def make_extract_callable_edits(
         calling_statement,
         level=refactoring.code_selection.text_range.start.level,
     )
+    if refactoring.code_selection.text_range.start.column == 0:
+        call_text = (
+            f"{INDENTATION * refactoring.code_selection.text_range.start.level}"
+            f"{call_text}"
+        )
     insert_position = refactoring.get_insert_position(
         enclosing_scope=enclosing_scope
     )
-    print(f"{refactoring.code_selection.text_range=}")
     all_edits = (
         Edit(insert_position.as_range, text=definition_text),
         Edit(
@@ -1312,6 +1316,7 @@ class AddParameter:
     def function_definition_edit(self, arg_name: str) -> Edit:
         definition = self.function_definition.node
         arguments = definition.args
+
         new_function = ast.FunctionDef(
             name=definition.name,
             args=ast.arguments(
@@ -1328,6 +1333,7 @@ class AddParameter:
             returns=definition.returns,
             type_params=definition.type_params,
         )
+
         definition_edit = Edit(
             self.function_definition.range,
             unparse(

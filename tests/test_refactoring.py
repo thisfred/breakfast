@@ -2552,3 +2552,62 @@ def test_move_function_to_outer_scope_should_move_selection_including_indentatio
             return scope
         """,
     )
+
+
+def test_extract_function_should_extract_full_lines():
+    assert_refactors_to(
+        refactoring=ExtractFunction,
+        target=("        new_function =", "        )"),
+        code="""
+        class C:
+            def function_definition_edit(self, arg_name: str) -> Edit:
+                definition = self.function_definition.node
+                arguments = definition.args
+
+                new_function = ast.FunctionDef(
+                    name=definition.name,
+                    args=ast.arguments(
+                        posonlyargs=arguments.posonlyargs,
+                        args=[*arguments.args, ast.arg(arg_name)],
+                        vararg=arguments.vararg,
+                        kwonlyargs=arguments.kwonlyargs,
+                        kw_defaults=arguments.kw_defaults,
+                        kwarg=arguments.kwarg,
+                        defaults=arguments.defaults,
+                    ),
+                    body=definition.body,
+                    decorator_list=definition.decorator_list,
+                    returns=definition.returns,
+                    type_params=definition.type_params,
+                )
+                print(new_function)
+        """,
+        expected="""
+        class C:
+            def function_definition_edit(self, arg_name: str) -> Edit:
+                def f(arg_name, definition, arguments):
+                    new_function = ast.FunctionDef(
+                        name=definition.name,
+                        args=ast.arguments(
+                            posonlyargs=arguments.posonlyargs,
+                            args=[*arguments.args, ast.arg(arg_name)],
+                            vararg=arguments.vararg,
+                            kwonlyargs=arguments.kwonlyargs,
+                            kw_defaults=arguments.kw_defaults,
+                            kwarg=arguments.kwarg,
+                            defaults=arguments.defaults,
+                        ),
+                        body=definition.body,
+                        decorator_list=definition.decorator_list,
+                        returns=definition.returns,
+                        type_params=definition.type_params,
+                    )
+                    return new_function
+
+                definition = self.function_definition.node
+                arguments = definition.args
+
+                new_function = f(arg_name=arg_name, definition=definition, arguments=arguments)
+                print(new_function)
+        """,
+    )
