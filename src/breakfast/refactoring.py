@@ -464,9 +464,9 @@ def make_extract_callable_edits(
     )
     all_edits = (
         Edit(insert_position.as_range, text=definition_text),
-        replace_node(
-            node=calling_statement,
+        replace_with_node(
             text_range=refactoring.code_selection.text_range,
+            node=calling_statement,
         ),
     )
     return all_edits
@@ -701,7 +701,7 @@ class InlineVariable:
             )
 
         edits: tuple[Edit, ...] = tuple(
-            replace_node(assignment.node.value, name_range)
+            replace_with_node(name_range, assignment.node.value)
             for name_range in to_replace
         )
 
@@ -714,7 +714,7 @@ class InlineVariable:
                     for t in assignment.node.targets
                     if isinstance(t, ast.Name) and t.id != name
                 ]
-                delete = replace_node(assignment.node, assignment.range)
+                delete = replace_with_node(assignment.range, assignment.node)
             edits = (*edits, delete)
 
         return edits
@@ -1106,7 +1106,7 @@ class MoveFunctionToOuterScope:
         )
         result = (
             *result,
-            replace_node(enclosing_scope.node, insert_position.as_range),
+            replace_with_node(insert_position.as_range, enclosing_scope.node),
         )
 
         return result
@@ -1195,7 +1195,7 @@ class RemoveParameter:
                     args=call.args[:index] + call.args[index + 1 :],
                     keywords=call.keywords,
                 )
-                call_edits.append(replace_node(new_call, calls[-1].range))
+                call_edits.append(replace_with_node(calls[-1].range, new_call))
             elif call.keywords:
                 new_call = ast.Call(
                     func=call.func,
@@ -1206,7 +1206,7 @@ class RemoveParameter:
                         if kw.arg != self.arg.node.arg
                     ],
                 )
-                call_edits.append(replace_node(new_call, calls[-1].range))
+                call_edits.append(replace_with_node(calls[-1].range, new_call))
         return call_edits
 
     @property
@@ -1229,7 +1229,7 @@ class RemoveParameter:
             returns=definition.returns,
             type_params=definition.type_params,
         )
-        return replace_node(new_function, self.function_definition.range)
+        return replace_with_node(self.function_definition.range, new_function)
 
 
 @register
@@ -1286,7 +1286,7 @@ class AddParameter:
                     ast.keyword(arg=arg_name, value=ast.Constant(value=None)),
                 ],
             )
-            call_edits.append(replace_node(new_call, calls[-1].range))
+            call_edits.append(replace_with_node(calls[-1].range, new_call))
         return call_edits
 
     def function_definition_edit(self, arg_name: str) -> Edit:
@@ -1310,8 +1310,8 @@ class AddParameter:
             type_params=definition.type_params,
         )
 
-        definition_edit = replace_node(
-            new_function, self.function_definition.range
+        definition_edit = replace_with_node(
+            self.function_definition.range, new_function
         )
         return definition_edit
 
@@ -1378,11 +1378,13 @@ class EncapsulateRecord:
             ],
             type_ignores=[],
         )
-        definition = Edit(
+        definition = replace_with_node(
             enclosing_assignment.range.start.as_range,
-            unparse(fake_module, level=0) + NEWLINE,
+            fake_module,
+            add_newline=True,
         )
-        assignment = replace_node(
+        assignment = replace_with_node(
+            enclosing_assignment.range,
             ast.Assign(
                 targets=enclosing_assignment.node.targets,
                 value=ast.Call(
@@ -1395,7 +1397,6 @@ class EncapsulateRecord:
                     ],
                 ),
             ),
-            enclosing_assignment.range,
         )
 
         references = []
@@ -1414,9 +1415,9 @@ class EncapsulateRecord:
             node = subscripts[0].node
             if isinstance(node.slice, ast.Constant):
                 references.append(
-                    replace_node(
-                        ast.Attribute(value=node.value, attr=node.slice.value),
+                    replace_with_node(
                         subscripts[0].range,
+                        ast.Attribute(value=node.value, attr=node.slice.value),
                     )
                 )
         return (definition, assignment, *references)
@@ -1451,5 +1452,11 @@ def render_node(node: ast.AST, text_range: TextRange) -> str:
     return call_text
 
 
-def replace_node(node: ast.AST, text_range: TextRange) -> Edit:
-    return Edit(text_range, text=render_node(node=node, text_range=text_range))
+def replace_with_node(
+    text_range: TextRange, node: ast.AST, add_newline: bool = False
+) -> Edit:
+    return Edit(
+        text_range,
+        text=render_node(node=node, text_range=text_range)
+        + (NEWLINE if add_newline else ""),
+    )
