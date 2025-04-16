@@ -714,8 +714,7 @@ class InlineVariable:
                     for t in assignment.node.targets
                     if isinstance(t, ast.Name) and t.id != name
                 ]
-                delete = Edit(assignment.range, text=unparse(assignment.node))
-
+                delete = replace_node(assignment.node, assignment.range)
             edits = (*edits, delete)
 
         return edits
@@ -1107,10 +1106,7 @@ class MoveFunctionToOuterScope:
         )
         result = (
             *result,
-            Edit(
-                insert_position.as_range,
-                unparse(enclosing_scope.node, level=0),
-            ),
+            replace_node(enclosing_scope.node, insert_position.as_range),
         )
 
         return result
