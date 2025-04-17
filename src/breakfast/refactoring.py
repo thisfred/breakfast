@@ -178,7 +178,7 @@ class UsageCollector:
         code_selection: CodeSelection,
         enclosing_scope: ScopeWithRange,
     ) -> None:
-        self.code_selection = code_selection
+        self.selection = code_selection
         self.enclosing_scope = enclosing_scope
         self._defined_before: dict[str, list[Occurrence]] = defaultdict(list)
         self._used_in: dict[str, list[Occurrence]] = defaultdict(list)
@@ -216,20 +216,20 @@ class UsageCollector:
 
     def _collect(self) -> None:
         for i, occurrence in enumerate(
-            find_names(self.enclosing_scope.node, self.code_selection.source)
+            find_names(self.enclosing_scope.node, self.selection.source)
         ):
             if (
-                occurrence.position < self.code_selection.text_range.start
+                occurrence.position < self.selection.text_range.start
                 and occurrence.node_type is NodeType.DEFINITION
             ):
-                if i == 1 and not (self.code_selection.in_static_method):
+                if i == 1 and not (self.selection.in_static_method):
                     self.self_or_cls = occurrence
                 self._defined_before[occurrence.name].append(occurrence)
-            if occurrence.position in self.code_selection.text_range:
+            if occurrence.position in self.selection.text_range:
                 self._used_in[occurrence.name].append(occurrence)
                 if occurrence.node_type is NodeType.DEFINITION:
                     self._modified_in[occurrence.name].append(occurrence)
-            if occurrence.position > self.code_selection.text_range.end:
+            if occurrence.position > self.selection.text_range.end:
                 self._used_after[occurrence.name].append(occurrence)
 
     def get_subsequent_usage(
@@ -266,7 +266,7 @@ class ExtractFunction:
     name = "extract function"
 
     def __init__(self, code_selection: CodeSelection):
-        self.code_selection = code_selection
+        self.selection = code_selection
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -293,11 +293,11 @@ class ExtractFunction:
         start_of_scope: Position,
     ) -> int:
         if isinstance(enclosing_scope.node, ast.Module | ast.FunctionDef):
-            insert_position = self.code_selection.source.node_position(
+            insert_position = self.selection.source.node_position(
                 enclosing_scope.node.body[0]
             )
         else:
-            insert_position = self.code_selection.text_range.start.line.start
+            insert_position = self.selection.text_range.start.line.start
 
         new_level = insert_position.column // 4
         return new_level
@@ -307,11 +307,11 @@ class ExtractFunction:
         enclosing_scope: ScopeWithRange,
     ) -> Position:
         if isinstance(enclosing_scope.node, ast.Module | ast.FunctionDef):
-            insert_position = self.code_selection.source.node_position(
+            insert_position = self.selection.source.node_position(
                 enclosing_scope.node.body[0]
             )
         else:
-            insert_position = self.code_selection.text_range.start.line.start
+            insert_position = self.selection.text_range.start.line.start
         return insert_position
 
     def make_decorators(self, usages: UsageCollector) -> list[ast.expr]:
@@ -361,7 +361,7 @@ class ExtractMethod:
     name = "extract method"
 
     def __init__(self, code_selection: CodeSelection):
-        self.code_selection = code_selection
+        self.selection = code_selection
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -421,7 +421,7 @@ class ExtractMethod:
         ):
             decorator_list: list[ast.expr] = [ast.Name(STATIC_METHOD)]
         else:
-            if usages.self_or_cls and self.code_selection.in_class_method:
+            if usages.self_or_cls and self.selection.in_class_method:
                 decorator_list = [ast.Name(CLASS_METHOD)]
             else:
                 decorator_list = []
@@ -431,22 +431,18 @@ class ExtractMethod:
 def make_extract_callable_edits(
     refactoring: ExtractFunction | ExtractMethod, name: str
 ) -> tuple[Edit, ...]:
-    enclosing_scope = refactoring.code_selection.text_range.enclosing_scopes[-1]
-    usages = UsageCollector(refactoring.code_selection, enclosing_scope)
+    enclosing_scope = refactoring.selection.text_range.enclosing_scopes[-1]
+    usages = UsageCollector(refactoring.selection, enclosing_scope)
     return_node = make_return_node(
         usages.modified_in_selection, usages.used_after_selection
     )
-    body = make_body(
-        selection=refactoring.code_selection, return_node=return_node
-    )
+    body = make_body(selection=refactoring.selection, return_node=return_node)
     if not body:
         logger.warning("Could not extract callable body.")
         return ()
     name = make_unique_name(
         name,
-        enclosing_scope=refactoring.code_selection.text_range.enclosing_scopes[
-            0
-        ],
+        enclosing_scope=refactoring.selection.text_range.enclosing_scopes[0],
     )
     arguments = make_arguments(
         usages.defined_before_selection, usages.used_in_selection
@@ -462,7 +458,7 @@ def make_extract_callable_edits(
 
     has_returns = any(
         found
-        for node in refactoring.code_selection.text_range.statements
+        for node in refactoring.selection.text_range.statements
         for found in find_returns(node)
     )
     calling_statement = refactoring.make_call(
@@ -487,7 +483,7 @@ def make_extract_callable_edits(
             level=new_level,
         ),
         replace_with_node(
-            text_range=refactoring.code_selection.text_range,
+            text_range=refactoring.selection.text_range,
             node=calling_statement,
         ),
     )
@@ -661,7 +657,7 @@ class InlineVariable:
         self.text_range = code_selection.text_range
         self.cursor = code_selection.cursor
         self.source = self.text_range.start.source
-        self.code_selection = code_selection
+        self.selection = code_selection
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -670,7 +666,7 @@ class InlineVariable:
     @property
     def edits(self) -> tuple[Edit, ...]:
         grouped: dict[bool, list[Occurrence]] = defaultdict(list)
-        for o in self.code_selection.occurrences_of_name_at_cursor:
+        for o in self.selection.occurrences_of_name_at_cursor:
             grouped[o.node_type is NodeType.DEFINITION].append(o)
 
         last_definition = grouped.get(True, [None])[-1]
@@ -683,7 +679,7 @@ class InlineVariable:
             logger.warning("Could not find assignment for definition.")
             return ()
 
-        name = self.code_selection.name_at_cursor
+        name = self.selection.name_at_cursor
         if name is None:
             logger.warning("No variable at cursor that can be inlined.")
             return ()
@@ -692,7 +688,7 @@ class InlineVariable:
                 o
                 for o in dropwhile(
                     lambda x: x.position <= self.cursor,
-                    self.code_selection.occurrences_of_name_at_cursor,
+                    self.selection.occurrences_of_name_at_cursor,
                 )
             )
             to_replace: tuple[TextRange, ...] = tuple(
@@ -972,7 +968,7 @@ class SlideStatementsUp:
         code_selection: CodeSelection,
     ):
         self.text_range = code_selection.text_range
-        self.code_selection = code_selection
+        self.selection = code_selection
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -993,8 +989,8 @@ class SlideStatementsUp:
 
     def find_slide_target_before(self) -> Position | None:
         first, last = (
-            self.code_selection.text_range.start.line,
-            self.code_selection.text_range.end.line,
+            self.selection.text_range.start.line,
+            self.selection.text_range.end.line,
         )
 
         line = first
@@ -1034,7 +1030,7 @@ class SlideStatementsDown:
         code_selection: CodeSelection,
     ):
         self.text_range = code_selection.text_range
-        self.code_selection = code_selection
+        self.selection = code_selection
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -1055,13 +1051,13 @@ class SlideStatementsDown:
 
     def find_slide_target_after(self) -> Position | None:
         first, last = (
-            self.code_selection.text_range.start.line,
-            self.code_selection.text_range.end.line,
+            self.selection.text_range.start.line,
+            self.selection.text_range.end.line,
         )
         lines = first.start.to(last.end)
         names_defined_in_range = lines.definitions
-        enclosing_scope = self.code_selection.text_range.enclosing_scopes[-1]
-        usages = UsageCollector(self.code_selection, enclosing_scope)
+        enclosing_scope = self.selection.text_range.enclosing_scopes[-1]
+        usages = UsageCollector(self.selection, enclosing_scope)
         first_usage_after_range = usages.get_subsequent_usage(
             names_defined_in_range=names_defined_in_range
         )
@@ -1579,6 +1575,26 @@ class PropertyToMethod:
         return self.selection.text_range.enclosing_nodes_by_type(
             ast.FunctionDef
         )[-1]
+
+
+@register
+class ExtractClass:
+    name = "extract class"
+
+    def __init__(
+        self,
+        code_selection: CodeSelection,
+    ):
+        self.text_range = code_selection.text_range
+        self.selection = code_selection
+
+    @classmethod
+    def applies_to(cls, selection: CodeSelection) -> bool:
+        return False
+
+    @property
+    def edits(self) -> tuple[Edit, ...]:
+        return ()
 
 
 def to_class_name(var_name: str) -> str:

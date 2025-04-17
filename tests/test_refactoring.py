@@ -5,6 +5,7 @@ from breakfast.refactoring import (
     CodeSelection,
     Edit,
     EncapsulateRecord,
+    ExtractClass,
     ExtractFunction,
     ExtractMethod,
     ExtractVariable,
@@ -2144,24 +2145,6 @@ def test_property_to_method_should_convert_to_a_method_with_no_arguments():
 
 @mark.xfail
 def test_extract_class_should_create_class():
-    class ExtractClass:
-        name = "extract class"
-
-        def __init__(
-            self,
-            code_selection: CodeSelection,
-        ):
-            self.text_range = code_selection.text_range
-            self.code_selection = code_selection
-
-        @classmethod
-        def applies_to(cls, selection: CodeSelection) -> bool:
-            return False
-
-        @property
-        def edits(self) -> tuple[Edit, ...]:
-            return ()
-
     assert_refactors_to(
         refactoring=ExtractClass,
         target=("self._office_area_code", "= office_number"),
