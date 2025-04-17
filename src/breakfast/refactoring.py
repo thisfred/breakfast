@@ -46,6 +46,7 @@ INDENTATION = " " * configuration["code_generation"]["indentation"]
 NEWLINE = "\n"
 STATIC_METHOD = "staticmethod"
 CLASS_METHOD = "classmethod"
+PROPERTY = "property"
 
 
 def register(refactoring: "type[Refactoring]") -> "type[Refactoring]":
@@ -115,6 +116,21 @@ class CodeSelection:
             )
             and any(
                 d.id == CLASS_METHOD
+                for d in scope_node.decorator_list
+                if isinstance(d, ast.Name)
+            )
+        )
+
+    @cached_property
+    def in_property(self) -> bool:
+        return (
+            self.in_method
+            and isinstance(
+                (scope_node := self.text_range.enclosing_scopes[-1].node),
+                ast.FunctionDef,
+            )
+            and any(
+                d.id == PROPERTY
                 for d in scope_node.decorator_list
                 if isinstance(d, ast.Name)
             )
@@ -1448,7 +1464,7 @@ class MethodToProperty:
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
-        return selection.in_method
+        return selection.in_method and not selection.in_property
 
     @property
     def edits(self) -> tuple[Edit, ...]:
@@ -1458,7 +1474,7 @@ class MethodToProperty:
             args=definition.args,
             body=definition.body,
             decorator_list=[
-                ast.Name(id="property"),
+                ast.Name(id=PROPERTY),
                 *definition.decorator_list,
             ],
             returns=definition.returns,
@@ -1485,6 +1501,78 @@ class MethodToProperty:
             replace_calls.append(replace_with_node(calls[-1].range, node.func))
 
         return (add_decorator, *replace_calls)
+
+    @property
+    def function_definition(self) -> NodeWithRange[ast.FunctionDef]:
+        return self.selection.text_range.enclosing_nodes_by_type(
+            ast.FunctionDef
+        )[-1]
+
+
+@register
+class PropertyToMethod:
+    name = "convert property to method"
+
+    def __init__(
+        self,
+        code_selection: CodeSelection,
+    ):
+        self.text_range = code_selection.text_range
+        self.selection = code_selection
+
+    @classmethod
+    def applies_to(cls, selection: CodeSelection) -> bool:
+        return selection.in_property
+
+    @property
+    def edits(self) -> tuple[Edit, ...]:
+        definition = self.function_definition.node
+        print(ast.dump(definition))
+        new_function = ast.FunctionDef(
+            name=definition.name,
+            args=definition.args,
+            body=definition.body,
+            decorator_list=[
+                d
+                for d in definition.decorator_list
+                if (not isinstance(d, ast.Name) or d.id != PROPERTY)
+            ],
+            returns=definition.returns,
+            type_params=definition.type_params,
+        )
+        start = self.function_definition.range.start
+        for _ in definition.decorator_list:
+            start = start.line.previous.start if start.line.previous else start
+        range_with_decorators = start.through(
+            self.function_definition.range.end
+        )
+        remove_decorator = replace_with_node(
+            range_with_decorators, new_function
+        )
+        replace_references = []
+        for occurrence in all_occurrences(
+            self.selection.source.node_position(self.function_definition.node)
+            + len("def ")
+        ):
+            if occurrence.node_type is not NodeType.REFERENCE:
+                continue
+            if not (
+                attributes
+                := occurrence.position.as_range.enclosing_nodes_by_type(
+                    ast.Attribute
+                )
+            ):
+                continue
+            node = attributes[-1].node
+
+            replace_references.append(
+                replace_with_node(
+                    attributes[-1].range,
+                    ast.Call(func=node, args=[], keywords=[]),
+                )
+            )
+
+        return (remove_decorator, *replace_references)
 
     @property
     def function_definition(self) -> NodeWithRange[ast.FunctionDef]:

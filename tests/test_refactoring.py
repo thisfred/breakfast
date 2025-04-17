@@ -12,6 +12,7 @@ from breakfast.refactoring import (
     InlineVariable,
     MethodToProperty,
     MoveFunctionToParentScope,
+    PropertyToMethod,
     RemoveParameter,
     SlideStatementsDown,
     SlideStatementsUp,
@@ -2117,26 +2118,7 @@ def test_method_to_property_should_convert_a_method_with_no_arguments():
     )
 
 
-@mark.xfail
 def test_property_to_method_should_convert_to_a_method_with_no_arguments():
-    class PropertyToMethod:
-        name = "convert property to method"
-
-        def __init__(
-            self,
-            code_selection: CodeSelection,
-        ):
-            self.text_range = code_selection.text_range
-            self.code_selection = code_selection
-
-        @classmethod
-        def applies_to(cls, selection: CodeSelection) -> bool:
-            return False
-
-        @property
-        def edits(self) -> tuple[Edit, ...]:
-            return ()
-
     assert_refactors_to(
         refactoring=PropertyToMethod,
         target="def m",
