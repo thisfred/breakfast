@@ -10,7 +10,8 @@ from breakfast.refactoring import (
     ExtractVariable,
     InlineCall,
     InlineVariable,
-    MoveFunctionToOuterScope,
+    MethodToProperty,
+    MoveFunctionToParentScope,
     RemoveParameter,
     SlideStatementsDown,
     SlideStatementsUp,
@@ -1956,7 +1957,7 @@ def test_inline_callable_should_work_with_newline_literals_in_strings():
 
 def test_move_function_should_move_function_defintion_to_next_enclosing_scope():
     assert_refactors_to(
-        refactoring=MoveFunctionToOuterScope,
+        refactoring=MoveFunctionToParentScope,
         target="function",
         code=r"""
         def statement(*, invoice, plays) -> str:
@@ -1976,245 +1977,6 @@ def test_move_function_should_move_function_defintion_to_next_enclosing_scope():
         def function(plays, performance):
             play = plays[performance["play_id"]]
             return play
-        """,
-    )
-
-
-@mark.xfail
-def test_remove_middle_man_should_remove_property():
-    class RemoveMiddleMan:
-        name = "remove middle man"
-
-        def __init__(
-            self,
-            code_selection: CodeSelection,
-        ):
-            self.text_range = code_selection.text_range
-            self.code_selection = code_selection
-
-        @classmethod
-        def applies_to(cls, selection: CodeSelection) -> bool:
-            return False
-
-        @property
-        def edits(self) -> tuple[Edit, ...]:
-            return ()
-
-    assert_refactors_to(
-        refactoring=RemoveMiddleMan,
-        target="def manager",
-        code=r"""
-        class Department:
-            def __init__(self, manager):
-                self.manager = manager
-
-        class Person:
-            def __init__(self, department):
-                self.department=department
-
-            @property
-            def manager(self):
-                return self.department.manager
-
-        a_department = Department(manager='bob')
-        a_person = Person(a_department)
-
-        manager = a_person.manager
-        """,
-        expected=r"""
-        class Department:
-            def __init__(self, manager):
-                self.manager = manager
-
-        class Person:
-            def __init__(self, department):
-                self.department=department
-
-        a_department = Department(manager='bob')
-        a_person = Person(a_department)
-
-        manager = a_person.department.manager
-        """,
-    )
-
-
-@mark.xfail
-def test_hide_delegate_should_add_property():
-    class HideDelegate:
-        name = "hide delegate"
-
-        def __init__(
-            self,
-            code_selection: CodeSelection,
-        ):
-            self.text_range = code_selection.text_range
-            self.code_selection = code_selection
-
-        @classmethod
-        def applies_to(cls, selection: CodeSelection) -> bool:
-            return False
-
-        @property
-        def edits(self) -> tuple[Edit, ...]:
-            return ()
-
-    assert_refactors_to(
-        refactoring=HideDelegate,
-        target="a_person.department.manager",
-        code=r"""
-        class Department:
-            def __init__(self, manager):
-                self.manager = manager
-
-        class Person:
-            def __init__(self, department):
-                self.department=department
-
-        a_department = Department(manager='bob')
-        a_person = Person(a_department)
-
-        manager = a_person.department.manager
-        """,
-        expected=r"""
-        class Department:
-            def __init__(self, manager):
-                self.manager = manager
-
-        class Person:
-            def __init__(self, department):
-                self.department=department
-
-            @property
-            def manager(self):
-                return self.department.manager
-
-        a_department = Department(manager='bob')
-        a_person = Person(a_department)
-
-        manager = a_person.manager
-        """,
-    )
-
-
-@mark.xfail
-def test_move_to_callers_should_add_new_parameter():
-    class MoveToCallers:
-        name = "move to callers"
-
-        def __init__(
-            self,
-            code_selection: CodeSelection,
-        ):
-            self.text_range = code_selection.text_range
-            self.code_selection = code_selection
-
-        @classmethod
-        def applies_to(cls, selection: CodeSelection) -> bool:
-            return False
-
-        @property
-        def edits(self) -> tuple[Edit, ...]:
-            return ()
-
-    assert_refactors_to(
-        refactoring=MoveToCallers,
-        target="A(a, b)",
-        occurrence=2,
-        code=r"""
-        class B:
-            def  __init__(self, a, b):
-                self.a = A(a, b)
-
-            def method(self):
-                return self.a.method() + 1
-
-        def f():
-            a = 1
-            b = 2
-            i = B(a, b)
-            print(b.method())
-        """,
-        expected=r"""
-        class B:
-            def  __init__(self, p):
-                self.a = p
-
-            def method(self):
-                return self.a.method() + 1
-
-        def f():
-            a = 1
-            b = 2
-            p = A(a, b)
-            i = B(p=p)
-            print(b.method())
-        """,
-    )
-
-
-@mark.xfail
-def test_replace_inheritance_should_move_superclass_to_init():
-    class ReplaceInheritance:
-        name = "replace inheritance with composition"
-
-        def __init__(
-            self,
-            code_selection: CodeSelection,
-        ):
-            self.text_range = code_selection.text_range
-            self.code_selection = code_selection
-
-        @classmethod
-        def applies_to(cls, selection: CodeSelection) -> bool:
-            return False
-
-        @property
-        def edits(self) -> tuple[Edit, ...]:
-            return ()
-
-    assert_refactors_to(
-        refactoring=ReplaceInheritance,
-        target="A",
-        occurrence=2,
-        code=r"""
-        class A:
-            def __init__(a, b):
-                self.a = a
-                self.b = b
-
-            def method(self):
-                return a + b
-
-        class B(A):
-            def  __init__(self, a, b):
-                super().__init__(a, b)
-
-            def method(self):
-                return super().method() + 1
-        """,
-        expected=r"""
-        class A:
-            def __init__(a, b):
-                self.a = a
-                self.b = b
-
-            def method(self):
-                return a + b
-
-        class B:
-            def  __init__(self, a, b):
-                self.s = A(a, b)
-
-            @property
-            def a(self):
-                return self.s.a
-
-            @property
-            def a(self):
-                return self.s.b
-
-            def method(self):
-                return self.s.method() + 1
         """,
     )
 
@@ -2327,6 +2089,73 @@ def test_add_parameter_should_pass_none_in_callers():
             return a or b
 
         d = function(1, 2, p=None)
+        """,
+    )
+
+
+def test_method_to_property_should_convert_a_method_with_no_arguments():
+    assert_refactors_to(
+        refactoring=MethodToProperty,
+        target="def m",
+        code=r"""
+        class C:
+            def m(self):
+                return 2
+
+            def m2(self):
+                print(self.m())
+        """,
+        expected=r"""
+        class C:
+            @property
+            def m(self):
+                return 2
+
+            def m2(self):
+                print(self.m)
+        """,
+    )
+
+
+@mark.xfail
+def test_property_to_method_should_convert_to_a_method_with_no_arguments():
+    class PropertyToMethod:
+        name = "convert property to method"
+
+        def __init__(
+            self,
+            code_selection: CodeSelection,
+        ):
+            self.text_range = code_selection.text_range
+            self.code_selection = code_selection
+
+        @classmethod
+        def applies_to(cls, selection: CodeSelection) -> bool:
+            return False
+
+        @property
+        def edits(self) -> tuple[Edit, ...]:
+            return ()
+
+    assert_refactors_to(
+        refactoring=PropertyToMethod,
+        target="def m",
+        code=r"""
+        class C:
+            @property
+            def m(self):
+                return 2
+
+            def m2(self):
+                print(self.m)
+        """,
+        expected=r"""
+        class C:
+            def m(self):
+                return 2
+
+            def m2(self):
+                print(self.m())
         """,
     )
 
@@ -2512,7 +2341,7 @@ def test_replace_with_method_object_should_create_new_class():
 
 def test_move_function_to_outer_scope_should_move_selection_including_indentation():
     assert_refactors_to(
-        refactoring=MoveFunctionToOuterScope,
+        refactoring=MoveFunctionToParentScope,
         target=("        def target_scope", "            return scope"),
         code="""
         class C:

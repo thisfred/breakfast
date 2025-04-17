@@ -713,7 +713,7 @@ class InlineVariable:
 
         if can_remove_last_definition:
             if len(assignment.node.targets) == 1:
-                delete = Edit(assignment.range, text="")
+                delete = delete_range(assignment.range)
             else:
                 assignment.node.targets = [
                     t
@@ -1073,8 +1073,8 @@ class SlideStatementsDown:
 
 
 @register
-class MoveFunctionToOuterScope:
-    name = "move function to outer scope"
+class MoveFunctionToParentScope:
+    name = "move function to parent scope"
 
     def __init__(
         self,
@@ -1435,6 +1435,64 @@ class EncapsulateRecord:
         return to_class_name(var_name)
 
 
+@register
+class MethodToProperty:
+    name = "convert method to property"
+
+    def __init__(
+        self,
+        code_selection: CodeSelection,
+    ):
+        self.text_range = code_selection.text_range
+        self.selection = code_selection
+
+    @classmethod
+    def applies_to(cls, selection: CodeSelection) -> bool:
+        return selection.in_method
+
+    @property
+    def edits(self) -> tuple[Edit, ...]:
+        definition = self.function_definition.node
+        new_function = ast.FunctionDef(
+            name=definition.name,
+            args=definition.args,
+            body=definition.body,
+            decorator_list=[
+                ast.Name(id="property"),
+                *definition.decorator_list,
+            ],
+            returns=definition.returns,
+            type_params=definition.type_params,
+        )
+        add_decorator = replace_with_node(
+            self.function_definition.range, new_function
+        )
+        replace_calls = []
+        for occurrence in all_occurrences(
+            self.selection.source.node_position(self.function_definition.node)
+            + len("def ")
+        ):
+            if occurrence.node_type is not NodeType.REFERENCE:
+                continue
+            if not (
+                calls := occurrence.position.as_range.enclosing_nodes_by_type(
+                    ast.Call
+                )
+            ):
+                continue
+            node = calls[-1].node
+
+            replace_calls.append(replace_with_node(calls[-1].range, node.func))
+
+        return (add_decorator, *replace_calls)
+
+    @property
+    def function_definition(self) -> NodeWithRange[ast.FunctionDef]:
+        return self.selection.text_range.enclosing_nodes_by_type(
+            ast.FunctionDef
+        )[-1]
+
+
 def to_class_name(var_name: str) -> str:
     return "".join(s.lower().title() for s in var_name.split("_"))
 
@@ -1454,6 +1512,10 @@ def render_node(node: ast.AST, text_range: TextRange, level: int | None) -> str:
     if text_range.start.column == 0:
         call_text = f"{INDENTATION * text_range.start.level}{call_text}"
     return call_text
+
+
+def delete_range(text_range: TextRange) -> Edit:
+    return Edit(text_range, "")
 
 
 def replace_with_node(
