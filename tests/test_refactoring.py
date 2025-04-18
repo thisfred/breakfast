@@ -351,12 +351,12 @@ def test_extract_function_should_extract_inside_function():
         """,
         expected="""
         def f():
-            def f0(a):
+            def f_0(a):
                 b = a + 2
                 return b
 
             a = 1
-            b = f0(a=a)
+            b = f_0(a=a)
             print(b)
 
         """,
@@ -1512,8 +1512,8 @@ def test_extract_variable_should_not_use_existing_name():
         expected="""
         a = 1
         v = 2
-        v0 = a + 2
-        b = v0
+        v_0 = a + 2
+        b = v_0
 
         print(b, v)
         """,
@@ -1532,14 +1532,14 @@ def test_extract_function_should_not_use_existing_name():
         print(b, f)
         """,
         expected="""
-        def f0(a):
+        def f_0(a):
            b = a + 2
            return b
 
         a = 1
         f = 2
 
-        b = f0(a=a)
+        b = f_0(a=a)
         print(b, f)
         """,
     )
@@ -1558,7 +1558,7 @@ def test_extract_method_should_not_use_existing_name():
 
                 print(b, f)
 
-            def m0(self):
+            def m_0(self):
                 pass
         """,
         expected="""
@@ -1566,15 +1566,15 @@ def test_extract_method_should_not_use_existing_name():
             def m(self):
                 self.a = 1
                 f = 2
-                b = self.m1()
+                b = self.m_1()
 
                 print(b, f)
 
-            def m1(self):
+            def m_1(self):
                 b = self.a + 2
                 return b
 
-            def m0(self):
+            def m_0(self):
                 pass
         """,
     )
@@ -2143,11 +2143,10 @@ def test_property_to_method_should_convert_to_a_method_with_no_arguments():
     )
 
 
-@mark.xfail
 def test_extract_class_should_create_class():
     assert_refactors_to(
         refactoring=ExtractClass,
-        target=("self._office_area_code", "= office_number"),
+        target=("self._office_area_code =", "= office_number"),
         code=r"""
         class Person:
             def __init__(self, office_area_code, office_number):
@@ -2165,21 +2164,21 @@ def test_extract_class_should_create_class():
 
         @dataclass
         class C:
-            office_area_code = None
-            office_number = None
+            _office_area_code = None
+            _office_number = None
 
         class Person:
             def __init__(self, office_area_code, office_number):
                 self.c = C(
-                    office_area_code=office_area_code,
-                    office_number=office_number
+                    _office_area_code=office_area_code,
+                    _office_number=office_number
                 )
 
             def office_area_code(self):
-                return self.c.office_area_code
+                return self.c._office_area_code
 
             def office_number(self):
-                return self.c.office_number
+                return self.c._office_number
         """,
     )
 
@@ -2444,7 +2443,7 @@ def test_extract_function_should_extract_full_lines2():
         """,
         expected="""
         def f(refactoring, name):
-            def f0(refactoring, calling_statement):
+            def f_0(refactoring, calling_statement):
                 call_text = unparse(
                     calling_statement,
                     level=refactoring.code_selection.text_range.start.level,
@@ -2465,7 +2464,7 @@ def test_extract_function_should_extract_full_lines2():
                     usages.self_or_cls.name if usages.self_or_cls else None
                 ),
             )
-            call_text = f0(refactoring=refactoring, calling_statement=calling_statement)
+            call_text = f_0(refactoring=refactoring, calling_statement=calling_statement)
             insert_position = refactoring.get_insert_position(
                 enclosing_scope=enclosing_scope
             )

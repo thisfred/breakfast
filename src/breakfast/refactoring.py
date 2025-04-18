@@ -327,7 +327,7 @@ def make_unique_name(
     }
     counter = 0
     while name in names_in_range:
-        name = f"{original_name}{counter}"
+        name = f"{original_name}_{counter}"
         counter += 1
     return name
 
@@ -1523,7 +1523,6 @@ class PropertyToMethod:
     @property
     def edits(self) -> tuple[Edit, ...]:
         definition = self.function_definition.node
-        print(ast.dump(definition))
         new_function = ast.FunctionDef(
             name=definition.name,
             args=definition.args,
@@ -1590,11 +1589,140 @@ class ExtractClass:
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
-        return False
+        return selection.in_method and not selection.in_static_method
 
     @property
     def edits(self) -> tuple[Edit, ...]:
-        return ()
+        definition = self.function_definition.node
+        new_body: list[ast.stmt] = []
+        call_added = False
+        class_name = make_unique_name("C", self.text_range.enclosing_scopes[0])
+        property_name = make_unique_name(
+            class_name.lower(),
+            self.text_range.enclosing_nodes_by_type(ast.ClassDef)[-1],
+        )
+        assignments = [
+            s
+            for s in definition.body
+            if (
+                self.text_range.start.source.node_position(s) in self.text_range
+            )
+            and isinstance(s, ast.Assign)
+        ]
+        replace_properties = []
+        for assignment in assignments:
+            if isinstance(assignment.targets[0], ast.Attribute) and isinstance(
+                assignment.targets[0].value, ast.Name
+            ):
+                for occurrence in all_occurrences(
+                    self.selection.source.node_position(assignment.targets[0])
+                    + len(assignment.targets[0].value.id)
+                    + 1
+                ):
+                    if occurrence.node_type is not NodeType.REFERENCE:
+                        continue
+                    attribute = (
+                        occurrence.position.as_range.enclosing_nodes_by_type(
+                            ast.Attribute
+                        )[0]
+                    )
+                    replace_properties.append(
+                        replace_with_node(
+                            attribute.range,
+                            ast.Attribute(
+                                value=ast.Attribute(
+                                    value=attribute.node.value,
+                                    attr=property_name,
+                                ),
+                                attr=attribute.node.attr,
+                            ),
+                        )
+                    )
+
+        new_assignments: list[ast.stmt] = [
+            ast.AnnAssign(
+                target=ast.Name(id=a.targets[0].attr),
+                annotation=annotation,
+                simple=1,
+            )
+            if (annotation := type_from(a.value))
+            else ast.Assign(
+                targets=[ast.Name(id=a.targets[0].attr)],
+                value=ast.Constant(value=None),
+            )
+            for a in assignments
+            if isinstance(a.targets[0], ast.Attribute)
+        ]
+        fake_module = ast.Module(
+            body=[
+                ast.ImportFrom(
+                    module="dataclasses",
+                    names=[ast.alias(name="dataclass")],
+                    level=0,
+                ),
+                ast.ClassDef(
+                    name=class_name,
+                    body=new_assignments,
+                    decorator_list=[ast.Name(id="dataclass")],
+                    bases=[],
+                    keywords=[],
+                    type_params=[],
+                ),
+            ],
+            type_ignores=[],
+        )
+        add_class_definition = replace_with_node(
+            self.text_range.enclosing_scopes[0].range.start.as_range,
+            fake_module,
+            add_newline_after=True,
+        )
+
+        instantiation = ast.Assign(
+            targets=[
+                ast.Attribute(value=ast.Name(id="self"), attr=property_name)
+            ],
+            value=ast.Call(func=ast.Name(class_name), args=[], keywords=[]),
+        )
+
+        for statement in definition.body:
+            if (
+                self.text_range.start.source.node_position(statement)
+                in self.text_range
+            ):
+                if isinstance(statement, ast.Assign):
+                    if not call_added:
+                        new_body.append(instantiation)
+                        call_added = True
+                    if isinstance(instantiation.value, ast.Call) and isinstance(
+                        statement.targets[0], ast.Attribute
+                    ):
+                        instantiation.value.keywords.append(
+                            ast.keyword(
+                                arg=statement.targets[0].attr,
+                                value=statement.value,
+                            )
+                        )
+                else:
+                    new_body.append(statement)
+
+        new_function = ast.FunctionDef(
+            name=definition.name,
+            args=definition.args,
+            body=new_body,
+            decorator_list=definition.decorator_list,
+            returns=definition.returns,
+            type_params=definition.type_params,
+        )
+        replace_assignments = replace_with_node(
+            self.function_definition.range, new_function
+        )
+        return (add_class_definition, replace_assignments, *replace_properties)
+
+    @property
+    def function_definition(self) -> NodeWithRange[ast.FunctionDef]:
+        return self.selection.text_range.enclosing_nodes_by_type(
+            ast.FunctionDef
+        )[-1]
 
 
 def to_class_name(var_name: str) -> str:
