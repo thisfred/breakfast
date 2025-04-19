@@ -1228,12 +1228,18 @@ class RemoveParameter:
     @property
     def function_definition_edit(self) -> Edit:
         definition = self.function_definition.node
-        arguments = copy_arguments(
-            definition.args,
-            args=[a for a in definition.args.args if a != self.arg.node],
+        return replace_with_node(
+            self.function_definition.range,
+            copy_function_def(
+                definition=definition,
+                args=copy_arguments(
+                    definition.args,
+                    args=[
+                        a for a in definition.args.args if a != self.arg.node
+                    ],
+                ),
+            ),
         )
-        new_function = copy_function_def(definition=definition, args=arguments)
-        return replace_with_node(self.function_definition.range, new_function)
 
 
 @register
@@ -1295,29 +1301,16 @@ class AddParameter:
 
     def function_definition_edit(self, arg_name: str) -> Edit:
         definition = self.function_definition.node
-        arguments = definition.args
-
-        new_function = ast.FunctionDef(
-            name=definition.name,
-            args=ast.arguments(
-                posonlyargs=arguments.posonlyargs,
-                args=[*arguments.args, ast.arg(arg_name)],
-                vararg=arguments.vararg,
-                kwonlyargs=arguments.kwonlyargs,
-                kw_defaults=arguments.kw_defaults,
-                kwarg=arguments.kwarg,
-                defaults=arguments.defaults,
+        return replace_with_node(
+            self.function_definition.range,
+            copy_function_def(
+                definition,
+                args=copy_arguments(
+                    definition.args,
+                    args=[*definition.args.args, ast.arg(arg_name)],
+                ),
             ),
-            body=definition.body,
-            decorator_list=definition.decorator_list,
-            returns=definition.returns,
-            type_params=definition.type_params,
         )
-
-        definition_edit = replace_with_node(
-            self.function_definition.range, new_function
-        )
-        return definition_edit
 
 
 @register
