@@ -266,8 +266,7 @@ def test_extract_function_should_insert_function_definition():
         """,
         expected="""
         def f(value):
-            something = abs(value + 8)
-            return something
+            return abs(value + 8)
 
         value = 0
         something = f(value=value)
@@ -352,8 +351,7 @@ def test_extract_function_should_extract_inside_function():
         expected="""
         def f():
             def f_0(a):
-                b = a + 2
-                return b
+                return a + 2
 
             a = 1
             b = f_0(a=a)
@@ -851,8 +849,7 @@ def test_extract_method_should_extract_part_of_a_line():
                 range_end = self.m()
 
             def m(self):
-                range_end = self.text_range.start + 2
-                return range_end
+                return self.text_range.start + 2
         """,
     )
 
@@ -1533,8 +1530,7 @@ def test_extract_function_should_not_use_existing_name():
         """,
         expected="""
         def f_0(a):
-           b = a + 2
-           return b
+           return a + 2
 
         a = 1
         f = 2
@@ -1571,8 +1567,7 @@ def test_extract_method_should_not_use_existing_name():
                 print(b, f)
 
             def m_1(self):
-                b = self.a + 2
-                return b
+                return self.a + 2
 
             def m_0(self):
                 pass
@@ -1597,7 +1592,7 @@ def test_extract_method_should_extract_from_for_loop():
                     self.m(i=i)
 
             def m(self, i):
-                print(self, i)
+                return print(self, i)
         """,
     )
 
@@ -1626,7 +1621,7 @@ def test_extract_method_should_not_over_indent_when_extracting_from_for_loop():
 
             @staticmethod
             def m(item):
-                print(item)
+                return print(item)
         """,
     )
 
@@ -1924,8 +1919,8 @@ def test_extract_function_should_pass_keyword_only_args_as_args():
         expected="""
         def statement(*, invoice, plays) -> str:
             def f(plays, performance):
-                play = plays[performance["play_id"]]
-                return play
+                return plays[performance["play_id"]]
+
             for performance in invoice["performances"]:
                 play = f(plays=plays, performance=performance)
                 print(play)
@@ -2473,5 +2468,37 @@ def test_extract_function_should_extract_full_lines2():
                     text=call_text,
                 ),
             )
+        """,
+    )
+
+
+def test_extract_function_should_extract_from_keyword_argument_value():
+    assert_refactors_to(
+        refactoring=ExtractFunction,
+        target="definition.name if name is DEFAULT else name",
+        code="""
+        def copy_function_def(
+            definition: ast.FunctionDef,
+            *,
+            name: str | Sentinel = DEFAULT,
+        ) -> ast.FunctionDef:
+            new_function = ast.FunctionDef(
+                name=definition.name if name is DEFAULT else name
+            )
+            return new_function
+        """,
+        expected="""
+        def copy_function_def(
+            definition: ast.FunctionDef,
+            *,
+            name: str | Sentinel = DEFAULT,
+        ) -> ast.FunctionDef:
+            def f(definition, name):
+                return definition.name if name is DEFAULT else name
+
+            new_function = ast.FunctionDef(
+                name=f(definition=definition, name=name)
+            )
+            return new_function
         """,
     )

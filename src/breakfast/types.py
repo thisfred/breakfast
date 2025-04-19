@@ -83,6 +83,9 @@ class TextRange(Protocol):
     @property
     def statements(self) -> Iterable[ast.stmt]: ...
 
+    @property
+    def expression(self) -> ast.expr | None: ...
+
     def enclosing_nodes_by_type[T: ast.AST](
         self, node_type: type[T]
     ) -> Sequence["NodeWithRange[T]"]: ...

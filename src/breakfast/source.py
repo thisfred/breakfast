@@ -234,6 +234,14 @@ class TextRange:
         return assignments[-1] if assignments else None
 
     @cached_property
+    def expression(self) -> ast.expr | None:
+        if expressions := self.enclosing_nodes_by_type(ast.expr):
+            if expressions[-1].range == self:
+                return expressions[-1].node
+
+        return None
+
+    @cached_property
     def statements(self) -> Sequence[ast.stmt]:
         if self.end.column == 0 and self.end.line.previous is not None:
             text_range = self.start.to(self.end.line.previous.end)

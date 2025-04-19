@@ -343,6 +343,10 @@ def make_unique_name(
 def make_body(
     selection: CodeSelection, return_node: ast.Return | None
 ) -> list[ast.stmt]:
+    if selection.text_range.expression is not None:
+        print(ast.dump(selection.text_range.expression))
+        print(f"{isinstance(selection.text_range.expression, ast.stmt)=}")
+        return [ast.Return(value=selection.text_range.expression)]
     nodes = list(selection.text_range.statements)
     if not nodes:
         if enclosing_assignment := selection.text_range.enclosing_assignment:
