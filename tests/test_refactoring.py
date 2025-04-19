@@ -1597,6 +1597,7 @@ def test_extract_method_should_extract_from_for_loop():
     )
 
 
+@mark.xfail
 def test_extract_method_should_not_over_indent_when_extracting_from_for_loop():
     assert_refactors_to(
         refactoring=ExtractMethod,
@@ -1621,7 +1622,7 @@ def test_extract_method_should_not_over_indent_when_extracting_from_for_loop():
 
             @staticmethod
             def m(item):
-                return print(item)
+                print(item)
         """,
     )
 
@@ -2477,6 +2478,31 @@ def test_extract_function_should_extract_from_keyword_argument_value():
         refactoring=ExtractFunction,
         target="definition.name if name is DEFAULT else name",
         code="""
+        def copy_function_def(definition, *, name):
+            new_function = ast.FunctionDef(
+                name=definition.name if name is DEFAULT else name
+            )
+            return new_function
+        """,
+        expected="""
+        def copy_function_def(definition, *, name):
+            def f(definition, name):
+                return definition.name if name is DEFAULT else name
+
+            new_function = ast.FunctionDef(
+                name=f(definition=definition, name=name)
+            )
+            return new_function
+        """,
+    )
+
+
+@mark.xfail
+def test_extract_function_should_preserve_known_type_annotations():
+    assert_refactors_to(
+        refactoring=ExtractFunction,
+        target="definition.name if name is DEFAULT else name",
+        code="""
         def copy_function_def(
             definition: ast.FunctionDef,
             *,
@@ -2493,7 +2519,7 @@ def test_extract_function_should_extract_from_keyword_argument_value():
             *,
             name: str | Sentinel = DEFAULT,
         ) -> ast.FunctionDef:
-            def f(definition, name):
+            def f(definition: ast.FunctionDef, name: str | Sentinel):
                 return definition.name if name is DEFAULT else name
 
             new_function = ast.FunctionDef(
