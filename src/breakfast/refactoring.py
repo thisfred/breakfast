@@ -1753,16 +1753,12 @@ def copy_function_def(
     type_params: list[ast.type_param] | Sentinel = DEFAULT,
 ) -> ast.FunctionDef:
     new_function = ast.FunctionDef(
-        name=definition.name if name is DEFAULT else name,
-        args=definition.args if args is DEFAULT else args,
-        body=definition.body if body is DEFAULT else body,
-        decorator_list=definition.decorator_list
-        if decorator_list is DEFAULT
-        else decorator_list,
-        returns=definition.returns if returns is DEFAULT else returns,
-        type_params=definition.type_params
-        if type_params is DEFAULT
-        else type_params,
+        name=default(name, definition.name),
+        args=default(args, definition.args),
+        body=default(body, definition.body),
+        decorator_list=default(decorator_list, definition.decorator_list),
+        returns=default(returns, definition.returns),
+        type_params=default(type_params, definition.type_params),
     )
     return new_function
 
@@ -1779,17 +1775,15 @@ def copy_arguments(
     defaults: list[ast.expr] | Sentinel = DEFAULT,
 ) -> ast.arguments:
     return ast.arguments(
-        posonlyargs=arguments.posonlyargs
-        if posonlyargs is DEFAULT
-        else posonlyargs,
-        args=arguments.args if args is DEFAULT else args,
-        vararg=arguments.vararg if vararg is DEFAULT else vararg,
-        kwonlyargs=arguments.kwonlyargs
-        if kwonlyargs is DEFAULT
-        else kwonlyargs,
-        kw_defaults=arguments.kw_defaults
-        if kw_defaults is DEFAULT
-        else kw_defaults,
-        kwarg=arguments.kwarg if kwarg is DEFAULT else kwarg,
-        defaults=arguments.defaults if defaults is DEFAULT else defaults,
+        posonlyargs=default(posonlyargs, arguments.posonlyargs),
+        args=default(args, arguments.args),
+        vararg=default(vararg, arguments.vararg),
+        kwonlyargs=default(kwonlyargs, arguments.kwonlyargs),
+        kw_defaults=default(kw_defaults, arguments.kw_defaults),
+        kwarg=default(kwarg, arguments.kwarg),
+        defaults=default(defaults, arguments.defaults),
     )
+
+
+def default[T](value: T | Sentinel, default: T) -> T:
+    return default if value is DEFAULT else value
