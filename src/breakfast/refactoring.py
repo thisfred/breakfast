@@ -9,6 +9,7 @@ from collections.abc import (
     Sequence,
 )
 from dataclasses import replace
+from enum import Enum
 from functools import cached_property, singledispatch
 from itertools import dropwhile, takewhile
 from typing import ClassVar, Protocol
@@ -47,6 +48,13 @@ NEWLINE = "\n"
 STATIC_METHOD = "staticmethod"
 CLASS_METHOD = "classmethod"
 PROPERTY = "property"
+
+
+class Sentinel(Enum):
+    token = 0
+
+
+DEFAULT = Sentinel.token
 
 
 def register(refactoring: "type[Refactoring]") -> "type[Refactoring]":
@@ -1446,19 +1454,15 @@ class MethodToProperty:
     @property
     def edits(self) -> tuple[Edit, ...]:
         definition = self.function_definition.node
-        new_function = ast.FunctionDef(
-            name=definition.name,
-            args=definition.args,
-            body=definition.body,
-            decorator_list=[
-                ast.Name(id=PROPERTY),
-                *definition.decorator_list,
-            ],
-            returns=definition.returns,
-            type_params=definition.type_params,
-        )
         add_decorator = replace_with_node(
-            self.function_definition.range, new_function
+            self.function_definition.range,
+            copy_function_def(
+                definition,
+                decorator_list=[
+                    ast.Name(id=PROPERTY),
+                    *definition.decorator_list,
+                ],
+            ),
         )
         replace_calls = []
         for occurrence in all_occurrences(
@@ -1504,17 +1508,13 @@ class PropertyToMethod:
     @property
     def edits(self) -> tuple[Edit, ...]:
         definition = self.function_definition.node
-        new_function = ast.FunctionDef(
-            name=definition.name,
-            args=definition.args,
-            body=definition.body,
+        new_function = copy_function_def(
+            definition,
             decorator_list=[
                 d
                 for d in definition.decorator_list
                 if (not isinstance(d, ast.Name) or d.id != PROPERTY)
             ],
-            returns=definition.returns,
-            type_params=definition.type_params,
         )
         start = self.function_definition.range.start
         for _ in definition.decorator_list:
@@ -1685,17 +1685,9 @@ class ExtractClass:
                         )
                 else:
                     new_body.append(statement)
-
-        new_function = ast.FunctionDef(
-            name=definition.name,
-            args=definition.args,
-            body=new_body,
-            decorator_list=definition.decorator_list,
-            returns=definition.returns,
-            type_params=definition.type_params,
-        )
         replace_assignments = replace_with_node(
-            self.function_definition.range, new_function
+            self.function_definition.range,
+            copy_function_def(definition, body=new_body),
         )
         return (add_class_definition, replace_assignments, *replace_properties)
 
@@ -1753,20 +1745,24 @@ def replace_with_node(
 def copy_function_def(
     definition: ast.FunctionDef,
     *,
-    name: str | None = None,
-    args: ast.arguments | None = None,
-    body: list[ast.stmt] | None = None,
-    decorator_list: list[ast.expr] | None = None,
-    returns: ast.expr | None = None,
-    type_params: list[ast.type_param] | None = None,
+    name: str | Sentinel = DEFAULT,
+    args: ast.arguments | Sentinel = DEFAULT,
+    body: list[ast.stmt] | Sentinel = DEFAULT,
+    decorator_list: list[ast.expr] | Sentinel = DEFAULT,
+    returns: ast.expr | Sentinel = DEFAULT,
+    type_params: list[ast.type_param] | Sentinel = DEFAULT,
 ) -> ast.FunctionDef:
     new_function = ast.FunctionDef(
-        name=name or definition.name,
-        args=args or definition.args,
-        body=body or definition.body,
-        decorator_list=decorator_list or definition.decorator_list,
-        returns=returns or definition.returns,
-        type_params=type_params or definition.type_params,
+        name=definition.name if name is DEFAULT else name,
+        args=definition.args if args is DEFAULT else args,
+        body=definition.body if body is DEFAULT else body,
+        decorator_list=definition.decorator_list
+        if decorator_list is DEFAULT
+        else decorator_list,
+        returns=definition.returns if returns is DEFAULT else returns,
+        type_params=definition.type_params
+        if type_params is DEFAULT
+        else type_params,
     )
     return new_function
 
@@ -1774,20 +1770,26 @@ def copy_function_def(
 def copy_arguments(
     arguments: ast.arguments,
     *,
-    posonlyargs: list[ast.arg] | None = None,
-    args: list[ast.arg] | None = None,
-    vararg: ast.arg | None = None,
-    kwonlyargs: list[ast.arg] | None = None,
-    kw_defaults: list[ast.expr | None] | None = None,
-    kwarg: ast.arg | None = None,
-    defaults: list[ast.expr] | None = None,
+    posonlyargs: list[ast.arg] | Sentinel = DEFAULT,
+    args: list[ast.arg] | Sentinel = DEFAULT,
+    vararg: ast.arg | Sentinel = DEFAULT,
+    kwonlyargs: list[ast.arg] | Sentinel = DEFAULT,
+    kw_defaults: list[ast.expr | None] | Sentinel = DEFAULT,
+    kwarg: ast.arg | Sentinel = DEFAULT,
+    defaults: list[ast.expr] | Sentinel = DEFAULT,
 ) -> ast.arguments:
     return ast.arguments(
-        posonlyargs=posonlyargs or arguments.posonlyargs,
-        args=args or arguments.args,
-        vararg=vararg or arguments.vararg,
-        kwonlyargs=kwonlyargs or arguments.kwonlyargs,
-        kw_defaults=kw_defaults or arguments.kw_defaults,
-        kwarg=kwarg or arguments.kwarg,
-        defaults=defaults or arguments.defaults,
+        posonlyargs=arguments.posonlyargs
+        if posonlyargs is DEFAULT
+        else posonlyargs,
+        args=arguments.args if args is DEFAULT else args,
+        vararg=arguments.vararg if vararg is DEFAULT else vararg,
+        kwonlyargs=arguments.kwonlyargs
+        if kwonlyargs is DEFAULT
+        else kwonlyargs,
+        kw_defaults=arguments.kw_defaults
+        if kw_defaults is DEFAULT
+        else kw_defaults,
+        kwarg=arguments.kwarg if kwarg is DEFAULT else kwarg,
+        defaults=arguments.defaults if defaults is DEFAULT else defaults,
     )
