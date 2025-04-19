@@ -1228,23 +1228,11 @@ class RemoveParameter:
     @property
     def function_definition_edit(self) -> Edit:
         definition = self.function_definition.node
-        arguments = definition.args
-        new_function = ast.FunctionDef(
-            name=definition.name,
-            args=ast.arguments(
-                posonlyargs=arguments.posonlyargs,
-                args=[a for a in arguments.args if a != self.arg.node],
-                vararg=arguments.vararg,
-                kwonlyargs=arguments.kwonlyargs,
-                kw_defaults=arguments.kw_defaults,
-                kwarg=arguments.kwarg,
-                defaults=arguments.defaults,
-            ),
-            body=definition.body,
-            decorator_list=definition.decorator_list,
-            returns=definition.returns,
-            type_params=definition.type_params,
+        arguments = copy_arguments(
+            definition.args,
+            args=[a for a in definition.args.args if a != self.arg.node],
         )
+        new_function = copy_function_def(definition=definition, args=arguments)
         return replace_with_node(self.function_definition.range, new_function)
 
 
@@ -1766,4 +1754,47 @@ def replace_with_node(
             if add_indentation_after
             else ""
         ),
+    )
+
+
+def copy_function_def(
+    definition: ast.FunctionDef,
+    *,
+    name: str | None = None,
+    args: ast.arguments | None = None,
+    body: list[ast.stmt] | None = None,
+    decorator_list: list[ast.expr] | None = None,
+    returns: ast.expr | None = None,
+    type_params: list[ast.type_param] | None = None,
+) -> ast.FunctionDef:
+    new_function = ast.FunctionDef(
+        name=name or definition.name,
+        args=args or definition.args,
+        body=body or definition.body,
+        decorator_list=decorator_list or definition.decorator_list,
+        returns=returns or definition.returns,
+        type_params=type_params or definition.type_params,
+    )
+    return new_function
+
+
+def copy_arguments(
+    arguments: ast.arguments,
+    *,
+    posonlyargs: list[ast.arg] | None = None,
+    args: list[ast.arg] | None = None,
+    vararg: ast.arg | None = None,
+    kwonlyargs: list[ast.arg] | None = None,
+    kw_defaults: list[ast.expr | None] | None = None,
+    kwarg: ast.arg | None = None,
+    defaults: list[ast.expr] | None = None,
+) -> ast.arguments:
+    return ast.arguments(
+        posonlyargs=posonlyargs or arguments.posonlyargs,
+        args=args or arguments.args,
+        vararg=vararg or arguments.vararg,
+        kwonlyargs=kwonlyargs or arguments.kwonlyargs,
+        kw_defaults=kw_defaults or arguments.kw_defaults,
+        kwarg=kwarg or arguments.kwarg,
+        defaults=defaults or arguments.defaults,
     )

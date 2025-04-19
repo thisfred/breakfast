@@ -2281,24 +2281,22 @@ def test_replace_with_method_object_should_create_new_class():
             def gamma(self, input_val: int, quantity: int, year_to_date: int):
                 return Gamma(self, input_val, quantity, year_to_date).compute()
 
-        @dataclass
         class Gamma:
-            account: Account
-            input_val: int
-            quantity: int
-            year_to_date: int
-            important_value1: int = 0
-            important_value2: int = 0
-            important_value3: int = 0
+
+
+            def __init__(self, account, input_val, quantity, year_to_date):
+                self.account = account
+                self.input_val = input_val
+                self.quantity = quantity
+                self.year_to_date = year_to_date
 
             def compute(self) -> int:
-                self.important_value1 = self.input_val * self.quantity + self.account.delta()
-                self.important_value2 = self.input_val * self.year_to_date + 100
-                if self.year_to_date - self.important_value1 > 100:
-                    self.important_value2 -= 20
-                self.important_value3 = self.important_value2 * 7
-                return self.important_value3 - 2 * self.important_value1
-
+                important_value1 = self.input_val * self.quantity + self.account.delta()
+                important_value2 = self.input_val * self.year_to_date + 100
+                if self.year_to_date - important_value1 > 100:
+                    important_value2 -= 20
+                important_value3 = important_value2 * 7
+                return important_value3 - 2 * important_value1
         """,
     )
 

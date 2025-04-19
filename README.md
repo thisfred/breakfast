@@ -29,15 +29,16 @@ improve testing that will make stronger guarantees there.
 
 ## Implementation
 
-Based in part on the amazing work done on Scope Graphs/Stack Graphs by
-Eelco Visser, Hendrik van Antwerpen, Douglas Creager, and others.
-(Though none of these people are responsible for/involved in this
-project or even aware it exists.)
+Based in part on the work done on Scope Graphs/Stack Graphs by Eelco
+Visser, Hendrik van Antwerpen, Douglas Creager, and others. (Though none
+of these fine people are responsible for, involved in or aware of this
+project.)
+
 
 It's likely that my implementation is naive or incorrect in places, and
 I've certainly resorted to some hacks to deal with things I couldn't
-figure out how to handle in the papers and presentations I found online.
-[1](#1)
+figure out how to handle from the papers and presentations I found
+online.
 
 Douglas Creager's excellent Strangeloop talk in particular, is what
 inspired me to switch to using Stack Graphs in this project. Even if you
@@ -69,25 +70,3 @@ To run tests:
 ```
 make test
 ```
-
-## Footnotes
-
-### 1
-For instance, how to handle redefinition of variables in Python,
-in in code like:
-
-```python
-a = 0  # global (unrelated) assignment
-def fun():
-    a = 1  # local assignment
-    ...
-    a = 2  # reassignment
-```
-
-One choice would be to view these as separate definitions, which would
-require separate rename refactorings. (And rewriting of statements like
-`a += n`.) My solution is to add occurrence (push) nodes for definitions
-that will look back for earlier definitions (only) in the same scope,
-but don't require any to be found:
-
-![node graph representation of reassignment of a variable](reassignment.png)
