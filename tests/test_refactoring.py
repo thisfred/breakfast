@@ -1,5 +1,3 @@
-from pytest import mark
-
 from breakfast.refactoring import (
     AddParameter,
     CodeSelection,
@@ -15,6 +13,7 @@ from breakfast.refactoring import (
     MoveFunctionToParentScope,
     PropertyToMethod,
     RemoveParameter,
+    ReplaceWithMethodObject,
     SlideStatementsDown,
     SlideStatementsUp,
 )
@@ -2178,90 +2177,13 @@ def test_extract_class_should_create_class():
     )
 
 
-@mark.xfail
-def test_inline_class_should_move_properties():
-    class InlineClass:
-        name = "inline class"
-
-        def __init__(
-            self,
-            code_selection: CodeSelection,
-        ):
-            self.text_range = code_selection.text_range
-            self.code_selection = code_selection
-
-        @classmethod
-        def applies_to(cls, selection: CodeSelection) -> bool:
-            return False
-
-        @property
-        def edits(self) -> tuple[Edit, ...]:
-            return ()
-
-    assert_refactors_to(
-        refactoring=InlineClass,
-        target=("self._office_area_code", "= office_number"),
-        code=r"""
-        class Person:
-            def __init__(self, office_area_code, office_number):
-                self.c = C(
-                    office_area_code=office_area_code,
-                    office_number=office_number
-                )
-
-            def office_area_code(self):
-                return self.c.office_area_code
-
-            def office_number(self):
-                return self.c.office_number
-
-        """,
-        expected=r"""
-        class Person:
-            def __init__(self, office_area_code, office_number):
-                self._office_area_code = office_area_code
-                self._office_number = office_number
-
-            def office_area_code(self):
-                return self._office_area_code
-
-            def office_number(self):
-                return self._office_number
-        """,
-    )
-
-
-@mark.xfail
 def test_replace_with_method_object_should_create_new_class():
-    class ReplaceWithMethodObject:
-        name = "replace with method object"
-
-        def __init__(
-            self,
-            code_selection: CodeSelection,
-        ):
-            self.text_range = code_selection.text_range
-            self.code_selection = code_selection
-
-        @classmethod
-        def applies_to(cls, selection: CodeSelection) -> bool:
-            return (
-                selection.text_range.end > selection.text_range.start
-                and selection.in_method
-                and not selection.in_static_method
-            )
-
-        @property
-        def edits(self) -> tuple[Edit, ...]:
-            return ()
-
     assert_refactors_to(
         refactoring=ReplaceWithMethodObject,
         target="gamma",
         code="""
         class Account:
-
-            def gamma(self, input_val: int, quantity: int, year_to_date: int) -> int:
+            def gamma(self, input_val: int, quantity: int, year_to_date: int):
                 important_value1 = input_val * quantity + self.delta()
                 important_value2 = input_val * year_to_date + 100
                 if year_to_date - important_value1 > 100:
@@ -2270,28 +2192,29 @@ def test_replace_with_method_object_should_create_new_class():
                 return important_value3 - 2 * important_value1
         """,
         expected="""
-        from dataclasses import dataclass
-
-        class Account:
-            def gamma(self, input_val: int, quantity: int, year_to_date: int):
-                return Gamma(self, input_val, quantity, year_to_date).compute()
-
         class Gamma:
-
-
-            def __init__(self, account, input_val, quantity, year_to_date):
+            def __init__(self, account: Account, input_val: int, quantity: int, year_to_date: int):
                 self.account = account
                 self.input_val = input_val
                 self.quantity = quantity
                 self.year_to_date = year_to_date
 
-            def compute(self) -> int:
+            def compute(self):
                 important_value1 = self.input_val * self.quantity + self.account.delta()
                 important_value2 = self.input_val * self.year_to_date + 100
                 if self.year_to_date - important_value1 > 100:
                     important_value2 -= 20
                 important_value3 = important_value2 * 7
                 return important_value3 - 2 * important_value1
+
+        class Account:
+            def gamma(self, input_val: int, quantity: int, year_to_date: int):
+                return Gamma(
+                    account=self,
+                    input_val=input_val,
+                    quantity=quantity,
+                    year_to_date=year_to_date,
+                ).compute()
         """,
     )
 

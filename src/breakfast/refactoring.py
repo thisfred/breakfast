@@ -48,6 +48,8 @@ NEWLINE = "\n"
 STATIC_METHOD = "staticmethod"
 CLASS_METHOD = "classmethod"
 PROPERTY = "property"
+DUNDER_INIT = "__init__"
+COMPUTE = "compute"
 
 
 class Sentinel(Enum):
@@ -159,7 +161,7 @@ class CodeSelection:
         except NotFoundError:
             return ()
 
-    def remove_trailing_whitespace(self) -> "CodeSelection":
+    def rtrim(self) -> "CodeSelection":
         lines = self.text_range.text.rstrip().split("\n")
         offset = 0
         last_line = lines[-1]
@@ -452,7 +454,7 @@ def make_extract_callable_edits(
         logger.warning("Could not extract callable body.")
         return ()
     name = make_unique_name(
-        name,
+        original_name=name,
         enclosing_scope=refactoring.selection.text_range.enclosing_scopes[0],
     )
     arguments = make_arguments(
@@ -616,7 +618,9 @@ class ExtractVariable:
         )
 
         enclosing_scope = self.text_range.enclosing_scopes[-1]
-        name = make_unique_name("v", enclosing_scope=enclosing_scope)
+        name = make_unique_name(
+            original_name="v", enclosing_scope=enclosing_scope
+        )
         other_edits = [
             (start := self.source.node_position(o))
             .to(start + len(extracted))
@@ -1283,7 +1287,9 @@ class AddParameter:
 
     @property
     def edits(self) -> tuple[Edit, ...]:
-        arg_name = make_unique_name("p", self.function_definition)
+        arg_name = make_unique_name(
+            original_name="p", enclosing_scope=self.function_definition
+        )
         return (
             self.function_definition_edit(arg_name),
             *self.call_edits(arg_name),
@@ -1585,10 +1591,15 @@ class ExtractClass:
         definition = self.function_definition.node
         new_body: list[ast.stmt] = []
         call_added = False
-        class_name = make_unique_name("C", self.text_range.enclosing_scopes[0])
+        class_name = make_unique_name(
+            original_name="C",
+            enclosing_scope=self.text_range.enclosing_scopes[0],
+        )
         property_name = make_unique_name(
-            class_name.lower(),
-            self.text_range.enclosing_nodes_by_type(ast.ClassDef)[-1],
+            original_name=class_name.lower(),
+            enclosing_scope=self.text_range.enclosing_nodes_by_type(
+                ast.ClassDef
+            )[-1],
         )
         assignments = [
             s
@@ -1706,8 +1717,182 @@ class ExtractClass:
         )[-1]
 
 
+@register
+class ReplaceWithMethodObject:
+    name = "replace with method object"
+
+    def __init__(
+        self,
+        code_selection: CodeSelection,
+    ):
+        self.selection = code_selection
+
+    @classmethod
+    def applies_to(cls, selection: CodeSelection) -> bool:
+        return (
+            selection.text_range.end > selection.text_range.start
+            and selection.in_method
+            and not selection.in_static_method
+        )
+
+    @property
+    def edits(self) -> tuple[Edit, ...]:
+        original_class_name = self.selection.text_range.enclosing_nodes_by_type(
+            ast.ClassDef
+        )[-1].node.name
+        arg_name = to_variable_name(original_class_name)
+        instance = ast.arg(
+            arg=arg_name, annotation=ast.Name(original_class_name)
+        )
+        new_args = copy_arguments(
+            self.function_definition.node.args,
+            args=[
+                self.function_definition.node.args.args[0],
+                instance,
+                *self.function_definition.node.args.args[1:],
+            ],
+        )
+        init = copy_function_def(
+            self.function_definition.node,
+            name=DUNDER_INIT,
+            args=new_args,
+            body=[
+                ast.Assign(
+                    targets=[
+                        ast.Attribute(
+                            value=ast.Name(new_args.args[0].arg), attr=arg.arg
+                        )
+                    ],
+                    value=ast.Name(arg.arg),
+                )
+                for arg in new_args.args[1:]
+            ],
+        )
+        substitutions: dict[ast.AST, ast.AST] = {}
+        self_arg = self.function_definition.node.args.args[0]
+        self.add_substitutions(
+            argument=self_arg,
+            value=ast.Attribute(value=ast.Name(self_arg.arg), attr=arg_name),
+            substitutions=substitutions,
+        )
+        for argument in self.function_definition.node.args.args[1:]:
+            self.add_substitutions(
+                argument=argument,
+                value=ast.Attribute(
+                    value=ast.Name(self_arg.arg), attr=argument.arg
+                ),
+                substitutions=substitutions,
+            )
+
+        compute = copy_function_def(
+            self.function_definition.node,
+            args=copy_arguments(
+                self.function_definition.node.args,
+                args=self.function_definition.node.args.args[:1],
+            ),
+            name=COMPUTE,
+            body=[
+                s
+                for node in self.function_definition.node.body
+                for s in substitute_nodes(node, substitutions)
+                if isinstance(s, ast.stmt)
+            ],
+        )
+
+        new_class_name = make_unique_name(
+            to_class_name(self.function_definition.node.name),
+            enclosing_scope=self.selection.text_range.enclosing_scopes[0],
+        )
+        method_object_class = ast.ClassDef(
+            name=new_class_name,
+            body=[init, compute],
+            decorator_list=[],
+            bases=[],
+            keywords=[],
+            type_params=[],
+        )
+        insert_method_object_class = replace_with_node(
+            self.selection.text_range.enclosing_scopes[0].range.start.as_range,
+            method_object_class,
+            add_newline_after=True,
+        )
+
+        mapping = {
+            arg_name: self_arg.arg,
+            **{
+                k.arg: k.arg
+                for k in self.function_definition.node.args.args[1:]
+            },
+        }
+        call_method_object = copy_function_def(
+            self.function_definition.node,
+            body=[
+                ast.Return(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Call(
+                                func=ast.Name(new_class_name),
+                                args=[],
+                                keywords=[
+                                    ast.keyword(arg=name, value=ast.Name(value))
+                                    for name, value in mapping.items()
+                                ],
+                            ),
+                            attr=COMPUTE,
+                        ),
+                        args=[],
+                        keywords=[],
+                    )
+                )
+            ],
+        )
+
+        replace_method = replace_with_node(
+            self.function_definition.range, call_method_object
+        )
+
+        return (insert_method_object_class, replace_method)
+
+    def add_substitutions(
+        self,
+        argument: ast.keyword | ast.arg,
+        value: ast.expr,
+        substitutions: MutableMapping[ast.AST, ast.AST],
+    ) -> None:
+        occurrences = self.get_occurrences(argument)
+        for occurrence in occurrences:
+            if occurrence.ast:
+                substitutions[occurrence.ast] = value
+
+    def get_occurrences(
+        self, argument: ast.keyword | ast.arg
+    ) -> Sequence[Occurrence]:
+        assert argument.arg is not None  # noqa: S101
+        arg_position = self.selection.text_range.start.source.node_position(
+            argument
+        )
+        body_range = self.selection.text_range.start.source.node_position(
+            self.function_definition.node.body[0]
+        ).through(self.function_definition.range.end)
+        return [
+            o
+            for o in all_occurrences(arg_position)
+            if o.position in body_range and o.ast
+        ]
+
+    @property
+    def function_definition(self) -> NodeWithRange[ast.FunctionDef]:
+        return self.selection.text_range.enclosing_nodes_by_type(
+            ast.FunctionDef
+        )[-1]
+
+
 def to_class_name(var_name: str) -> str:
     return "".join(s.lower().title() for s in var_name.split("_"))
+
+
+def to_variable_name(var_name: str) -> str:
+    return "".join(f"_{c.lower()}" if c.isupper() else c for c in var_name)[1:]
 
 
 @singledispatch

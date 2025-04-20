@@ -19,6 +19,7 @@ from tests.conftest import make_source
         "and not (node_start == text_range.start "
         "and node_end == text_range.end)",
         "a - (b + c)",
+        "value = {1:2, **{3:4, 5:6}}",
     ),
 )
 def test_roundtrip_string_should_result_in_same_ast(code):
