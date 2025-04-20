@@ -1597,7 +1597,6 @@ def test_extract_method_should_extract_from_for_loop():
     )
 
 
-@mark.xfail
 def test_extract_method_should_not_over_indent_when_extracting_from_for_loop():
     assert_refactors_to(
         refactoring=ExtractMethod,
@@ -1622,7 +1621,7 @@ def test_extract_method_should_not_over_indent_when_extracting_from_for_loop():
 
             @staticmethod
             def m(item):
-                print(item)
+                return print(item)
         """,
     )
 
@@ -2372,7 +2371,7 @@ def test_extract_function_should_extract_full_lines():
         expected="""
         class C:
             def function_definition_edit(self, arg_name: str) -> Edit:
-                def f(arg_name, definition, arguments):
+                def f(arg_name: str, definition, arguments):
                     new_function = ast.FunctionDef(
                         name=definition.name,
                         args=ast.arguments(
@@ -2497,7 +2496,6 @@ def test_extract_function_should_extract_from_keyword_argument_value():
     )
 
 
-@mark.xfail
 def test_extract_function_should_preserve_known_type_annotations():
     assert_refactors_to(
         refactoring=ExtractFunction,

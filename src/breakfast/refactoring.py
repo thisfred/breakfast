@@ -581,7 +581,12 @@ def make_arguments(
 
 
 def make_argument(occurrence: Occurrence) -> ast.arg:
-    return ast.arg(arg=occurrence.name)
+    return ast.arg(
+        arg=occurrence.name,
+        annotation=occurrence.ast.annotation
+        if isinstance(occurrence.ast, ast.arg)
+        else None,
+    )
 
 
 @register
