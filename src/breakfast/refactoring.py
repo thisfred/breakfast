@@ -1919,6 +1919,7 @@ def delete_range(text_range: TextRange) -> Edit:
 def replace_with_node(
     text_range: TextRange,
     node: ast.AST,
+    *,
     add_newline_after: bool = False,
     add_indentation_after: bool = False,
     level: int | None = None,

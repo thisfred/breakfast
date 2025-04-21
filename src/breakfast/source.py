@@ -265,19 +265,20 @@ class TextRange:
         nodes = deque(parent.body)
         while nodes:
             current_node = nodes.popleft()
-            node_start = self.source.node_position(current_node)
-            node_end = self.source.node_end_position(current_node)
-            if node_start > text_range.end:
-                break
-            if node_end and node_end < text_range.start:
+            node_range = self.source.node_range(current_node)
+            if not node_range:
                 continue
-            if node_start <= text_range.start:
+            if node_range.start > text_range.end:
+                break
+            if node_range.end and node_range.end < text_range.start:
+                continue
+            if node_range.start <= text_range.start:
                 if (
-                    node_end
-                    and node_end >= text_range.end
+                    node_range.end
+                    and node_range.end >= text_range.end
                     and not (
-                        node_start == text_range.start
-                        and node_end == text_range.end
+                        node_range.start == text_range.start
+                        and node_range.end == text_range.end
                     )
                 ):
                     nodes.extendleft(
