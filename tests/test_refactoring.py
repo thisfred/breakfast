@@ -2449,3 +2449,30 @@ def test_extract_function_should_preserve_known_type_annotations():
             return new_function
         """,
     )
+
+
+def test_inline_call_should_handle_vararg_and_kwarg():
+    assert_refactors_to(
+        refactoring=InlineCall,
+        target="function",
+        occurrence=2,
+        code="""
+        def function(foo, bar, *args, qux=None, **kwargs):
+            print(foo)
+            print(bar)
+            print(args)
+            print(qux)
+            print(kwargs)
+
+        def f():
+            function(1, 2, 3, 4, 5, zot=6, wat=7)
+        """,
+        expected="""
+        def f():
+            print(1)
+            print(2)
+            print((3, 4, 5))
+            print(None)
+            print({"zot": 6, "wat": 7})
+        """,
+    )

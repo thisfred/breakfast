@@ -1,6 +1,6 @@
 import ast
 import logging
-from collections import defaultdict
+from collections import defaultdict, deque
 from collections.abc import (
     Container,
     Iterable,
@@ -8,10 +8,10 @@ from collections.abc import (
     MutableMapping,
     Sequence,
 )
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from enum import Enum
 from functools import cached_property, singledispatch
-from itertools import dropwhile, takewhile
+from itertools import dropwhile, repeat, takewhile
 from typing import ClassVar, Protocol
 
 from breakfast.code_generation import unparse
@@ -909,35 +909,10 @@ class InlineCall:
                     if isinstance(return_node.value, ast.Name):
                         returned_names.add(return_node.value.id)
 
-        seen = set()
-        for keyword in call.keywords:
-            argument: ast.keyword | ast.arg = keyword
-            seen.add(argument.arg)
-            value = keyword.value
-
-            self.add_substitutions(
-                argument=argument,
-                value=value,
-                body_range=body_range,
-                substitutions=substitutions,
-                returned_names=returned_names,
-            )
-
-        values = call.args
-        if isinstance(call.func, ast.Attribute):
-            values = [call.func.value, *values]
-        for argument, value in zip(
-            (a for a in definition_ast.args.args if a.arg not in seen),
-            values,
-            strict=True,
-        ):
-            self.add_substitutions(
-                argument=argument,
-                value=value,
-                body_range=body_range,
-                substitutions=substitutions,
-                returned_names=returned_names,
-            )
+        arg_mapper = ArgumentMapper(
+            definition_ast.args, body_range, returned_names
+        )
+        arg_mapper.add_substitutions(call, substitutions)
 
         result: list[ast.stmt] = []
         result = [
@@ -948,17 +923,33 @@ class InlineCall:
         ]
         return result
 
-    def add_substitutions(
+
+@dataclass
+class ArgumentMapper:
+    arguments: ast.arguments
+    body_range: TextRange
+    returned_names: Container[str]
+
+    def get_occurrences(
+        self, argument: ast.keyword | ast.arg, body_range: TextRange
+    ) -> Sequence[Occurrence]:
+        assert argument.arg is not None  # noqa: S101
+        arg_position = self.body_range.start.source.node_position(argument)
+        return [
+            o
+            for o in all_occurrences(arg_position)
+            if o.position in body_range and o.ast
+        ]
+
+    def substitute_argument(
         self,
         argument: ast.keyword | ast.arg,
-        value: ast.expr,
-        body_range: TextRange,
-        substitutions: MutableMapping[ast.AST, ast.AST],
-        returned_names: Container[str],
+        value: ast.AST,
+        substitutions: dict[ast.AST, ast.AST],
     ) -> None:
-        occurrences = self.get_occurrences(argument, body_range)
+        occurrences = self.get_occurrences(argument, self.body_range)
         if not (
-            argument.arg in returned_names
+            argument.arg in self.returned_names
             or all(o.node_type is NodeType.REFERENCE for o in occurrences)
         ):
             return
@@ -967,16 +958,105 @@ class InlineCall:
             if occurrence.ast:
                 substitutions[occurrence.ast] = value
 
-    def get_occurrences(
-        self, argument: ast.keyword | ast.arg, body_range: TextRange
-    ) -> Sequence[Occurrence]:
-        assert argument.arg is not None  # noqa: S101
-        arg_position = self.source.node_position(argument)
-        return [
-            o
-            for o in all_occurrences(arg_position)
-            if o.position in body_range and o.ast
-        ]
+    def add_substitutions(
+        self, call: ast.Call, substitutions: dict[ast.AST, ast.AST]
+    ) -> None:
+        call_args = deque(call.args)
+        call_keywords = {k.arg: k.value for k in call.keywords}
+        self.substitute_position_only_arguments(
+            substitutions=substitutions, call_args=call_args
+        )
+        self.substitute_arguments(
+            substitutions=substitutions,
+            call_args=call_args,
+            call_keywords=call_keywords,
+        )
+        self.substitute_vararg(substitutions=substitutions, call_args=call_args)
+        self.substitute_keyword_only_arguments(
+            substitutions=substitutions, call_keywords=call_keywords
+        )
+        self.substitute_kwarg(call=call, substitutions=substitutions)
+
+    def substitute_kwarg(
+        self, call: ast.Call, substitutions: dict[(ast.AST, ast.AST)]
+    ) -> None:
+        if self.arguments.kwarg:
+            self.substitute_argument(
+                self.arguments.kwarg,
+                ast.Dict(
+                    keys=[
+                        ast.Constant(value=k.arg)
+                        for k in call.keywords
+                        if k.arg
+                    ],
+                    values=[k.value for k in call.keywords],
+                ),
+                substitutions,
+            )
+
+    def substitute_keyword_only_arguments(
+        self,
+        substitutions: dict[(ast.AST, ast.AST)],
+        call_keywords: dict[str | None, ast.expr],
+    ) -> None:
+        defaults = (
+            *repeat(
+                DEFAULT,
+                len(self.arguments.kwonlyargs)
+                - len(self.arguments.kw_defaults),
+            ),
+            *self.arguments.kw_defaults,
+        )
+        for arg, default in zip(
+            self.arguments.kwonlyargs, defaults, strict=True
+        ):
+            if arg.arg in call_keywords:
+                substitutions[arg] = call_keywords.pop(arg.arg)
+                self.substitute_argument(
+                    arg, call_keywords.pop(arg.arg), substitutions
+                )
+            elif isinstance(default, ast.expr):
+                substitutions[arg] = default
+                self.substitute_argument(arg, default, substitutions)
+
+    def substitute_vararg(
+        self,
+        substitutions: dict[(ast.AST, ast.AST)],
+        call_args: deque[ast.expr],
+    ) -> None:
+        if self.arguments.vararg:
+            self.substitute_argument(
+                self.arguments.vararg,
+                ast.Tuple(elts=list(call_args)),
+                substitutions,
+            )
+
+    def substitute_arguments(
+        self,
+        substitutions: dict[(ast.AST, ast.AST)],
+        call_args: deque[ast.expr],
+        call_keywords: dict[str | None, ast.expr],
+    ) -> None:
+        for arg in self.arguments.args:
+            if call_args:
+                self.substitute_argument(
+                    arg, call_args.popleft(), substitutions
+                )
+            elif call_keywords and arg.arg in call_keywords:
+                self.substitute_argument(
+                    arg, call_keywords.pop(arg.arg), substitutions
+                )
+
+    def substitute_position_only_arguments(
+        self,
+        substitutions: dict[(ast.AST, ast.AST)],
+        call_args: deque[ast.expr],
+    ) -> None:
+        for arg in self.arguments.posonlyargs:
+            if call_args:
+                self.substitute_argument(
+                    arg, call_args.popleft(), substitutions
+                )
 
 
 @register

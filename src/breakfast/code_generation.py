@@ -668,7 +668,6 @@ def set_node(node: ast.Set, level: int) -> Iterator[str]:
 
 @to_source.register
 def dict_node(node: ast.Dict, level: int) -> Iterator[str]:
-    print(ast.dump(node))
     yield "{"
     for key, value, comma in zip(
         node.keys, node.values, separators(node.keys), strict=True

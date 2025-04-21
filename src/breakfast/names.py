@@ -664,8 +664,14 @@ def visit_function_definition(
 
     self_name = None
     for i, arg in enumerate(
-        node.args.posonlyargs + node.args.args + node.args.kwonlyargs
+        node.args.posonlyargs
+        + node.args.args
+        + [node.args.vararg]
+        + node.args.kwonlyargs
+        + [node.args.kwarg]
     ):
+        if not arg:
+            continue
         current_scope = graph.add_scope(link_to=current_scope)
         arg_position = source.node_position(arg)
 
