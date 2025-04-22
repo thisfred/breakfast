@@ -23,9 +23,21 @@ class NotFoundError(Exception):
     pass
 
 
+class Ranged(Protocol):
+    @property
+    def start(self) -> "Position": ...
+
+    @property
+    def end(self) -> "Position": ...
+
+    @property
+    def source(self) -> "Source": ...
+
+    def __contains__(self, other: "Ranged") -> bool: ...
+
+
 @dataclass(order=True, frozen=True)  # pragma: nocover
-class Position(Protocol):
-    source: "Source"
+class Position(Ranged, Protocol):
     row: int
     column: int
 
@@ -53,19 +65,6 @@ class Position(Protocol):
     def through(self, end: "Position") -> "TextRange": ...
     def to(self, end: "Position") -> "TextRange": ...
     def insert(self, text: str) -> "Edit": ...
-
-
-class Ranged(Protocol):
-    @property
-    def start(self) -> Position: ...
-
-    @property
-    def end(self) -> Position: ...
-
-    @property
-    def source(self) -> "Source": ...
-
-    def __contains__(self, other: "Ranged") -> bool: ...
 
 
 def contains(self: Ranged, other: Ranged) -> bool:
