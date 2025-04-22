@@ -139,7 +139,7 @@ class TextRange:
     def text(self) -> str:
         if self.start >= self.end:
             return ""
-        return self.start.source.get_text(start=self.start, end=self.end)
+        return self.source.get_text(start=self.start, end=self.end)
 
     @property
     def stripped(self) -> types.TextRange:
@@ -316,29 +316,23 @@ class TextRange:
         row_offset = self.start.row
         text = [
             line.text
-            for line in self.start.source.lines[
-                self.start.row : self.end.row + 1
-            ]
+            for line in self.source.lines[self.start.row : self.end.row + 1]
         ]
 
         for substitution in sorted(substitutions, reverse=True):
-            if substitution.text_range.end < self.start:
+            if substitution.end < self.start:
                 continue
-            if substitution.text_range.start > self.end:
+            if substitution.start > self.end:
                 break
-            row_index = substitution.text_range.start.row - row_offset
-            rows = (
-                substitution.text_range.end.row
-                - substitution.text_range.start.row
-            )
+            row_index = substitution.start.row - row_offset
+            rows = substitution.end.row - substitution.start.row
             new_lines = substitution.text.split("\n")
             new_lines[0] = (
-                text[row_index][: substitution.text_range.start.column]
-                + new_lines[0]
+                text[row_index][: substitution.start.column] + new_lines[0]
             )
             new_lines[-1] = (
                 new_lines[-1]
-                + text[row_index + rows][substitution.text_range.end.column :]
+                + text[row_index + rows][substitution.end.column :]
             )
             text[row_index : row_index + rows + 1] = new_lines
         return text
