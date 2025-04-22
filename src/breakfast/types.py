@@ -147,20 +147,11 @@ ScopeWithRange = (
 
 
 @dataclass(order=True, frozen=True)  # pragma: nocover
-class Line(Protocol):
-    source: "Source"
+class Line(Ranged, Protocol):
     row: int
 
     @property
     def text(self) -> str: ...
-
-    @property
-    def start(self) -> Position: ...
-
-    @property
-    def end(self) -> Position: ...
-
-    def __contains__(self, other: "Ranged") -> bool: ...
 
     @property
     def next(self) -> "Line | None": ...
@@ -169,7 +160,7 @@ class Line(Protocol):
     def previous(self) -> "Line | None": ...
 
 
-class Source(Protocol):  # pragma: nocover
+class Source(Ranged, Protocol):  # pragma: nocover
     @property
     def path(self) -> str: ...
 
@@ -200,17 +191,6 @@ class Source(Protocol):  # pragma: nocover
     def node_end_position(self, node: AST) -> Position | None: ...
 
     def node_range(self, node: AST) -> TextRange | None: ...
-
-    @property
-    def start(self) -> Position: ...
-
-    @property
-    def end(self) -> Position: ...
-
-    def __contains__(self, other: "Ranged") -> bool: ...
-
-    @property
-    def source(self) -> "Source": ...
 
 
 @dataclass(order=True, frozen=True)
