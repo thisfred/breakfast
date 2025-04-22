@@ -36,8 +36,10 @@ from breakfast.types import (
     NotFoundError,
     Occurrence,
     Position,
+    Ranged,
     ScopeWithRange,
     Sentinel,
+    Source,
     TextRange,
 )
 
@@ -59,15 +61,24 @@ def register(refactoring: "type[Refactoring]") -> "type[Refactoring]":
 
 @dataclass
 class CodeSelection:
+    text_range: TextRange
+    _scope_graph: ScopeGraph | None = None
     _refactorings: ClassVar[dict[str, "type[Refactoring]"]] = {}
 
-    def __init__(
-        self,
-        text_range: TextRange,
-    ):
-        self.text_range = text_range
-        self.source = self.text_range.source
-        self._scope_graph: ScopeGraph | None = None
+    @property
+    def source(self) -> Source:
+        return self.text_range.source
+
+    @property
+    def start(self) -> "Position":
+        return self.text_range.start
+
+    @property
+    def end(self) -> "Position":
+        return self.text_range.end
+
+    def __contains__(self, other: Ranged) -> bool:
+        return other in self.text_range
 
     @classmethod
     def register_refactoring(cls, refactoring: "type[Refactoring]") -> None:
