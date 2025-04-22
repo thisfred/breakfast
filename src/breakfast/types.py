@@ -76,7 +76,7 @@ def contains(self: Ranged, other: Ranged) -> bool:
 
 
 @dataclass(order=True, frozen=True)  # pragma: nocover
-class TextRange(Protocol):
+class TextRange(Ranged, Protocol):
     start: Position
     end: Position
 
