@@ -12,6 +12,13 @@ from enum import Enum, auto
 from typing import Protocol
 
 
+class Sentinel(Enum):
+    token = 0
+
+
+DEFAULT = Sentinel.token
+
+
 class NotFoundError(Exception):
     pass
 
