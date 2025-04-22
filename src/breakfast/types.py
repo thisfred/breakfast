@@ -51,6 +51,19 @@ class Position(Protocol):
 
     def insert(self, text: str) -> "Edit": ...
 
+    @property
+    def start(self) -> "Position": ...
+
+    @property
+    def end(self) -> "Position": ...
+
+
+class Ranged(Protocol):
+    start: Position
+    end: Position
+
+    def __contains__(self, other: "Ranged") -> bool: ...
+
 
 @dataclass(order=True, frozen=True)  # pragma: nocover
 class TextRange(Protocol):
@@ -108,6 +121,14 @@ class TextRange(Protocol):
 class NodeWithRange[T: ast.AST]:
     node: T
     range: "TextRange"
+
+    @property
+    def start(self) -> Position:
+        return self.range.start
+
+    @property
+    def end(self) -> Position:
+        return self.range.end
 
 
 ScopeWithRange = (
@@ -171,6 +192,12 @@ class Source(Protocol):  # pragma: nocover
 
     def node_range(self, node: AST) -> TextRange | None: ...
 
+    @property
+    def start(self) -> Position: ...
+
+    @property
+    def end(self) -> Position: ...
+
 
 @dataclass(order=True, frozen=True)
 class Edit:
@@ -201,3 +228,11 @@ class Occurrence:
     position: Position
     ast: ast.AST | None
     node_type: NodeType
+
+    @property
+    def start(self) -> Position:
+        return self.position
+
+    @property
+    def end(self) -> Position:
+        return self.position + len(self.name)
