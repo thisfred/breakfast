@@ -70,6 +70,14 @@ class Position:
         return self._add_offset(-to_subtract)
 
     @property
+    def start(self) -> types.Position:
+        return self
+
+    @property
+    def end(self) -> types.Position:
+        return self
+
+    @property
     def start_of_line(self) -> types.Position:
         return replace(self, column=0)
 
@@ -111,21 +119,27 @@ class Position:
     def insert(self, text: str) -> types.Edit:
         return types.Edit(TextRange(start=self, end=self), text=text)
 
+    def __contains__(self, other: types.Ranged) -> bool:
+        return types.contains(self, other)
+
 
 @dataclass(order=True, frozen=True)
 class TextRange:
     start: types.Position
     end: types.Position
 
+    @property
+    def source(self) -> types.Source:
+        return self.start.source
+
+    def __contains__(self, other: types.Ranged) -> bool:
+        return types.contains(self, other)
+
     @cached_property
     def text(self) -> str:
         if self.start >= self.end:
             return ""
         return self.start.source.get_text(start=self.start, end=self.end)
-
-    @property
-    def source(self) -> types.Source:
-        return self.start.source
 
     @property
     def stripped(self) -> types.TextRange:
@@ -207,7 +221,7 @@ class TextRange:
                     break
                 if (
                     node_range := source.node_range(node)
-                ) and stripped in node_range:
+                ) is not None and stripped in node_range:
                     scopes.append(types.NodeWithRange(node, node_range))
             elif isinstance(node, ast.Module):
                 scopes.append(
@@ -332,17 +346,6 @@ class TextRange:
     def replace(self, new_text: str) -> types.Edit:
         return types.Edit(TextRange(self.start, self.end), text=new_text)
 
-    def __contains__(
-        self, position_or_range: types.Position | types.TextRange
-    ) -> bool:
-        match position_or_range:
-            case Position() as position:
-                return self.start <= position and self.end >= position
-            case TextRange(start, end):
-                return self.start <= start and self.end >= end
-            case _:
-                return False
-
 
 @dataclass(order=True, frozen=True)
 class Line:
@@ -388,6 +391,23 @@ class Source:
 
     def __repr__(self) -> str:
         return f"Source(path={self.path})"
+
+    @property
+    def start(self) -> types.Position:
+        return Position(self, 0, 0)
+
+    @property
+    def end(self) -> types.Position:
+        if not self.text:
+            return Position(self, 0, 0)
+        return Position(self, len(self.text) - 1, len(self.text[-1]) - 1)
+
+    @property
+    def source(self) -> types.Source:
+        return self
+
+    def __contains__(self, other: types.Ranged) -> bool:
+        return other.source == self
 
     @cached_property
     def text(self) -> tuple[str, ...]:
@@ -534,6 +554,23 @@ class SubSource:
         self.parent_source = source
         self.parent_start_position = start_position + 1
         self.code = code
+
+    @property
+    def start(self) -> types.Position:
+        return Position(self, 0, 0)
+
+    @property
+    def end(self) -> types.Position:
+        if not self.text:
+            return Position(self, 0, 0)
+        return Position(self, len(self.text) - 1, len(self.text[-1]) - 1)
+
+    @property
+    def source(self) -> types.Source:
+        return self
+
+    def __contains__(self, other: types.Ranged) -> bool:
+        return other.source == self
 
     def __hash__(self) -> int:
         return hash((self.parent_source.path, self.parent_start_position))

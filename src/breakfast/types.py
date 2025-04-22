@@ -56,21 +56,34 @@ class Position(Protocol):
 
 class Ranged(Protocol):
     @property
-    def source(self) -> "Source": ...
-
-    @property
     def start(self) -> Position: ...
 
     @property
     def end(self) -> Position: ...
 
+    @property
+    def source(self) -> "Source": ...
+
     def __contains__(self, other: "Ranged") -> bool: ...
+
+
+def contains(self: Ranged, other: Ranged) -> bool:
+    return (
+        self.source == other.source
+        and self.start <= other.start
+        and self.end >= other.end
+    )
 
 
 @dataclass(order=True, frozen=True)  # pragma: nocover
 class TextRange(Protocol):
     start: Position
     end: Position
+
+    @property
+    def source(self) -> "Source": ...
+
+    def __contains__(self, other: "Ranged") -> bool: ...
 
     @property
     def text(self) -> str: ...
@@ -80,9 +93,6 @@ class TextRange(Protocol):
 
     @property
     def definitions(self) -> Sequence["Occurrence"]: ...
-
-    @property
-    def source(self) -> "Source": ...
 
     @property
     def enclosing_scopes(
