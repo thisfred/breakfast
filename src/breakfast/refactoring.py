@@ -7,7 +7,7 @@ from collections.abc import (
     MutableMapping,
     Sequence,
 )
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from functools import cached_property, singledispatch
 from itertools import dropwhile, takewhile
 from typing import ClassVar, Protocol
@@ -57,6 +57,7 @@ def register(refactoring: "type[Refactoring]") -> "type[Refactoring]":
     return refactoring
 
 
+@dataclass
 class CodeSelection:
     _refactorings: ClassVar[dict[str, "type[Refactoring]"]] = {}
 
