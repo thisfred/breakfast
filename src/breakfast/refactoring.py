@@ -584,7 +584,7 @@ class ExtractVariable:
 
     def __init__(self, code_selection: CodeSelection):
         self.text_range = code_selection.text_range
-        self.source = self.text_range.start.source
+        self.source = self.text_range.source
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -663,7 +663,7 @@ class InlineVariable:
     def __init__(self, code_selection: CodeSelection):
         self.text_range = code_selection.text_range
         self.cursor = code_selection.cursor
-        self.source = self.text_range.start.source
+        self.source = self.text_range.source
         self.selection = code_selection
 
     @classmethod
@@ -751,7 +751,7 @@ class InlineCall:
 
     def __init__(self, code_selection: CodeSelection):
         self.text_range = code_selection.text_range
-        self.source = self.text_range.start.source
+        self.source = self.text_range.source
         self.scope_graph = code_selection.scope_graph
         self.enclosing_call = code_selection.text_range.enclosing_call
 
