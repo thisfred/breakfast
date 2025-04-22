@@ -143,6 +143,9 @@ class NodeWithRange[T: ast.AST]:
     def source(self) -> "Source":
         return self.range.source
 
+    def __contains__(self, other: "Ranged") -> bool:
+        return contains(self, other)
+
 
 ScopeWithRange = (
     NodeWithRange[ast.FunctionDef]
@@ -165,6 +168,8 @@ class Line(Protocol):
 
     @property
     def end(self) -> Position: ...
+
+    def __contains__(self, other: "Ranged") -> bool: ...
 
     @property
     def next(self) -> "Line | None": ...
@@ -211,6 +216,8 @@ class Source(Protocol):  # pragma: nocover
     @property
     def end(self) -> Position: ...
 
+    def __contains__(self, other: "Ranged") -> bool: ...
+
     @property
     def source(self) -> "Source": ...
 
@@ -227,6 +234,9 @@ class Edit:
     @property
     def end(self) -> Position:
         return self.text_range.end
+
+    def __contains__(self, other: "Ranged") -> bool:
+        return contains(self, other)
 
     @property
     def source(self) -> "Source":
@@ -250,9 +260,16 @@ class Occurrence:
     node_type: NodeType
 
     @property
+    def source(self) -> Source:
+        return self.position.source
+
+    @property
     def start(self) -> Position:
         return self.position
 
     @property
     def end(self) -> Position:
         return self.position + len(self.name)
+
+    def __contains__(self, other: "Ranged") -> bool:
+        return contains(self, other)
