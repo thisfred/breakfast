@@ -58,20 +58,6 @@ class Position(Protocol):
     def end(self) -> "Position": ...
 
 
-class Ranged(Protocol):
-    start: Position
-    end: Position
-
-    def source(self) -> "Source": ...
-
-    def __contains__(self, other: "Ranged") -> bool:
-        return (
-            other.source == self.source
-            and self.start <= other.start
-            and self.end >= other.end
-        )
-
-
 @dataclass(order=True, frozen=True)  # pragma: nocover
 class TextRange(Protocol):
     start: Position
