@@ -62,17 +62,20 @@ class Ranged(Protocol):
     start: Position
     end: Position
 
-    def __contains__(self, other: "Ranged") -> bool: ...
+    def source(self) -> "Source": ...
+
+    def __contains__(self, other: "Ranged") -> bool:
+        return (
+            other.source == self.source
+            and self.start <= other.start
+            and self.end >= other.end
+        )
 
 
 @dataclass(order=True, frozen=True)  # pragma: nocover
 class TextRange(Protocol):
     start: Position
     end: Position
-
-    def __contains__(
-        self, position_or_range: "Position | TextRange"
-    ) -> bool: ...
 
     @property
     def text(self) -> str: ...
@@ -129,6 +132,10 @@ class NodeWithRange[T: ast.AST]:
     @property
     def end(self) -> Position:
         return self.range.end
+
+    @property
+    def source(self) -> "Source":
+        return self.range.source
 
 
 ScopeWithRange = (
@@ -198,6 +205,9 @@ class Source(Protocol):  # pragma: nocover
     @property
     def end(self) -> Position: ...
 
+    @property
+    def source(self) -> "Source": ...
+
 
 @dataclass(order=True, frozen=True)
 class Edit:
@@ -211,6 +221,10 @@ class Edit:
     @property
     def end(self) -> Position:
         return self.text_range.end
+
+    @property
+    def source(self) -> "Source":
+        return self.text_range.source
 
 
 class NodeType(Enum):
