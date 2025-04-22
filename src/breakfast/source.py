@@ -358,6 +358,9 @@ class Line:
     def end(self) -> types.Position:
         return self.source.position(self.row, max(len(self.text) - 1, 0))
 
+    def __contains__(self, other: types.Ranged) -> bool:
+        return types.contains(self, other)
+
     @property
     def previous(self) -> types.Line | None:
         if self.row == 0:

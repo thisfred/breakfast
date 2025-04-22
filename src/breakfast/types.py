@@ -37,7 +37,8 @@ class Ranged(Protocol):
 
 
 @dataclass(order=True, frozen=True)  # pragma: nocover
-class Position(Ranged, Protocol):
+class Position(Protocol):
+    source: "Source"
     row: int
     column: int
 
@@ -77,6 +78,9 @@ def contains(self: Ranged, other: Ranged) -> bool:
 
 @dataclass(order=True, frozen=True)  # pragma: nocover
 class TextRange(Ranged, Protocol):
+    start: Position
+    end: Position
+
     @property
     def text(self) -> str: ...
 
@@ -147,8 +151,17 @@ ScopeWithRange = (
 
 
 @dataclass(order=True, frozen=True)  # pragma: nocover
-class Line(Ranged, Protocol):
+class Line(Protocol):
+    source: "Source"
     row: int
+
+    @property
+    def start(self) -> "Position": ...
+
+    @property
+    def end(self) -> "Position": ...
+
+    def __contains__(self, other: "Ranged") -> bool: ...
 
     @property
     def text(self) -> str: ...
