@@ -399,3 +399,14 @@ class ArgumentMapper:
                 self.substitute_argument(
                     arg, call_args.popleft(), substitutions
                 )
+
+
+def rewrite_body(
+    function_definition: ast.FunctionDef, substitutions: dict[ast.AST, ast.AST]
+) -> list[ast.stmt]:
+    return [
+        s
+        for node in function_definition.body
+        for s in substitute_nodes(node, substitutions)
+        if isinstance(s, ast.stmt)
+    ]

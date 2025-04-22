@@ -19,7 +19,7 @@ from breakfast.names import (
     build_graph,
     find_definition,
 )
-from breakfast.rewrites import ArgumentMapper, substitute_nodes
+from breakfast.rewrites import ArgumentMapper, rewrite_body
 from breakfast.scope_graph import NodeType, ScopeGraph
 from breakfast.search import (
     NodeFilter,
@@ -902,12 +902,9 @@ class InlineCall:
         arg_mapper.add_substitutions(call, substitutions)
 
         result: list[ast.stmt] = []
-        result = [
-            s
-            for node in definition_ast.body
-            for s in substitute_nodes(node, substitutions)
-            if isinstance(s, ast.stmt)
-        ]
+        result = rewrite_body(
+            function_definition=definition_ast, substitutions=substitutions
+        )
         return result
 
 
@@ -1723,12 +1720,7 @@ class ReplaceWithMethodObject:
                 args=self.function_definition.node.args.args[:1],
             ),
             name=COMPUTE,
-            body=[
-                s
-                for node in self.function_definition.node.body
-                for s in substitute_nodes(node, substitutions)
-                if isinstance(s, ast.stmt)
-            ],
+            body=rewrite_body(self.function_definition.node, substitutions),
         )
 
         new_class_name = make_unique_name(
