@@ -266,8 +266,7 @@ class UsageCollector:
 
 class Refactoring(Protocol):
     name: str
-
-    def __init__(self, selection: CodeSelection): ...
+    selection: CodeSelection
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool: ...
@@ -277,11 +276,18 @@ class Refactoring(Protocol):
 
 
 @register
+@dataclass
 class ExtractFunction:
     name = "extract function"
+    selection: CodeSelection
 
-    def __init__(self, code_selection: CodeSelection):
-        self.selection = code_selection
+    @property
+    def text_range(self) -> TextRange:
+        return self.selection.text_range
+
+    @property
+    def source(self) -> Source:
+        return self.selection.source
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -308,11 +314,11 @@ class ExtractFunction:
         start_of_scope: Position,
     ) -> int:
         if isinstance(enclosing_scope.node, ast.Module | ast.FunctionDef):
-            insert_position = self.selection.source.node_position(
+            insert_position = self.source.node_position(
                 enclosing_scope.node.body[0]
             )
         else:
-            insert_position = self.selection.text_range.start.line.start
+            insert_position = self.text_range.start.line.start
 
         new_level = insert_position.column // 4
         return new_level
@@ -322,11 +328,11 @@ class ExtractFunction:
         enclosing_scope: ScopeWithRange,
     ) -> Position:
         if isinstance(enclosing_scope.node, ast.Module | ast.FunctionDef):
-            insert_position = self.selection.source.node_position(
+            insert_position = self.source.node_position(
                 enclosing_scope.node.body[0]
             )
         else:
-            insert_position = self.selection.text_range.start.line.start
+            insert_position = self.text_range.start.line.start
         return insert_position
 
     def make_decorators(self, usages: UsageCollector) -> list[ast.expr]:
@@ -369,11 +375,10 @@ def make_body(
 
 
 @register
+@dataclass
 class ExtractMethod:
     name = "extract method"
-
-    def __init__(self, code_selection: CodeSelection):
-        self.selection = code_selection
+    selection: CodeSelection
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -591,12 +596,10 @@ def make_argument(occurrence: Occurrence) -> ast.arg:
 
 
 @register
+@dataclass
 class ExtractVariable:
     name = "extract variable"
-
-    def __init__(self, code_selection: CodeSelection):
-        self.text_range = code_selection.text_range
-        self.source = self.text_range.source
+    selection: CodeSelection
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -604,31 +607,31 @@ class ExtractVariable:
 
     @property
     def edits(self) -> tuple[Edit, ...]:
-        extracted = self.text_range.text
+        extracted = self.selection.text_range.text
 
         if not (expression := self.get_single_expression_value(extracted)):
             logger.warning("Could not extract single expression value.")
             return ()
 
         other_occurrences = find_other_occurrences(
-            source_ast=self.source.ast,
+            source_ast=self.selection.source.ast,
             node=expression,
-            position=self.text_range.start,
+            position=self.selection.text_range.start,
         )
 
-        enclosing_scope = self.text_range.enclosing_scopes[-1]
+        enclosing_scope = self.selection.text_range.enclosing_scopes[-1]
         name = make_unique_name(
             original_name="v", enclosing_scope=enclosing_scope
         )
         other_edits = [
-            (start := self.source.node_position(o))
+            (start := self.selection.source.node_position(o))
             .to(start + len(extracted))
             .replace(name)
             for o in other_occurrences
         ]
         edits = sorted(
             [
-                Edit(text_range=self.text_range, text=name),
+                Edit(text_range=self.selection.text_range, text=name),
                 *other_edits,
             ]
         )
@@ -638,8 +641,8 @@ class ExtractVariable:
             takewhile(
                 lambda p: p < first_edit_position,
                 (
-                    self.source.node_position(s)
-                    for s in find_statements(self.source.ast)
+                    self.selection.source.node_position(s)
+                    for s in find_statements(self.selection.source.ast)
                 ),
             )
         )
@@ -669,14 +672,10 @@ class ExtractVariable:
 
 
 @register
+@dataclass
 class InlineVariable:
     name = "inline variable"
-
-    def __init__(self, code_selection: CodeSelection):
-        self.text_range = code_selection.text_range
-        self.cursor = code_selection.cursor
-        self.source = self.text_range.source
-        self.selection = code_selection
+    selection: CodeSelection
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -702,11 +701,11 @@ class InlineVariable:
         if name is None:
             logger.warning("No variable at cursor that can be inlined.")
             return ()
-        if self.cursor in assignment.range:
+        if self.selection.cursor in assignment.range:
             after_cursor = (
                 o
                 for o in dropwhile(
-                    lambda x: x.position <= self.cursor,
+                    lambda x: x.position <= self.selection.cursor,
                     self.selection.occurrences_of_name_at_cursor,
                 )
             )
@@ -716,18 +715,20 @@ class InlineVariable:
                     lambda x: x.node_type is not NodeType.DEFINITION,
                     after_cursor,
                 )
-                if o.position > self.cursor
+                if o.position > self.selection.cursor
             )
         else:
-            to_replace = (self.cursor.to(self.cursor + len(name)),)
+            to_replace = (
+                self.selection.cursor.to(self.selection.cursor + len(name)),
+            )
 
-        if self.cursor in assignment.range:
+        if self.selection.cursor in assignment.range:
             can_remove_last_definition = True
         else:
             other_occurrences = [
                 o
                 for o in grouped.get(False, [])
-                if o.position not in self.text_range
+                if o.position not in self.selection.text_range
             ]
             last_occurrence = (
                 other_occurrences[-1] if other_occurrences else None
@@ -758,14 +759,26 @@ class InlineVariable:
 
 
 @register
+@dataclass
 class InlineCall:
     name = "inline call"
+    selection: CodeSelection
 
-    def __init__(self, code_selection: CodeSelection):
-        self.text_range = code_selection.text_range
-        self.source = self.text_range.source
-        self.scope_graph = code_selection.scope_graph
-        self.enclosing_call = code_selection.text_range.enclosing_call
+    @property
+    def scope_graph(self) -> ScopeGraph:
+        return self.selection.scope_graph
+
+    @property
+    def text_range(self) -> TextRange:
+        return self.selection.text_range
+
+    @property
+    def source(self) -> Source:
+        return self.selection.source
+
+    @property
+    def enclosing_call(self) -> NodeWithRange[ast.Call] | None:
+        return self.text_range.enclosing_call
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -921,15 +934,10 @@ class InlineCall:
 
 
 @register
+@dataclass
 class SlideStatementsUp:
     name = "slide statements up"
-
-    def __init__(
-        self,
-        code_selection: CodeSelection,
-    ):
-        self.text_range = code_selection.text_range
-        self.selection = code_selection
+    selection: CodeSelection
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -941,7 +949,10 @@ class SlideStatementsUp:
         if target is None:
             return ()
 
-        first, last = self.text_range.start.line, self.text_range.end.line
+        first, last = (
+            self.selection.text_range.start.line,
+            self.selection.text_range.end.line,
+        )
         insert = target.insert(first.start.through(last.end).text + NEWLINE)
         delete = first.start.to(
             last.next.start if last.next else last.end
@@ -983,15 +994,10 @@ class SlideStatementsUp:
 
 
 @register
+@dataclass
 class SlideStatementsDown:
     name = "slide statements down"
-
-    def __init__(
-        self,
-        code_selection: CodeSelection,
-    ):
-        self.text_range = code_selection.text_range
-        self.selection = code_selection
+    selection: CodeSelection
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -1003,7 +1009,10 @@ class SlideStatementsDown:
         if target is None:
             return ()
 
-        first, last = self.text_range.start.line, self.text_range.end.line
+        first, last = (
+            self.selection.text_range.start.line,
+            self.selection.text_range.end.line,
+        )
         insert = target.insert(first.start.through(last.end).text + NEWLINE)
         delete = first.start.to(
             last.next.start if last.next else last.end
@@ -1046,15 +1055,10 @@ class SlideStatementsDown:
 
 
 @register
+@dataclass
 class MoveFunctionToParentScope:
     name = "move function to parent scope"
-
-    def __init__(
-        self,
-        code_selection: CodeSelection,
-    ):
-        self.text_range = code_selection.text_range
-        self.selection = code_selection
+    selection: CodeSelection
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -1102,15 +1106,10 @@ class MoveFunctionToParentScope:
 
 
 @register
+@dataclass
 class RemoveParameter:
     name = "remove parameter"
-
-    def __init__(
-        self,
-        code_selection: CodeSelection,
-    ):
-        self.text_range = code_selection.text_range
-        self.selection = code_selection
+    selection: CodeSelection
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -1204,15 +1203,10 @@ class RemoveParameter:
 
 
 @register
+@dataclass
 class AddParameter:
     name = "add parameter"
-
-    def __init__(
-        self,
-        code_selection: CodeSelection,
-    ):
-        self.text_range = code_selection.text_range
-        self.selection = code_selection
+    selection: CodeSelection
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -1277,16 +1271,10 @@ class AddParameter:
 
 
 @register
+@dataclass
 class EncapsulateRecord:
     name = "encapsulate record"
-
-    def __init__(
-        self,
-        code_selection: CodeSelection,
-    ):
-        self.text_range = code_selection.text_range
-        self.source = self.text_range.start.source
-        self.selection = code_selection
+    selection: CodeSelection
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -1392,15 +1380,10 @@ class EncapsulateRecord:
 
 
 @register
+@dataclass
 class MethodToProperty:
     name = "convert method to property"
-
-    def __init__(
-        self,
-        code_selection: CodeSelection,
-    ):
-        self.text_range = code_selection.text_range
-        self.selection = code_selection
+    selection: CodeSelection
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -1446,15 +1429,10 @@ class MethodToProperty:
 
 
 @register
+@dataclass
 class PropertyToMethod:
     name = "convert property to method"
-
-    def __init__(
-        self,
-        code_selection: CodeSelection,
-    ):
-        self.text_range = code_selection.text_range
-        self.selection = code_selection
+    selection: CodeSelection
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -1513,15 +1491,10 @@ class PropertyToMethod:
 
 
 @register
+@dataclass
 class ExtractClass:
     name = "extract class"
-
-    def __init__(
-        self,
-        code_selection: CodeSelection,
-    ):
-        self.text_range = code_selection.text_range
-        self.selection = code_selection
+    selection: CodeSelection
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -1534,11 +1507,11 @@ class ExtractClass:
         call_added = False
         class_name = make_unique_name(
             original_name="C",
-            enclosing_scope=self.text_range.enclosing_scopes[0],
+            enclosing_scope=self.selection.text_range.enclosing_scopes[0],
         )
         property_name = make_unique_name(
             original_name=class_name.lower(),
-            enclosing_scope=self.text_range.enclosing_nodes_by_type(
+            enclosing_scope=self.selection.text_range.enclosing_nodes_by_type(
                 ast.ClassDef
             )[-1],
         )
@@ -1546,7 +1519,8 @@ class ExtractClass:
             s
             for s in definition.body
             if (
-                self.text_range.start.source.node_position(s) in self.text_range
+                self.selection.text_range.start.source.node_position(s)
+                in self.selection.text_range
             )
             and isinstance(s, ast.Assign)
         ]
@@ -1613,7 +1587,7 @@ class ExtractClass:
             type_ignores=[],
         )
         add_class_definition = replace_with_node(
-            self.text_range.enclosing_scopes[0].range.start.as_range,
+            self.selection.text_range.enclosing_scopes[0].range.start.as_range,
             fake_module,
             add_newline_after=True,
         )
@@ -1627,8 +1601,8 @@ class ExtractClass:
 
         for statement in definition.body:
             if (
-                self.text_range.start.source.node_position(statement)
-                in self.text_range
+                self.selection.text_range.start.source.node_position(statement)
+                in self.selection.text_range
             ):
                 if isinstance(statement, ast.Assign):
                     if not call_added:
@@ -1659,14 +1633,10 @@ class ExtractClass:
 
 
 @register
+@dataclass
 class ReplaceWithMethodObject:
     name = "replace with method object"
-
-    def __init__(
-        self,
-        code_selection: CodeSelection,
-    ):
-        self.selection = code_selection
+    selection: CodeSelection
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
