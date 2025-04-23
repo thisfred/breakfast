@@ -153,16 +153,12 @@ class CodeSelection:
 
     @cached_property
     def name_at_cursor(self) -> str | None:
-        return self.source.get_name_at(self.cursor)
-
-    @cached_property
-    def cursor(self) -> Position:
-        return self.text_range.start
+        return self.source.get_name_at(self.start)
 
     @cached_property
     def occurrences_of_name_at_cursor(self) -> Sequence[Occurrence]:
         try:
-            return all_occurrences(self.cursor, graph=self.scope_graph)
+            return all_occurrences(self.start, graph=self.scope_graph)
         except NotFoundError:
             return ()
 
@@ -725,11 +721,11 @@ class InlineVariable:
         if name is None:
             logger.warning("No variable at cursor that can be inlined.")
             return ()
-        if self.selection.cursor in assignment.range:
+        if self.selection.start in assignment.range:
             after_cursor = (
                 o
                 for o in dropwhile(
-                    lambda x: x.position <= self.selection.cursor,
+                    lambda x: x.position <= self.selection.start,
                     self.selection.occurrences_of_name_at_cursor,
                 )
             )
@@ -739,14 +735,14 @@ class InlineVariable:
                     lambda x: x.node_type is not NodeType.DEFINITION,
                     after_cursor,
                 )
-                if o.position > self.selection.cursor
+                if o.position > self.selection.start
             )
         else:
             to_replace = (
-                self.selection.cursor.to(self.selection.cursor + len(name)),
+                self.selection.start.to(self.selection.start + len(name)),
             )
 
-        if self.selection.cursor in assignment.range:
+        if self.selection.start in assignment.range:
             can_remove_last_definition = True
         else:
             other_occurrences = [

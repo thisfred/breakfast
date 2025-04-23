@@ -23,7 +23,7 @@ class NotFoundError(Exception):
     pass
 
 
-class Ranged(Protocol):
+class Ranged(Protocol):  # pragma: nocover
     @property
     def start(self) -> "Position": ...
 
