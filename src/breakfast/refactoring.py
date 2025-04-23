@@ -457,7 +457,7 @@ def make_extract_callable_edits(
     callable_definition = make_function(
         decorator_list=decorator_list, name=name, body=body, arguments=arguments
     )
-    start_of_scope = enclosing_scope.range.start
+    start_of_scope = enclosing_scope.start
     new_level = refactoring.compute_new_level(
         enclosing_scope=enclosing_scope, start_of_scope=start_of_scope
     )
@@ -746,7 +746,7 @@ class InlineVariable:
             )
             can_remove_last_definition = (
                 last_occurrence is None
-                or last_occurrence.position < assignment.range.start
+                or last_occurrence.position < assignment.start
             )
 
         edits: tuple[Edit, ...] = tuple(
