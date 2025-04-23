@@ -899,7 +899,7 @@ class InlineCall:
 
     @staticmethod
     def get_start_of_name(call: NodeWithRange[ast.Call]) -> Position:
-        name_start = call.range.start
+        name_start = call.start
         if isinstance(call.node.func, ast.Attribute):
             if (
                 call.node.func.value.end_col_offset
@@ -1041,7 +1041,7 @@ class SlideStatementsDown:
         ):
             index += 1
 
-        first_usage_after_range = enclosing_nodes[index].range.start
+        first_usage_after_range = enclosing_nodes[index].start
 
         if (
             first_usage_after_range
@@ -1139,7 +1139,7 @@ class RemoveParameter:
             len(
                 [
                     o
-                    for o in all_occurrences(self.arg.range.start)
+                    for o in all_occurrences(self.arg.start)
                     if o.position in self.function_definition.range
                 ]
             )
@@ -1325,7 +1325,7 @@ class EncapsulateRecord:
             type_ignores=[],
         )
         definition = replace_with_node(
-            enclosing_assignment.range.start.as_range,
+            enclosing_assignment.start.as_range,
             fake_module,
             add_newline_after=True,
         )
@@ -1447,7 +1447,7 @@ class PropertyToMethod:
                 if (not isinstance(d, ast.Name) or d.id != PROPERTY)
             ],
         )
-        start = self.function_definition.range.start
+        start = self.function_definition.start
         for _ in definition.decorator_list:
             start = start.line.previous.start if start.line.previous else start
         range_with_decorators = start.through(self.function_definition.end)
@@ -1583,7 +1583,7 @@ class ExtractClass:
             type_ignores=[],
         )
         add_class_definition = replace_with_node(
-            self.selection.text_range.enclosing_scopes[0].range.start.as_range,
+            self.selection.text_range.enclosing_scopes[0].start.as_range,
             fake_module,
             add_newline_after=True,
         )
@@ -1714,7 +1714,7 @@ class ReplaceWithMethodObject:
         )
 
         insert_method_object_class = replace_with_node(
-            self.selection.text_range.enclosing_scopes[0].range.start.as_range,
+            self.selection.text_range.enclosing_scopes[0].start.as_range,
             method_object_class,
             add_newline_after=True,
         )
