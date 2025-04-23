@@ -225,7 +225,7 @@ class UsageCollector:
             find_names(self.enclosing_scope.node, self.selection.source)
         ):
             if (
-                occurrence.position < self.selection.text_range.start
+                occurrence.position < self.selection.start
                 and occurrence.node_type is NodeType.DEFINITION
             ):
                 if i == 1 and not (self.selection.in_static_method):
@@ -284,7 +284,7 @@ class ExtractFunction:
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
-        return selection.text_range.end > selection.text_range.start
+        return selection.end > selection.start
 
     @property
     def edits(self) -> tuple[Edit, ...]:
