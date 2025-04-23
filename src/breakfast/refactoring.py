@@ -166,20 +166,15 @@ class CodeSelection:
         lines = self.text_range.text.rstrip().split("\n")
         offset = 0
         last_line = lines[-1]
-        start_offset = self.text_range.start.column if len(lines) == 1 else 0
-        while self.text_range.end.column - (start_offset + offset) > len(
-            last_line
-        ):
+        start_offset = self.start.column if len(lines) == 1 else 0
+        while self.end.column - (start_offset + offset) > len(last_line):
             offset += 1
 
         if offset == 0:
             return self
 
         return CodeSelection(
-            text_range=replace(
-                self.text_range,
-                end=self.text_range.end - offset,
-            )
+            text_range=replace(self.text_range, end=self.end - offset)
         )
 
 
