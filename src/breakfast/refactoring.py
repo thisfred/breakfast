@@ -1079,9 +1079,9 @@ class MoveFunctionToParentScope:
             return ()
 
         insert_position = (
-            scope.range.end.line.next.start
-            if scope.range.end.line.next
-            else scope.range.end.line.end
+            scope.end.line.next.start
+            if scope.end.line.next
+            else scope.end.line.end
         )
         result = (
             *result,
