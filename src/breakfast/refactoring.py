@@ -372,7 +372,7 @@ class ExtractMethod:
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
         return (
-            selection.text_range.end > selection.text_range.start
+            selection.end > selection.start
             and selection.in_method
             and not selection.in_static_method
         )
@@ -592,7 +592,7 @@ class ExtractVariable:
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
-        return selection.text_range.end > selection.text_range.start
+        return selection.end > selection.start
 
     @property
     def edits(self) -> tuple[Edit, ...]:
@@ -605,7 +605,7 @@ class ExtractVariable:
         other_occurrences = find_other_nodes(
             source_ast=self.selection.source.ast,
             node=expression,
-            position=self.selection.text_range.start,
+            position=self.selection.start,
         )
 
         enclosing_scope = self.selection.text_range.enclosing_scopes[-1]
@@ -840,7 +840,7 @@ class InlineCall:
             name = "result"
             result = (Edit(call.range, text=name), *result)
         insert_range = (
-            self.text_range.start.line.start.as_range
+            self.selection.start.line.start.as_range
             if return_ranges
             else call.range
         )
@@ -960,10 +960,7 @@ class SlideStatementsUp:
         if target is None:
             return ()
 
-        first, last = (
-            self.selection.text_range.start.line,
-            self.selection.text_range.end.line,
-        )
+        first, last = (self.selection.start.line, self.selection.end.line)
         insert = target.insert(first.start.through(last.end).text + NEWLINE)
         delete = first.start.to(
             last.next.start if last.next else last.end
@@ -971,11 +968,7 @@ class SlideStatementsUp:
         return (insert, delete)
 
     def find_slide_target_before(self) -> Position | None:
-        first, last = (
-            self.selection.text_range.start.line,
-            self.selection.text_range.end.line,
-        )
-
+        first, last = (self.selection.start.line, self.selection.end.line)
         line = first
         while line.previous and line.previous.start.level >= first.start.level:
             line = line.previous
@@ -1020,10 +1013,7 @@ class SlideStatementsDown:
         if target is None:
             return ()
 
-        first, last = (
-            self.selection.text_range.start.line,
-            self.selection.text_range.end.line,
-        )
+        first, last = (self.selection.start.line, self.selection.end.line)
         insert = target.insert(first.start.through(last.end).text + NEWLINE)
         delete = first.start.to(
             last.next.start if last.next else last.end
@@ -1031,10 +1021,7 @@ class SlideStatementsDown:
         return (insert, delete)
 
     def find_slide_target_after(self) -> Position | None:
-        first, last = (
-            self.selection.text_range.start.line,
-            self.selection.text_range.end.line,
-        )
+        first, last = (self.selection.start.line, self.selection.end.line)
         lines = first.start.to(last.end)
         names_defined_in_range = lines.definitions
         enclosing_scope = self.selection.text_range.enclosing_scopes[-1]
@@ -1530,7 +1517,7 @@ class ExtractClass:
             s
             for s in definition.body
             if (
-                self.selection.text_range.start.source.node_position(s)
+                self.selection.source.node_position(s)
                 in self.selection.text_range
             )
             and isinstance(s, ast.Assign)
@@ -1612,7 +1599,7 @@ class ExtractClass:
 
         for statement in definition.body:
             if (
-                self.selection.text_range.start.source.node_position(statement)
+                self.selection.source.node_position(statement)
                 in self.selection.text_range
             ):
                 if isinstance(statement, ast.Assign):
@@ -1652,7 +1639,7 @@ class ReplaceWithMethodObject:
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
         return (
-            selection.text_range.end > selection.text_range.start
+            selection.end > selection.start
             and selection.in_method
             and not selection.in_static_method
         )
@@ -1785,10 +1772,8 @@ class ReplaceWithMethodObject:
         self, argument: ast.keyword | ast.arg
     ) -> Sequence[Occurrence]:
         assert argument.arg is not None  # noqa: S101
-        arg_position = self.selection.text_range.start.source.node_position(
-            argument
-        )
-        body_range = self.selection.text_range.start.source.node_position(
+        arg_position = self.selection.source.node_position(argument)
+        body_range = self.selection.source.node_position(
             self.function_definition.node.body[0]
         ).through(self.function_definition.range.end)
         return [
