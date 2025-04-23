@@ -1450,9 +1450,7 @@ class PropertyToMethod:
         start = self.function_definition.range.start
         for _ in definition.decorator_list:
             start = start.line.previous.start if start.line.previous else start
-        range_with_decorators = start.through(
-            self.function_definition.range.end
-        )
+        range_with_decorators = start.through(self.function_definition.end)
         remove_decorator = replace_with_node(
             range_with_decorators, new_function
         )
@@ -1775,7 +1773,7 @@ class ReplaceWithMethodObject:
         arg_position = self.selection.source.node_position(argument)
         body_range = self.selection.source.node_position(
             self.function_definition.node.body[0]
-        ).through(self.function_definition.range.end)
+        ).through(self.function_definition.end)
         return [
             o
             for o in all_occurrences(arg_position)
