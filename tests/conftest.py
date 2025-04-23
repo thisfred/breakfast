@@ -61,7 +61,6 @@ def assert_refactors_to(
     edits = refactoring(selection=selection).edits
     actual = apply_edits(source=source, edits=edits)
     expected = dedent(expected).strip()
-
     assert_ast_equals(actual, expected)
 
 

@@ -235,7 +235,7 @@ class UsageCollector:
                 self._used_in[occurrence.name].append(occurrence)
                 if occurrence.node_type is NodeType.DEFINITION:
                     self._modified_in[occurrence.name].append(occurrence)
-            if occurrence.position > self.selection.text_range.end:
+            if occurrence.position > self.selection.end:
                 self._used_after[occurrence.name].append(occurrence)
 
     def get_subsequent_usage(
@@ -415,9 +415,9 @@ class ExtractMethod:
         enclosing_scope: ScopeWithRange,
     ) -> Position:
         return (
-            enclosing_scope.range.end.line.next.start
-            if enclosing_scope.range.end.line.next
-            else enclosing_scope.range.end.line.end
+            enclosing_scope.end.line.next.start
+            if enclosing_scope.end.line.next
+            else enclosing_scope.end.line.end
         )
 
     def make_decorators(self, usages: UsageCollector) -> list[ast.expr]:
