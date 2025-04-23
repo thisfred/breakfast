@@ -58,7 +58,7 @@ def assert_refactors_to(
     selection_range = range_for(target, source, occurrence)
     selection = CodeSelection(selection_range)
     assert refactoring.applies_to(selection)
-    edits = refactoring(selection).edits
+    edits = refactoring(selection=selection).edits
     actual = apply_edits(source=source, edits=edits)
     expected = dedent(expected).strip()
 

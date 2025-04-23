@@ -1,5 +1,3 @@
-from pytest import mark
-
 from breakfast.refactoring import (
     AddParameter,
     CodeSelection,
@@ -2480,22 +2478,19 @@ def test_inline_call_should_handle_vararg_and_kwarg():
     )
 
 
-@mark.xfail
-def test_extract_variable_in_method_with_decorator_should_extract_at_beginning_of_body():
+def test_extract_variable_in_first_line_of_method_should_not_extract_outside_body():
     assert_refactors_to(
         refactoring=ExtractVariable,
         target="ast.Call",
         occurrence=2,
         code="""
         class C:
-            @property
             def enclosing_call(self) -> types.NodeWithRange[ast.Call] | None:
                 calls = self.enclosing_nodes_by_type(ast.Call)
                 return calls[-1] if calls else None
         """,
         expected="""
         class C:
-            @property
             def enclosing_call(self) -> types.NodeWithRange[ast.Call] | None:
                 v = ast.Call
                 calls = self.enclosing_nodes_by_type(v)

@@ -45,4 +45,6 @@ def generic_transform(
             new_node = next(f(old_value, *args, **kwargs), None)
             if new_node is not None:
                 params[field] = new_node
+        else:
+            params[field] = old_value
     yield node.__class__(**params)

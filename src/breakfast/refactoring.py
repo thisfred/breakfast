@@ -24,7 +24,7 @@ from breakfast.scope_graph import NodeType, ScopeGraph
 from breakfast.search import (
     NodeFilter,
     find_names,
-    find_other_occurrences,
+    find_other_nodes,
     find_returns,
     find_statements,
     get_nodes,
@@ -267,6 +267,8 @@ class UsageCollector:
 class Refactoring(Protocol):
     name: str
     selection: CodeSelection
+
+    def __init__(self, selection: CodeSelection): ...
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool: ...
@@ -613,7 +615,7 @@ class ExtractVariable:
             logger.warning("Could not extract single expression value.")
             return ()
 
-        other_occurrences = find_other_occurrences(
+        other_occurrences = find_other_nodes(
             source_ast=self.selection.source.ast,
             node=expression,
             position=self.selection.text_range.start,
@@ -623,11 +625,16 @@ class ExtractVariable:
         name = make_unique_name(
             original_name="v", enclosing_scope=enclosing_scope
         )
+
+        target_range = get_body_range(enclosing_scope=enclosing_scope)
+
         other_edits = [
             (start := self.selection.source.node_position(o))
             .to(start + len(extracted))
             .replace(name)
             for o in other_occurrences
+            if (node_position := self.selection.source.node_position(o))
+            and node_position in target_range
         ]
         edits = sorted(
             [
@@ -646,6 +653,7 @@ class ExtractVariable:
                 ),
             )
         )
+
         statement_start = (
             preceding_statement_positions[-1]
             if preceding_statement_positions
@@ -669,6 +677,22 @@ class ExtractVariable:
             return None
 
         return parsed.body[0].value
+
+
+def get_body_range(enclosing_scope: ScopeWithRange) -> TextRange:
+    if not isinstance(
+        enclosing_scope.node,
+        ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
+    ):
+        return enclosing_scope.range
+    end = enclosing_scope.source.node_end_position(
+        enclosing_scope.node.body[-1]
+    )
+    if end is None:
+        return enclosing_scope.range
+    return enclosing_scope.source.node_position(
+        enclosing_scope.node.body[0]
+    ).through(end)
 
 
 @register
@@ -1264,7 +1288,7 @@ class AddParameter:
                 definition,
                 args=copy_arguments(
                     definition.args,
-                    args=[*definition.args.args, ast.arg(arg_name)],
+                    args=[*definition.args.args, ast.arg(arg=arg_name)],
                 ),
             ),
         )
@@ -1704,7 +1728,6 @@ class ReplaceWithMethodObject:
             name=COMPUTE,
             body=rewrite_body(self.function_definition.node, substitutions),
         )
-
         new_class_name = make_unique_name(
             to_class_name(self.function_definition.node.name),
             enclosing_scope=self.selection.text_range.enclosing_scopes[0],
@@ -1717,6 +1740,7 @@ class ReplaceWithMethodObject:
             keywords=[],
             type_params=[],
         )
+
         insert_method_object_class = replace_with_node(
             self.selection.text_range.enclosing_scopes[0].range.start.as_range,
             method_object_class,

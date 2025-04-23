@@ -1,12 +1,7 @@
 import ast
 import logging
 from collections import deque
-from collections.abc import (
-    Callable,
-    Container,
-    Iterator,
-    Sequence,
-)
+from collections.abc import Callable, Container, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from functools import singledispatch
 from itertools import chain, repeat
@@ -38,7 +33,7 @@ COMPARISONS: dict[type[ast.AST], Callable[[Any, Any], bool]] = {
 @singledispatch
 def substitute_nodes(
     node: ast.AST,
-    substitutions: dict[ast.AST, ast.AST],
+    substitutions: Mapping[ast.AST, ast.AST],
 ) -> Iterator[ast.AST]:
     if node in substitutions:
         yield from generic_transform(
@@ -51,7 +46,7 @@ def substitute_nodes(
 @substitute_nodes.register
 def substitute_nodes_in_name(
     node: ast.Name,
-    substitutions: dict[ast.AST, ast.AST],
+    substitutions: Mapping[ast.AST, ast.AST],
 ) -> Iterator[ast.AST]:
     substitution = substitutions.get(node)
     if substitution is None:
@@ -63,7 +58,7 @@ def substitute_nodes_in_name(
 @substitute_nodes.register
 def substitute_nodes_in_constant(
     node: ast.Constant,
-    substitutions: dict[ast.AST, ast.AST],
+    substitutions: Mapping[ast.AST, ast.AST],
 ) -> Iterator[ast.AST]:
     yield node
 
@@ -71,7 +66,7 @@ def substitute_nodes_in_constant(
 @substitute_nodes.register
 def substitute_nodes_in_attribute(
     node: ast.Attribute,
-    substitutions: dict[ast.AST, ast.AST],
+    substitutions: Mapping[ast.AST, ast.AST],
 ) -> Iterator[ast.AST]:
     new_value = next(substitute_nodes(node.value, substitutions), None)
     if isinstance(new_value, ast.expr):
@@ -83,7 +78,7 @@ def substitute_nodes_in_attribute(
 @substitute_nodes.register
 def substitute_nodes_in_if(
     node: ast.If,
-    substitutions: dict[ast.AST, ast.AST],
+    substitutions: Mapping[ast.AST, ast.AST],
 ) -> Iterator[ast.AST]:
     test = next(substitute_nodes(node.test, substitutions), None)
     body = (
@@ -131,7 +126,7 @@ def substitute_nodes_in_if(
 @substitute_nodes.register
 def substitute_nodes_in_bool_op(
     node: ast.BoolOp,
-    substitutions: dict[ast.AST, ast.AST],
+    substitutions: Mapping[ast.AST, ast.AST],
 ) -> Iterator[ast.AST]:
     transformed = chain.from_iterable(
         substitute_nodes(value, substitutions) for value in node.values
