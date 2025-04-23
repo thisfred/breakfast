@@ -275,10 +275,6 @@ class ExtractFunction:
     selection: CodeSelection
 
     @property
-    def text_range(self) -> TextRange:
-        return self.selection.text_range
-
-    @property
     def source(self) -> Source:
         return self.selection.source
 
@@ -311,7 +307,7 @@ class ExtractFunction:
                 enclosing_scope.node.body[0]
             )
         else:
-            insert_position = self.text_range.start.line.start
+            insert_position = self.selection.start.line.start
 
         new_level = insert_position.column // 4
         return new_level
@@ -325,7 +321,7 @@ class ExtractFunction:
                 enclosing_scope.node.body[0]
             )
         else:
-            insert_position = self.text_range.start.line.start
+            insert_position = self.selection.start.line.start
         return insert_position
 
     def make_decorators(self, usages: UsageCollector) -> list[ast.expr]:
