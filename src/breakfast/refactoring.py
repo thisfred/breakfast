@@ -3,6 +3,7 @@ import logging
 from collections import defaultdict
 from collections.abc import (
     Iterable,
+    Iterator,
     Mapping,
     MutableMapping,
     Sequence,
@@ -289,8 +290,8 @@ class ExtractFunction:
         return selection.end > selection.start
 
     @property
-    def edits(self) -> tuple[Edit, ...]:
-        return make_extract_callable_edits(refactoring=self, name="f")
+    def edits(self) -> Iterator[Edit]:
+        yield from make_extract_callable_edits(refactoring=self, name="f")
 
     @staticmethod
     def make_call(
@@ -384,8 +385,8 @@ class ExtractMethod:
         )
 
     @property
-    def edits(self) -> tuple[Edit, ...]:
-        return make_extract_callable_edits(refactoring=self, name="m")
+    def edits(self) -> Iterator[Edit]:
+        yield from make_extract_callable_edits(refactoring=self, name="m")
 
     @staticmethod
     def make_call(
@@ -443,7 +444,7 @@ class ExtractMethod:
 
 def make_extract_callable_edits(
     refactoring: ExtractFunction | ExtractMethod, name: str
-) -> tuple[Edit, ...]:
+) -> Iterator[Edit]:
     enclosing_scope = refactoring.selection.text_range.enclosing_scopes[-1]
     usages = UsageCollector(refactoring.selection, enclosing_scope)
     return_node = make_return_node(
@@ -452,7 +453,7 @@ def make_extract_callable_edits(
     body = make_body(selection=refactoring.selection, return_node=return_node)
     if not body:
         logger.warning("Could not extract callable body.")
-        return ()
+        return
     name = make_unique_name(
         original_name=name,
         enclosing_scope=refactoring.selection.text_range.enclosing_scopes[0],
@@ -486,21 +487,17 @@ def make_extract_callable_edits(
     insert_position = refactoring.get_insert_position(
         enclosing_scope=enclosing_scope
     )
-
-    all_edits = (
-        replace_with_node(
-            insert_position.as_range,
-            callable_definition,
-            add_newline_after=True,
-            add_indentation_after=True,
-            level=new_level,
-        ),
-        replace_with_node(
-            text_range=refactoring.selection.text_range,
-            node=calling_statement,
-        ),
+    yield replace_with_node(
+        insert_position.as_range,
+        callable_definition,
+        add_newline_after=True,
+        add_indentation_after=True,
+        level=new_level,
     )
-    return all_edits
+    yield replace_with_node(
+        text_range=refactoring.selection.text_range,
+        node=calling_statement,
+    )
 
 
 def make_function(
@@ -606,12 +603,12 @@ class ExtractVariable:
         return selection.end > selection.start
 
     @property
-    def edits(self) -> tuple[Edit, ...]:
+    def edits(self) -> Iterator[Edit]:
         extracted = self.selection.text_range.text
 
         if not (expression := self.get_single_expression_value(extracted)):
             logger.warning("Could not extract single expression value.")
-            return ()
+            return
 
         other_occurrences = find_other_nodes(
             source_ast=self.selection.source.ast,
@@ -662,7 +659,8 @@ class ExtractVariable:
         indentation = " " * insert_point.column
         definition = f"{name} = {extracted}{NEWLINE}{indentation}"
         insert = insert_point.insert(definition)
-        return (insert, *edits)
+        yield insert
+        yield from edits
 
     @staticmethod
     def get_single_expression_value(text: str) -> ast.AST | None:
@@ -708,7 +706,7 @@ class InlineVariable:
         return selection.name_at_cursor is not None
 
     @property
-    def edits(self) -> tuple[Edit, ...]:
+    def edits(self) -> Iterator[Edit]:
         grouped: dict[bool, list[Occurrence]] = defaultdict(list)
         for o in self.selection.occurrences_of_name_at_cursor:
             grouped[o.node_type is NodeType.DEFINITION].append(o)
@@ -717,16 +715,16 @@ class InlineVariable:
 
         if last_definition is None:
             logger.warning("Could not find definition.")
-            return ()
+            return
         assignment = last_definition.position.as_range.enclosing_assignment
         if assignment is None:
             logger.warning("Could not find assignment for definition.")
-            return ()
+            return
 
         name = self.selection.name_at_cursor
         if name is None:
             logger.warning("No variable at cursor that can be inlined.")
-            return ()
+            return
         if self.selection.start in assignment.range:
             after_cursor = (
                 o
@@ -781,7 +779,7 @@ class InlineVariable:
                 delete = replace_with_node(assignment.range, assignment.node)
             edits = (*edits, delete)
 
-        return edits
+        yield from edits
 
 
 @register
@@ -815,33 +813,33 @@ class InlineCall:
         return selection.text_range.enclosing_call is not None
 
     @property
-    def edits(self) -> tuple[Edit, ...]:
+    def edits(self) -> Iterator[Edit]:
         call = self.enclosing_call
 
         if not call:
             logger.warning("No enclosing call.")
-            return ()
+            return
 
         name_start = self.get_start_of_name(call=call)
 
         definition = find_definition(self.scope_graph, name_start)
         if definition is None or definition.position is None:
             logger.warning(f"No definition position {definition=}.")
-            return ()
+            return
         if not isinstance(definition.ast, ast.FunctionDef):
             logger.warning(f"Not a function {definition.ast=}.")
-            return ()
+            return
 
         node_filter = self.make_filter(definition)
         found = next(
             get_nodes(definition.position.source.ast, node_filter), None
         )
         if not isinstance(found, ast.FunctionDef | ast.AsyncFunctionDef):
-            return ()
+            return
 
         body_range = self.get_body_range(definition=definition, found=found)
 
-        result = self.maybe_remove_definition(
+        result: Iterable[Edit] = self.maybe_remove_definition(
             name_start=name_start, definition=definition
         )
 
@@ -872,12 +870,12 @@ class InlineCall:
             replace_with_node(insert_range, body, add_newline_after=True),
             *result,
         )
-        return result
+        yield from result
 
     @staticmethod
     def maybe_remove_definition(
         name_start: Position, definition: Occurrence
-    ) -> tuple[Edit, ...]:
+    ) -> Iterator[Edit]:
         number_of_occurrences = len(all_occurrences(name_start))
         if (
             number_of_occurrences > 2
@@ -889,8 +887,8 @@ class InlineCall:
             )
             is None
         ):
-            return ()
-        return (Edit(definition_range, text=""),)
+            return
+        yield Edit(definition_range, text="")
 
     @staticmethod
     def get_body_range(
@@ -978,17 +976,16 @@ class SlideStatementsUp:
         return True
 
     @property
-    def edits(self) -> tuple[Edit, ...]:
+    def edits(self) -> Iterator[Edit]:
         target = self.find_slide_target_before()
         if target is None:
-            return ()
+            return
 
         first, last = (self.selection.start.line, self.selection.end.line)
-        insert = target.insert(first.start.through(last.end).text + NEWLINE)
-        delete = first.start.to(
+        yield target.insert(first.start.through(last.end).text + NEWLINE)
+        yield first.start.to(
             last.next.start if last.next else last.end
         ).replace("")
-        return (insert, delete)
 
     def find_slide_target_before(self) -> Position | None:
         first, last = (self.selection.start.line, self.selection.end.line)
@@ -1035,17 +1032,16 @@ class SlideStatementsDown:
         return True
 
     @property
-    def edits(self) -> tuple[Edit, ...]:
+    def edits(self) -> Iterator[Edit]:
         target = self.find_slide_target_after()
         if target is None:
-            return ()
+            return
 
         first, last = (self.selection.start.line, self.selection.end.line)
-        insert = target.insert(first.start.through(last.end).text + NEWLINE)
-        delete = first.start.to(
+        yield target.insert(first.start.through(last.end).text + NEWLINE)
+        yield first.start.to(
             last.next.start if last.next else last.end
         ).replace("")
-        return (insert, delete)
 
     def find_slide_target_after(self) -> Position | None:
         first, last = (self.selection.start.line, self.selection.end.line)
@@ -1097,7 +1093,7 @@ class MoveFunctionToParentScope:
         )
 
     @property
-    def edits(self) -> tuple[Edit, ...]:
+    def edits(self) -> Iterator[Edit]:
         enclosing_scope = self.selection.text_range.enclosing_scopes[-1]
         result: tuple[Edit, ...] = (Edit(enclosing_scope.range, ""),)
 
@@ -1107,19 +1103,17 @@ class MoveFunctionToParentScope:
             )
         ):
             logger.warning("Not inside an appropriately nested scope.")
-            return ()
+            return
 
         insert_position = (
             scope.end.line.next.start
             if scope.end.line.next
             else scope.end.line.end
         )
-        result = (
+        yield from (
             *result,
             replace_with_node(insert_position.as_range, enclosing_scope.node),
         )
-
-        return result
 
     @staticmethod
     def closest_enclosing_non_class_scope(
@@ -1149,14 +1143,14 @@ class RemoveParameter:
         return bool(selection.text_range.enclosing_nodes_by_type(ast.arg))
 
     @property
-    def edits(self) -> tuple[Edit, ...]:
+    def edits(self) -> Iterator[Edit]:
         if not self.is_parameter_unused:
             logger.warning(
                 "Can't remove parameter that is used in function body."
             )
-            return ()
+            return
 
-        return (self.function_definition_edit, *self.call_edits)
+        yield from (self.function_definition_edit, *self.call_edits)
 
     @property
     def function_definition(self) -> NodeWithRange[ast.FunctionDef]:
@@ -1258,11 +1252,11 @@ class AddParameter:
         )[-1]
 
     @property
-    def edits(self) -> tuple[Edit, ...]:
+    def edits(self) -> Iterator[Edit]:
         arg_name = make_unique_name(
             original_name="p", enclosing_scope=self.function_definition
         )
-        return (
+        yield from (
             self.function_definition_edit(arg_name),
             *self.call_edits(arg_name),
         )
@@ -1322,11 +1316,11 @@ class EncapsulateRecord:
         return bool(selection.text_range.enclosing_nodes_by_type(ast.Dict))
 
     @property
-    def edits(self) -> tuple[Edit, ...]:
+    def edits(self) -> Iterator[Edit]:
         enclosing_assignment = self.selection.text_range.enclosing_assignment
         if enclosing_assignment is None:
             logger.warning("Dictionary value not assigned to a name.")
-            return ()
+            return
 
         dict_node = self.selection.text_range.enclosing_nodes_by_type(ast.Dict)[
             -1
@@ -1367,12 +1361,12 @@ class EncapsulateRecord:
             ],
             type_ignores=[],
         )
-        definition = replace_with_node(
+        yield replace_with_node(
             enclosing_assignment.start.as_range,
             fake_module,
             add_newline_after=True,
         )
-        assignment = replace_with_node(
+        yield replace_with_node(
             enclosing_assignment.range,
             ast.Assign(
                 targets=enclosing_assignment.node.targets,
@@ -1388,7 +1382,6 @@ class EncapsulateRecord:
             ),
         )
 
-        references = []
         for occurrence in all_occurrences(
             self.selection.source.node_position(enclosing_assignment.node)
         ):
@@ -1403,13 +1396,10 @@ class EncapsulateRecord:
                 continue
             node = subscripts[0].node
             if isinstance(node.slice, ast.Constant):
-                references.append(
-                    replace_with_node(
-                        subscripts[0].range,
-                        ast.Attribute(value=node.value, attr=node.slice.value),
-                    )
+                yield replace_with_node(
+                    subscripts[0].range,
+                    ast.Attribute(value=node.value, attr=node.slice.value),
                 )
-        return (definition, assignment, *references)
 
     @staticmethod
     def make_class_name(assignment: ast.Assign) -> str | None:
@@ -1435,9 +1425,9 @@ class MethodToProperty:
         return selection.in_method and not selection.in_property
 
     @property
-    def edits(self) -> tuple[Edit, ...]:
+    def edits(self) -> Iterator[Edit]:
         definition = self.function_definition.node
-        add_decorator = replace_with_node(
+        yield replace_with_node(
             self.function_definition.range,
             copy_function_def(
                 definition,
@@ -1447,7 +1437,6 @@ class MethodToProperty:
                 ],
             ),
         )
-        replace_calls = []
         for occurrence in all_occurrences(
             self.selection.source.node_position(self.function_definition.node)
             + len("def ")
@@ -1462,9 +1451,7 @@ class MethodToProperty:
                 continue
             node = calls[-1].node
 
-            replace_calls.append(replace_with_node(calls[-1].range, node.func))
-
-        return (add_decorator, *replace_calls)
+            yield replace_with_node(calls[-1].range, node.func)
 
     @property
     def function_definition(self) -> NodeWithRange[ast.FunctionDef]:
@@ -1488,7 +1475,7 @@ class PropertyToMethod:
         return selection.in_property
 
     @property
-    def edits(self) -> tuple[Edit, ...]:
+    def edits(self) -> Iterator[Edit]:
         definition = self.function_definition.node
         new_function = copy_function_def(
             definition,
@@ -1502,10 +1489,7 @@ class PropertyToMethod:
         for _ in definition.decorator_list:
             start = start.line.previous.start if start.line.previous else start
         range_with_decorators = start.through(self.function_definition.end)
-        remove_decorator = replace_with_node(
-            range_with_decorators, new_function
-        )
-        replace_references = []
+        yield replace_with_node(range_with_decorators, new_function)
         for occurrence in all_occurrences(
             self.selection.source.node_position(self.function_definition.node)
             + len("def ")
@@ -1521,14 +1505,10 @@ class PropertyToMethod:
                 continue
             node = attributes[-1].node
 
-            replace_references.append(
-                replace_with_node(
-                    attributes[-1].range,
-                    ast.Call(func=node, args=[], keywords=[]),
-                )
+            yield replace_with_node(
+                attributes[-1].range,
+                ast.Call(func=node, args=[], keywords=[]),
             )
-
-        return (remove_decorator, *replace_references)
 
     @property
     def function_definition(self) -> NodeWithRange[ast.FunctionDef]:
@@ -1552,7 +1532,7 @@ class ExtractClass:
         return selection.in_method and not selection.in_static_method
 
     @property
-    def edits(self) -> tuple[Edit, ...]:
+    def edits(self) -> Iterator[Edit]:
         definition = self.function_definition.node
         new_body: list[ast.stmt] = []
         call_added = False
@@ -1575,7 +1555,6 @@ class ExtractClass:
             )
             and isinstance(s, ast.Assign)
         ]
-        replace_properties = []
         for assignment in assignments:
             if isinstance(assignment.targets[0], ast.Attribute) and isinstance(
                 assignment.targets[0].value, ast.Name
@@ -1592,17 +1571,15 @@ class ExtractClass:
                             ast.Attribute
                         )[0]
                     )
-                    replace_properties.append(
-                        replace_with_node(
-                            attribute.range,
-                            ast.Attribute(
-                                value=ast.Attribute(
-                                    value=attribute.node.value,
-                                    attr=property_name,
-                                ),
-                                attr=attribute.node.attr,
+                    yield replace_with_node(
+                        attribute.range,
+                        ast.Attribute(
+                            value=ast.Attribute(
+                                value=attribute.node.value,
+                                attr=property_name,
                             ),
-                        )
+                            attr=attribute.node.attr,
+                        ),
                     )
 
         new_assignments: list[ast.stmt] = [
@@ -1637,7 +1614,7 @@ class ExtractClass:
             ],
             type_ignores=[],
         )
-        add_class_definition = replace_with_node(
+        yield replace_with_node(
             self.selection.text_range.enclosing_scopes[0].start.as_range,
             fake_module,
             add_newline_after=True,
@@ -1670,11 +1647,10 @@ class ExtractClass:
                         )
                 else:
                     new_body.append(statement)
-        replace_assignments = replace_with_node(
+        yield replace_with_node(
             self.function_definition.range,
             copy_function_def(definition, body=new_body),
         )
-        return (add_class_definition, replace_assignments, *replace_properties)
 
     @property
     def function_definition(self) -> NodeWithRange[ast.FunctionDef]:
@@ -1702,7 +1678,7 @@ class ReplaceWithMethodObject:
         )
 
     @property
-    def edits(self) -> tuple[Edit, ...]:
+    def edits(self) -> Iterator[Edit]:
         original_class_name = self.selection.text_range.enclosing_nodes_by_type(
             ast.ClassDef
         )[-1].node.name
@@ -1772,7 +1748,7 @@ class ReplaceWithMethodObject:
             type_params=[],
         )
 
-        insert_method_object_class = replace_with_node(
+        yield replace_with_node(
             self.selection.text_range.enclosing_scopes[0].start.as_range,
             method_object_class,
             add_newline_after=True,
@@ -1808,11 +1784,9 @@ class ReplaceWithMethodObject:
             ],
         )
 
-        replace_method = replace_with_node(
+        yield replace_with_node(
             self.function_definition.range, call_method_object
         )
-
-        return (insert_method_object_class, replace_method)
 
     def add_substitutions(
         self,
@@ -1854,11 +1828,11 @@ class ConvertToIfExpression:
 
     @classmethod
     def from_selection(cls, selection: CodeSelection) -> Editor | None:
-        return IfExpressionCandidate.from_text_range(selection.text_range)
+        return MakeIfExpression.from_text_range(selection.text_range)
 
 
 @dataclass
-class IfExpressionCandidate:
+class MakeIfExpression:
     target: ast.Name | ast.Attribute | ast.Subscript
     annotation: ast.expr | None
     if_value: ast.expr
@@ -1916,26 +1890,23 @@ class IfExpressionCandidate:
                 return None
 
     @property
-    def edits(self) -> tuple[Edit, ...]:
+    def edits(self) -> Iterator[Edit]:
         if self.annotation:
-            return (
-                replace_with_node(
-                    self.range,
-                    ast.AnnAssign(
-                        target=self.target,
-                        annotation=self.annotation,
-                        value=ast.IfExp(
-                            body=self.if_value,
-                            test=self.test,
-                            orelse=self.else_value,
-                        ),
-                        simple=1,
+            yield replace_with_node(
+                self.range,
+                ast.AnnAssign(
+                    target=self.target,
+                    annotation=self.annotation,
+                    value=ast.IfExp(
+                        body=self.if_value,
+                        test=self.test,
+                        orelse=self.else_value,
                     ),
+                    simple=1,
                 ),
             )
-
-        return (
-            replace_with_node(
+        else:
+            yield replace_with_node(
                 self.range,
                 ast.Assign(
                     targets=[self.target],
@@ -1945,8 +1916,7 @@ class IfExpressionCandidate:
                         orelse=self.else_value,
                     ),
                 ),
-            ),
-        )
+            )
 
 
 @register
@@ -1957,11 +1927,11 @@ class ConvertToIfStatement:
 
     @classmethod
     def from_selection(cls, selection: CodeSelection) -> Editor | None:
-        return IfStatementCandidate.from_text_range(selection.text_range)
+        return MakeIfStatement.from_text_range(selection.text_range)
 
 
 @dataclass
-class IfStatementCandidate:
+class MakeIfStatement:
     target: ast.Name | ast.Attribute | ast.Subscript
     test: ast.expr
     if_value: ast.expr
@@ -2013,28 +1983,24 @@ class IfStatementCandidate:
                 return None
 
     @property
-    def edits(self) -> tuple[Edit, ...]:
-        return (
-            replace_with_node(
-                self.range,
-                ast.If(
-                    test=self.test,
-                    body=[
-                        ast.AnnAssign(
-                            target=self.target,
-                            annotation=self.annotation,
-                            value=self.if_value,
-                            simple=1,
-                        )
-                        if self.annotation
-                        else ast.Assign(
-                            targets=[self.target], value=self.if_value
-                        )
-                    ],
-                    orelse=[
-                        ast.Assign(targets=[self.target], value=self.else_value)
-                    ],
-                ),
+    def edits(self) -> Iterator[Edit]:
+        yield replace_with_node(
+            self.range,
+            ast.If(
+                test=self.test,
+                body=[
+                    ast.AnnAssign(
+                        target=self.target,
+                        annotation=self.annotation,
+                        value=self.if_value,
+                        simple=1,
+                    )
+                    if self.annotation
+                    else ast.Assign(targets=[self.target], value=self.if_value)
+                ],
+                orelse=[
+                    ast.Assign(targets=[self.target], value=self.else_value)
+                ],
             ),
         )
 
