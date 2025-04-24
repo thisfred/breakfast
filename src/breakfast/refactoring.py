@@ -351,10 +351,9 @@ def make_body(
     if not nodes:
         if enclosing_assignment := selection.text_range.enclosing_assignment:
             targets = enclosing_assignment.node.targets
-            if len(targets) > 1:
-                value: ast.expr | ast.Tuple = ast.Tuple(targets)
-            else:
-                value = targets[0]
+            value: ast.expr | ast.Tuple = (
+                ast.Tuple(targets) if len(targets) > 1 else targets[0]
+            )
             nodes = [enclosing_assignment.node, ast.Return(value=value)]
 
     if return_node:
@@ -426,10 +425,11 @@ class ExtractMethod:
         ):
             decorator_list: list[ast.expr] = [ast.Name(STATIC_METHOD)]
         else:
-            if usages.self_or_cls and self.selection.in_class_method:
-                decorator_list = [ast.Name(CLASS_METHOD)]
-            else:
-                decorator_list = []
+            decorator_list = (
+                [ast.Name(CLASS_METHOD)]
+                if usages.self_or_cls and self.selection.in_class_method
+                else []
+            )
         return decorator_list
 
 
