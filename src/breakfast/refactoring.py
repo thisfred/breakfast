@@ -1321,44 +1321,11 @@ class EncapsulateRecord:
             logger.warning("Dictionary value not assigned to a name.")
             return
 
-        dict_node = self.selection.text_range.enclosing_nodes_by_type(ast.Dict)[
-            -1
-        ]
-        mapping = dict(
-            zip(dict_node.node.keys, dict_node.node.values, strict=True)
-        )
-
+        mapping = self.make_dictionary_mapping()
+        new_statements = self.make_assignments(mapping=mapping)
         class_name = self.make_class_name(enclosing_assignment.node) or "Record"
-        fake_module = ast.Module(
-            body=[
-                ast.ImportFrom(
-                    module="dataclasses",
-                    names=[ast.alias(name="dataclass")],
-                    level=0,
-                ),
-                ast.ClassDef(
-                    name=class_name,
-                    body=[
-                        ast.AnnAssign(
-                            target=ast.Name(id=key.value),
-                            annotation=annotation,
-                            simple=1,
-                        )
-                        if (annotation := type_from(value))
-                        else ast.Assign(
-                            targets=[ast.Name(id=key.value)],
-                            value=ast.Constant(value=None),
-                        )
-                        for key, value in mapping.items()
-                        if isinstance(key, ast.Constant)
-                    ],
-                    decorator_list=[ast.Name(id="dataclass")],
-                    bases=[],
-                    keywords=[],
-                    type_params=[],
-                ),
-            ],
-            type_ignores=[],
+        fake_module = make_dataclass(
+            class_name=class_name, new_statements=new_statements
         )
         yield replace_with_node(
             enclosing_assignment.start.as_range,
@@ -1399,6 +1366,37 @@ class EncapsulateRecord:
                     subscripts[0].range,
                     ast.Attribute(value=node.value, attr=node.slice.value),
                 )
+
+    def make_dictionary_mapping(self) -> Mapping[ast.expr | None, ast.expr]:
+        dict_node = self.selection.text_range.enclosing_nodes_by_type(ast.Dict)[
+            -1
+        ]
+        mapping = dict(
+            zip(dict_node.node.keys, dict_node.node.values, strict=True)
+        )
+        return mapping
+
+    @staticmethod
+    def make_assignments(
+        mapping: Mapping[ast.expr | None, ast.expr],
+    ) -> list[ast.stmt]:
+        new_statements: list[ast.stmt] = [
+            (
+                ast.AnnAssign(
+                    target=ast.Name(id=key.value),
+                    annotation=annotation,
+                    simple=1,
+                )
+                if (annotation := type_from(value))
+                else ast.Assign(
+                    targets=[ast.Name(id=key.value)],
+                    value=ast.Constant(value=None),
+                )
+            )
+            for (key, value) in mapping.items()
+            if isinstance(key, ast.Constant)
+        ]
+        return new_statements
 
     @staticmethod
     def make_class_name(assignment: ast.Assign) -> str | None:
@@ -1591,27 +1589,12 @@ class ExtractClass:
             for a in assignments
             if isinstance(a.targets[0], ast.Attribute)
         ]
-        fake_module = ast.Module(
-            body=[
-                ast.ImportFrom(
-                    module="dataclasses",
-                    names=[ast.alias(name="dataclass")],
-                    level=0,
-                ),
-                ast.ClassDef(
-                    name=class_name,
-                    body=new_assignments,
-                    decorator_list=[ast.Name(id="dataclass")],
-                    bases=[],
-                    keywords=[],
-                    type_params=[],
-                ),
-            ],
-            type_ignores=[],
+        dataclass_definition = make_dataclass(
+            class_name=class_name, new_statements=new_assignments
         )
         yield replace_with_node(
             self.selection.text_range.enclosing_scopes[0].start.as_range,
-            fake_module,
+            dataclass_definition,
             add_newline_after=True,
         )
 
@@ -1652,6 +1635,29 @@ class ExtractClass:
         return self.selection.text_range.enclosing_nodes_by_type(
             ast.FunctionDef
         )[-1]
+
+
+def make_dataclass(
+    class_name: str, new_statements: list[ast.stmt]
+) -> ast.Module:
+    return ast.Module(
+        body=[
+            ast.ImportFrom(
+                module="dataclasses",
+                names=[ast.alias(name="dataclass")],
+                level=0,
+            ),
+            ast.ClassDef(
+                name=class_name,
+                body=new_statements,
+                decorator_list=[ast.Name(id="dataclass")],
+                bases=[],
+                keywords=[],
+                type_params=[],
+            ),
+        ],
+        type_ignores=[],
+    )
 
 
 @register
