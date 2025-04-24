@@ -316,13 +316,11 @@ class ExtractFunction:
         self,
         enclosing_scope: ScopeWithRange,
     ) -> Position:
-        if isinstance(enclosing_scope.node, ast.Module | ast.FunctionDef):
-            insert_position = self.source.node_position(
-                enclosing_scope.node.body[0]
-            )
-        else:
-            insert_position = self.selection.start.line.start
-        return insert_position
+        return (
+            self.source.node_position(enclosing_scope.node.body[0])
+            if isinstance(enclosing_scope.node, ast.Module | ast.FunctionDef)
+            else self.selection.start.line.start
+        )
 
     def make_decorators(self, usages: UsageCollector) -> list[ast.expr]:
         return []
@@ -1795,11 +1793,11 @@ class ConvertToIfExpression:
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
-        return bool(TernaryCandidate.from_text_range(selection.text_range))
+        return bool(IfExpressionCandidate.from_text_range(selection.text_range))
 
     @property
     def edits(self) -> tuple[Edit, ...]:
-        if candidate := TernaryCandidate.from_text_range(
+        if candidate := IfExpressionCandidate.from_text_range(
             self.selection.text_range
         ):
             return candidate.edits
@@ -1807,10 +1805,12 @@ class ConvertToIfExpression:
 
 
 @dataclass
-class TernaryCandidate:
+class IfExpressionCandidate:
+    target: ast.Name | ast.Attribute | ast.Subscript
+    annotation: ast.expr | None
+    if_value: ast.expr
     test: ast.expr
-    if_body: ast.Assign
-    else_body: ast.Assign
+    else_value: ast.expr
     range: TextRange
 
     @classmethod
@@ -1818,24 +1818,131 @@ class TernaryCandidate:
         if not (if_statements := text_range.enclosing_nodes_by_type(ast.If)):
             return None
         match if_statements[-1].node:
-            case (
-                ast.If(body=[body], orelse=[orelse]) as if_statement
-            ) if isinstance(body, ast.Assign) and isinstance(
-                orelse, ast.Assign
+            case ast.If(
+                test=test,
+                body=[ast.Assign(targets=[if_target], value=if_value)],
+                orelse=[ast.Assign(targets=[else_target], value=else_value)],
+            ) if isinstance(
+                if_target, ast.Name | ast.Attribute | ast.Subscript
             ):
-                if len(body.targets) == len(
-                    orelse.targets
-                ) == 1 and is_structurally_identical(
-                    body.targets[0], orelse.targets[0]
-                ):
-                    return cls(
-                        test=if_statement.test,
-                        if_body=body,
-                        else_body=orelse,
-                        range=if_statements[-1].range,
-                    )
-                else:
+                if not is_structurally_identical(if_target, else_target):
                     return None
+                return cls(
+                    target=if_target,
+                    annotation=None,
+                    if_value=if_value,
+                    test=test,
+                    else_value=else_value,
+                    range=if_statements[-1].range,
+                )
+            case ast.If(
+                test=test,
+                body=[
+                    ast.AnnAssign(
+                        target=if_target,
+                        annotation=annotation,
+                        value=if_value,
+                    )
+                ],
+                orelse=[ast.Assign(targets=[else_target], value=else_value)],
+            ):
+                if (
+                    not is_structurally_identical(if_target, else_target)
+                    or if_value is None
+                ):
+                    return None
+                return cls(
+                    target=if_target,
+                    annotation=annotation,
+                    if_value=if_value,
+                    test=test,
+                    else_value=else_value,
+                    range=if_statements[-1].range,
+                )
+            case _:
+                from astpretty import pprint
+
+                pprint(if_statements[-1].node)
+                return None
+
+    @property
+    def edits(self) -> tuple[Edit, ...]:
+        if self.annotation:
+            return (
+                replace_with_node(
+                    self.range,
+                    ast.AnnAssign(
+                        target=self.target,
+                        annotation=self.annotation,
+                        value=ast.IfExp(
+                            body=self.if_value,
+                            test=self.test,
+                            orelse=self.else_value,
+                        ),
+                        simple=0,
+                    ),
+                ),
+            )
+
+        return (
+            replace_with_node(
+                self.range,
+                ast.Assign(
+                    targets=[self.target],
+                    value=ast.IfExp(
+                        body=self.if_value,
+                        test=self.test,
+                        orelse=self.else_value,
+                    ),
+                ),
+            ),
+        )
+
+
+@register
+@dataclass
+class ConvertToIfStatement:
+    name = "convert if expression to if statement"
+    selection: CodeSelection
+
+    @classmethod
+    def applies_to(cls, selection: CodeSelection) -> bool:
+        return bool(IfStatementCandidate.from_text_range(selection.text_range))
+
+    @property
+    def edits(self) -> tuple[Edit, ...]:
+        if candidate := IfStatementCandidate.from_text_range(
+            self.selection.text_range
+        ):
+            return candidate.edits
+        return ()
+
+
+@dataclass
+class IfStatementCandidate:
+    target: ast.expr
+    test: ast.expr
+    if_value: ast.expr
+    else_value: ast.expr
+    range: TextRange
+
+    @classmethod
+    def from_text_range(cls, text_range: TextRange) -> Self | None:
+        if not (assignments := text_range.enclosing_nodes_by_type(ast.Assign)):
+            return None
+        match assignments[-1].node:
+            case ast.Assign(
+                targets=[target],
+                value=ast.IfExp(test=test, body=body, orelse=orelse),
+            ):
+                return cls(
+                    target=target,
+                    test=test,
+                    if_value=body,
+                    else_value=orelse,
+                    range=assignments[-1].range,
+                )
+
             case _:
                 return None
 
@@ -1844,13 +1951,14 @@ class TernaryCandidate:
         return (
             replace_with_node(
                 self.range,
-                ast.Assign(
-                    targets=[self.if_body.targets[0]],
-                    value=ast.IfExp(
-                        body=self.if_body.value,
-                        test=self.test,
-                        orelse=self.else_body.value,
-                    ),
+                ast.If(
+                    test=self.test,
+                    body=[
+                        ast.Assign(targets=[self.target], value=self.if_value)
+                    ],
+                    orelse=[
+                        ast.Assign(targets=[self.target], value=self.else_value)
+                    ],
                 ),
             ),
         )

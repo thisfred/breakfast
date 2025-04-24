@@ -2,6 +2,7 @@ from breakfast.refactoring import (
     AddParameter,
     CodeSelection,
     ConvertToIfExpression,
+    ConvertToIfStatement,
     Edit,
     EncapsulateRecord,
     ExtractClass,
@@ -2500,7 +2501,7 @@ def test_extract_variable_in_first_line_of_method_should_not_extract_outside_bod
     )
 
 
-def test_convert_to_ternary_coverts_an_if_else():
+def test_convert_to_if_expression_converts_if_else_with_two_assignment():
     assert_refactors_to(
         refactoring=ConvertToIfExpression,
         target="if",
@@ -2535,5 +2536,90 @@ def test_convert_to_ternary_coverts_an_if_else():
                 )
                 new_level = insert_position.column // 4
                 return new_level
+        """,
+    )
+
+
+def test_convert_to_if_statement_converts_to_if_else_with_two_assignment():
+    assert_refactors_to(
+        refactoring=ConvertToIfStatement,
+        target="insert_position =",
+        code="""
+        class C:
+            def compute_new_level(
+                self,
+                enclosing_scope: ScopeWithRange,
+                start_of_scope: Position,
+            ) -> int:
+                insert_position = (
+                    self.source.node_position(enclosing_scope.node.body[0])
+                    if isinstance(enclosing_scope.node, ast.Module | ast.FunctionDef)
+                    else self.selection.start.line.start
+                )
+                new_level = insert_position.column // 4
+                return new_level
+        """,
+        expected="""
+        class C:
+            def compute_new_level(
+                self,
+                enclosing_scope: ScopeWithRange,
+                start_of_scope: Position,
+            ) -> int:
+                if isinstance(enclosing_scope.node, ast.Module | ast.FunctionDef):
+                    insert_position = self.source.node_position(
+                        enclosing_scope.node.body[0]
+                    )
+                else:
+                    insert_position = self.selection.start.line.start
+
+                new_level = insert_position.column // 4
+                return new_level
+        """,
+    )
+
+
+def test_convert_to_if_expression_regression():
+    assert_refactors_to(
+        refactoring=ConvertToIfExpression,
+        target="if len(targets) > 1:",
+        code="""
+        def make_body(
+            selection: CodeSelection, return_node: ast.Return | None
+        ) -> list[ast.stmt]:
+            if selection.text_range.expression is not None:
+                return [ast.Return(value=selection.text_range.expression)]
+
+            nodes = list(selection.text_range.statements)
+            if not nodes:
+                if enclosing_assignment := selection.text_range.enclosing_assignment:
+                    targets = enclosing_assignment.node.targets
+                    if len(targets) > 1:
+                        value: ast.expr | ast.Tuple = ast.Tuple(targets)
+                    else:
+                        value = targets[0]
+                    nodes = [enclosing_assignment.node, ast.Return(value=value)]
+
+            if return_node:
+                nodes.append(return_node)
+            return nodes
+        """,
+        expected="""
+        def make_body(
+            selection: CodeSelection, return_node: ast.Return | None
+        ) -> list[ast.stmt]:
+            if selection.text_range.expression is not None:
+                return [ast.Return(value=selection.text_range.expression)]
+
+            nodes = list(selection.text_range.statements)
+            if not nodes:
+                if enclosing_assignment := selection.text_range.enclosing_assignment:
+                    targets = enclosing_assignment.node.targets
+                    value: ast.expr | ast.Tuple = ast.Tuple(targets) if len(targets) > 1 else targets[0]
+                    nodes = [enclosing_assignment.node, ast.Return(value=value)]
+
+            if return_node:
+                nodes.append(return_node)
+            return nodes
         """,
     )

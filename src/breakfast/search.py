@@ -76,7 +76,6 @@ def find_other_nodes(
     results = []
     original_scope: tuple[str, ...] = ()
     for scope, similar in find_similar_nodes(source_ast, node, scope=()):
-        print(f"{scope=}, {similar=}")
         if position.source.node_position(similar) == position:
             original_scope = scope
             continue
