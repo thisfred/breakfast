@@ -189,12 +189,7 @@ class TextRange:
     @cached_property
     def enclosing_scopes(
         self,
-    ) -> Sequence[
-        types.NodeWithRange[ast.FunctionDef]
-        | types.NodeWithRange[ast.AsyncFunctionDef]
-        | types.NodeWithRange[ast.ClassDef]
-        | types.NodeWithRange[ast.Module]
-    ]:
+    ) -> Sequence[types.ScopeWithRange]:
         result = [
             n
             for n in self.enclosing_nodes
@@ -204,6 +199,12 @@ class TextRange:
             or has_node_type(n, ast.Module)
         ]
         return result
+
+    @cached_property
+    def enclosing_scope(
+        self,
+    ) -> types.ScopeWithRange:
+        return self.enclosing_scopes[-1]
 
     def enclosing_nodes_by_type[T: ast.AST](
         self, node_type: type[T]

@@ -96,6 +96,9 @@ class TextRange(Ranged, Protocol):
     ) -> Sequence["ScopeWithRange"]: ...
 
     @property
+    def enclosing_scope(self) -> "ScopeWithRange": ...
+
+    @property
     def enclosing_nodes(self) -> Sequence["NodeWithRange[ast.AST]"]: ...
 
     @property

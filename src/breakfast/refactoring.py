@@ -1304,38 +1304,63 @@ class AddParameter:
 @dataclass
 class EncapsulateRecord:
     name = "encapsulate record"
-    selection: CodeSelection
 
     @classmethod
-    def from_selection(cls, selection: CodeSelection) -> Self | None:
+    def from_selection(cls, selection: CodeSelection) -> Editor | None:
+        enclosing_assignment = selection.text_range.enclosing_assignment
+        if enclosing_assignment is None:
+            logger.warning("Dictionary value not assigned to a name.")
+            return None
+        print(f"{enclosing_assignment=}")
+
+        match enclosing_assignment.node:
+            case ast.Assign(targets):
+                assignment = enclosing_assignment
+                targets = targets
+            case ast.AnnAssign(target):
+                assignment = enclosing_assignment
+                targets = [target]
+            case _:
+                return None
+
         return (
-            cls(selection=selection)
+            EncapsulateRecordEditor(
+                range=selection.text_range,
+                enclosing_assignment=assignment,
+                targets=targets,
+            )
             if selection.text_range.enclosing_nodes_by_type(ast.Dict)
             else None
         )
 
+
+@dataclass
+class EncapsulateRecordEditor:
+    range: TextRange
+    enclosing_assignment: (
+        NodeWithRange[ast.Assign] | NodeWithRange[ast.AnnAssign]
+    )
+    targets: list[ast.expr]
+
     @property
     def edits(self) -> Iterator[Edit]:
-        enclosing_assignment = self.selection.text_range.enclosing_assignment
-        if enclosing_assignment is None:
-            logger.warning("Dictionary value not assigned to a name.")
-            return
-
         mapping = self.make_dictionary_mapping()
         new_statements = self.make_assignments(mapping=mapping)
-        class_name = self.make_class_name(enclosing_assignment.node) or "Record"
+        class_name = make_unique_name(
+            self.make_class_name() or "Record", self.range.enclosing_scope
+        )
         fake_module = make_dataclass(
             class_name=class_name, new_statements=new_statements
         )
         yield replace_with_node(
-            enclosing_assignment.start.as_range,
+            self.enclosing_assignment.start.as_range,
             fake_module,
             add_newline_after=True,
         )
         yield replace_with_node(
-            enclosing_assignment.range,
+            self.enclosing_assignment.range,
             ast.Assign(
-                targets=enclosing_assignment.node.targets,
+                targets=self.targets,
                 value=ast.Call(
                     func=ast.Name(id=class_name),
                     args=[],
@@ -1349,7 +1374,7 @@ class EncapsulateRecord:
         )
 
         for occurrence in all_occurrences(
-            self.selection.source.node_position(enclosing_assignment.node)
+            self.range.source.node_position(self.enclosing_assignment.node)
         ):
             if occurrence.node_type is not NodeType.REFERENCE:
                 continue
@@ -1368,9 +1393,7 @@ class EncapsulateRecord:
                 )
 
     def make_dictionary_mapping(self) -> Mapping[ast.expr | None, ast.expr]:
-        dict_node = self.selection.text_range.enclosing_nodes_by_type(ast.Dict)[
-            -1
-        ]
+        dict_node = self.range.enclosing_nodes_by_type(ast.Dict)[-1]
         mapping = dict(
             zip(dict_node.node.keys, dict_node.node.values, strict=True)
         )
@@ -1398,12 +1421,11 @@ class EncapsulateRecord:
         ]
         return new_statements
 
-    @staticmethod
-    def make_class_name(assignment: ast.Assign) -> str | None:
-        if not (assignment and isinstance(assignment.targets[0], ast.Name)):
+    def make_class_name(self) -> str | None:
+        if not (isinstance(self.targets[0], ast.Name)):
             return None
 
-        var_name = assignment.targets[0].id
+        var_name = self.targets[0].id
         return to_class_name(var_name)
 
 
