@@ -283,11 +283,11 @@ class ExtractFunction:
 
     @classmethod
     def from_selection(cls, selection: CodeSelection) -> Self | None:
-        return cls(selection=selection) if cls.applies_to(selection) else None
-
-    @classmethod
-    def applies_to(cls, selection: CodeSelection) -> bool:
-        return selection.end > selection.start
+        return (
+            cls(selection=selection)
+            if selection.end > selection.start
+            else None
+        )
 
     @property
     def edits(self) -> Iterator[Edit]:
@@ -374,14 +374,14 @@ class ExtractMethod:
 
     @classmethod
     def from_selection(cls, selection: CodeSelection) -> Self | None:
-        return cls(selection=selection) if cls.applies_to(selection) else None
-
-    @classmethod
-    def applies_to(cls, selection: CodeSelection) -> bool:
         return (
-            selection.end > selection.start
-            and selection.in_method
-            and not selection.in_static_method
+            cls(selection=selection)
+            if (
+                selection.end > selection.start
+                and selection.in_method
+                and not selection.in_static_method
+            )
+            else None
         )
 
     @property
@@ -454,6 +454,7 @@ def make_extract_callable_edits(
     if not body:
         logger.warning("Could not extract callable body.")
         return
+
     name = make_unique_name(
         original_name=name,
         enclosing_scope=refactoring.selection.text_range.enclosing_scopes[0],
@@ -596,11 +597,11 @@ class ExtractVariable:
 
     @classmethod
     def from_selection(cls, selection: CodeSelection) -> Self | None:
-        return cls(selection=selection) if cls.applies_to(selection) else None
-
-    @classmethod
-    def applies_to(cls, selection: CodeSelection) -> bool:
-        return selection.end > selection.start
+        return (
+            cls(selection=selection)
+            if selection.end > selection.start
+            else None
+        )
 
     @property
     def edits(self) -> Iterator[Edit]:
@@ -699,11 +700,7 @@ class InlineVariable:
 
     @classmethod
     def from_selection(cls, selection: CodeSelection) -> Self | None:
-        return cls(selection=selection) if cls.applies_to(selection) else None
-
-    @classmethod
-    def applies_to(cls, selection: CodeSelection) -> bool:
-        return selection.name_at_cursor is not None
+        return cls(selection=selection) if selection.name_at_cursor else None
 
     @property
     def edits(self) -> Iterator[Edit]:
@@ -790,7 +787,11 @@ class InlineCall:
 
     @classmethod
     def from_selection(cls, selection: CodeSelection) -> Self | None:
-        return cls(selection=selection) if cls.applies_to(selection) else None
+        return (
+            cls(selection=selection)
+            if selection.text_range.enclosing_call
+            else None
+        )
 
     @property
     def scope_graph(self) -> ScopeGraph:
@@ -807,10 +808,6 @@ class InlineCall:
     @property
     def enclosing_call(self) -> NodeWithRange[ast.Call] | None:
         return self.text_range.enclosing_call
-
-    @classmethod
-    def applies_to(cls, selection: CodeSelection) -> bool:
-        return selection.text_range.enclosing_call is not None
 
     @property
     def edits(self) -> Iterator[Edit]:
@@ -969,11 +966,7 @@ class SlideStatementsUp:
 
     @classmethod
     def from_selection(cls, selection: CodeSelection) -> Self | None:
-        return cls(selection=selection) if cls.applies_to(selection) else None
-
-    @classmethod
-    def applies_to(cls, selection: CodeSelection) -> bool:
-        return True
+        return cls(selection=selection)
 
     @property
     def edits(self) -> Iterator[Edit]:
@@ -1025,11 +1018,7 @@ class SlideStatementsDown:
 
     @classmethod
     def from_selection(cls, selection: CodeSelection) -> Self | None:
-        return cls(selection=selection) if cls.applies_to(selection) else None
-
-    @classmethod
-    def applies_to(cls, selection: CodeSelection) -> bool:
-        return True
+        return cls(selection=selection)
 
     @property
     def edits(self) -> Iterator[Edit]:
@@ -1136,11 +1125,11 @@ class RemoveParameter:
 
     @classmethod
     def from_selection(cls, selection: CodeSelection) -> Self | None:
-        return cls(selection=selection) if cls.applies_to(selection) else None
-
-    @classmethod
-    def applies_to(cls, selection: CodeSelection) -> bool:
-        return bool(selection.text_range.enclosing_nodes_by_type(ast.arg))
+        return (
+            cls(selection=selection)
+            if selection.text_range.enclosing_nodes_by_type(ast.arg)
+            else None
+        )
 
     @property
     def edits(self) -> Iterator[Edit]:
@@ -1237,12 +1226,10 @@ class AddParameter:
 
     @classmethod
     def from_selection(cls, selection: CodeSelection) -> Self | None:
-        return cls(selection=selection) if cls.applies_to(selection) else None
-
-    @classmethod
-    def applies_to(cls, selection: CodeSelection) -> bool:
-        return bool(
-            selection.text_range.enclosing_nodes_by_type(ast.FunctionDef)
+        return (
+            cls(selection=selection)
+            if selection.text_range.enclosing_nodes_by_type(ast.FunctionDef)
+            else None
         )
 
     @property
@@ -1309,11 +1296,11 @@ class EncapsulateRecord:
 
     @classmethod
     def from_selection(cls, selection: CodeSelection) -> Self | None:
-        return cls(selection=selection) if cls.applies_to(selection) else None
-
-    @classmethod
-    def applies_to(cls, selection: CodeSelection) -> bool:
-        return bool(selection.text_range.enclosing_nodes_by_type(ast.Dict))
+        return (
+            cls(selection=selection)
+            if selection.text_range.enclosing_nodes_by_type(ast.Dict)
+            else None
+        )
 
     @property
     def edits(self) -> Iterator[Edit]:
@@ -1418,11 +1405,11 @@ class MethodToProperty:
 
     @classmethod
     def from_selection(cls, selection: CodeSelection) -> Self | None:
-        return cls(selection=selection) if cls.applies_to(selection) else None
-
-    @classmethod
-    def applies_to(cls, selection: CodeSelection) -> bool:
-        return selection.in_method and not selection.in_property
+        return (
+            cls(selection=selection)
+            if selection.in_method and not selection.in_property
+            else None
+        )
 
     @property
     def edits(self) -> Iterator[Edit]:
@@ -1468,11 +1455,7 @@ class PropertyToMethod:
 
     @classmethod
     def from_selection(cls, selection: CodeSelection) -> Self | None:
-        return cls(selection=selection) if cls.applies_to(selection) else None
-
-    @classmethod
-    def applies_to(cls, selection: CodeSelection) -> bool:
-        return selection.in_property
+        return cls(selection=selection) if selection.in_property else None
 
     @property
     def edits(self) -> Iterator[Edit]:
@@ -1525,11 +1508,11 @@ class ExtractClass:
 
     @classmethod
     def from_selection(cls, selection: CodeSelection) -> Self | None:
-        return cls(selection=selection) if cls.applies_to(selection) else None
-
-    @classmethod
-    def applies_to(cls, selection: CodeSelection) -> bool:
-        return selection.in_method and not selection.in_static_method
+        return (
+            cls(selection=selection)
+            if selection.in_method and not selection.in_static_method
+            else None
+        )
 
     @property
     def edits(self) -> Iterator[Edit]:
@@ -1666,7 +1649,7 @@ class ReplaceWithMethodObject:
     selection: CodeSelection
 
     @classmethod
-    def from_selection(cls, selection: CodeSelection) -> Self | None:
+    def from_selection(cls, selection: CodeSelection) -> Editor | None:
         return cls(selection=selection) if cls.applies_to(selection) else None
 
     @classmethod
