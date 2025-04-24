@@ -5,7 +5,7 @@ import re
 import sys
 from ast import AST, parse
 from collections import deque
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import InitVar, dataclass, replace
 from functools import cached_property
 from typing import Protocol, TypeGuard
@@ -311,7 +311,7 @@ class TextRange:
         return found
 
     def text_with_substitutions(
-        self, substitutions: Sequence[types.Edit]
+        self, substitutions: Iterable[types.Edit]
     ) -> Sequence[str]:
         row_offset = self.start.row
         text = [

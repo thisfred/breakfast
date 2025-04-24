@@ -33,7 +33,7 @@ from pygls.server import LanguageServer
 
 from breakfast import __version__
 from breakfast.project import Project
-from breakfast.refactoring import CodeSelection, Refactoring
+from breakfast.refactoring import CodeSelection, Editor
 from breakfast.source import Source, TextRange
 from breakfast.types import Edit
 
@@ -266,14 +266,14 @@ def code_action(
         selection = CodeSelection(text_range=TextRange(start, end))
         selection = selection.rtrim()
 
-        for refactoring in selection.refactorings:
-            edits = get_edits(refactoring(selection), document_uri, version)
+        for name, refactoring in selection.refactorings.items():
+            edits = get_edits(refactoring, document_uri, version)
             if edits:
                 actions.append(
                     CodeAction(
-                        title=f"breakfast: {refactoring.name}",
+                        title=f"breakfast: {name}",
                         kind=CodeActionKind.RefactorExtract
-                        if "extract" in refactoring.name
+                        if "extract" in name
                         else CodeActionKind.Refactor,
                         data=document_uri,
                         edit=edits,
@@ -286,14 +286,14 @@ def code_action(
 
 
 def get_edits(
-    refactoring: Refactoring, document_uri: str, version: None
+    editor: Editor, document_uri: str, version: None
 ) -> WorkspaceEdit | None:
-    if not refactoring.edits:
-        logger.debug(f"Refactoring: {refactoring}. No edits found.")
+    if not editor.edits:
+        logger.debug(f"Refactoring: {editor}. No edits found.")
         return None
 
     text_edits: list[TextEdit | AnnotatedTextEdit] = edits_to_text_edits(
-        refactoring.edits
+        editor.edits
     )
 
     document_changes: list[

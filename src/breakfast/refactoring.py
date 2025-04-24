@@ -87,12 +87,12 @@ class CodeSelection:
         cls._refactorings[refactoring.name] = refactoring
 
     @property
-    def refactorings(self) -> Sequence["type[Refactoring]"]:
-        return [
-            refactoring
+    def refactorings(self) -> dict[str, "Editor"]:
+        return {
+            refactoring.name: refactoring_instance
             for refactoring in self._refactorings.values()
-            if refactoring.applies_to(self)
-        ]
+            if (refactoring_instance := refactoring.from_selection(self))
+        }
 
     @property
     def scope_graph(self) -> ScopeGraph:
@@ -257,17 +257,17 @@ class UsageCollector:
         return first_usage_after_range
 
 
+class Editor(Protocol):
+    @property
+    def edits(self) -> Iterable[Edit]: ...
+
+
 class Refactoring(Protocol):
     name: str
     selection: CodeSelection
 
-    def __init__(self, selection: CodeSelection): ...
-
     @classmethod
-    def applies_to(cls, selection: CodeSelection) -> bool: ...
-
-    @property
-    def edits(self) -> tuple[Edit, ...]: ...
+    def from_selection(cls, selection: CodeSelection) -> Editor | None: ...
 
 
 @register
@@ -279,6 +279,10 @@ class ExtractFunction:
     @property
     def source(self) -> Source:
         return self.selection.source
+
+    @classmethod
+    def from_selection(cls, selection: CodeSelection) -> Self | None:
+        return cls(selection=selection) if cls.applies_to(selection) else None
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -366,6 +370,10 @@ def make_body(
 class ExtractMethod:
     name = "extract method"
     selection: CodeSelection
+
+    @classmethod
+    def from_selection(cls, selection: CodeSelection) -> Self | None:
+        return cls(selection=selection) if cls.applies_to(selection) else None
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -590,6 +598,10 @@ class ExtractVariable:
     selection: CodeSelection
 
     @classmethod
+    def from_selection(cls, selection: CodeSelection) -> Self | None:
+        return cls(selection=selection) if cls.applies_to(selection) else None
+
+    @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
         return selection.end > selection.start
 
@@ -688,6 +700,10 @@ class InlineVariable:
     selection: CodeSelection
 
     @classmethod
+    def from_selection(cls, selection: CodeSelection) -> Self | None:
+        return cls(selection=selection) if cls.applies_to(selection) else None
+
+    @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
         return selection.name_at_cursor is not None
 
@@ -773,6 +789,10 @@ class InlineVariable:
 class InlineCall:
     name = "inline call"
     selection: CodeSelection
+
+    @classmethod
+    def from_selection(cls, selection: CodeSelection) -> Self | None:
+        return cls(selection=selection) if cls.applies_to(selection) else None
 
     @property
     def scope_graph(self) -> ScopeGraph:
@@ -950,6 +970,10 @@ class SlideStatementsUp:
     selection: CodeSelection
 
     @classmethod
+    def from_selection(cls, selection: CodeSelection) -> Self | None:
+        return cls(selection=selection) if cls.applies_to(selection) else None
+
+    @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
         return True
 
@@ -1001,6 +1025,10 @@ class SlideStatementsUp:
 class SlideStatementsDown:
     name = "slide statements down"
     selection: CodeSelection
+
+    @classmethod
+    def from_selection(cls, selection: CodeSelection) -> Self | None:
+        return cls(selection=selection) if cls.applies_to(selection) else None
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -1058,6 +1086,10 @@ class MoveFunctionToParentScope:
     selection: CodeSelection
 
     @classmethod
+    def from_selection(cls, selection: CodeSelection) -> Self | None:
+        return cls(selection=selection) if cls.applies_to(selection) else None
+
+    @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
         return len(selection.text_range.enclosing_scopes) >= 3 and isinstance(
             selection.text_range.enclosing_scopes[-1].node,
@@ -1107,6 +1139,10 @@ class MoveFunctionToParentScope:
 class RemoveParameter:
     name = "remove parameter"
     selection: CodeSelection
+
+    @classmethod
+    def from_selection(cls, selection: CodeSelection) -> Self | None:
+        return cls(selection=selection) if cls.applies_to(selection) else None
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -1206,6 +1242,10 @@ class AddParameter:
     selection: CodeSelection
 
     @classmethod
+    def from_selection(cls, selection: CodeSelection) -> Self | None:
+        return cls(selection=selection) if cls.applies_to(selection) else None
+
+    @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
         return bool(
             selection.text_range.enclosing_nodes_by_type(ast.FunctionDef)
@@ -1272,6 +1312,10 @@ class AddParameter:
 class EncapsulateRecord:
     name = "encapsulate record"
     selection: CodeSelection
+
+    @classmethod
+    def from_selection(cls, selection: CodeSelection) -> Self | None:
+        return cls(selection=selection) if cls.applies_to(selection) else None
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -1383,6 +1427,10 @@ class MethodToProperty:
     selection: CodeSelection
 
     @classmethod
+    def from_selection(cls, selection: CodeSelection) -> Self | None:
+        return cls(selection=selection) if cls.applies_to(selection) else None
+
+    @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
         return selection.in_method and not selection.in_property
 
@@ -1430,6 +1478,10 @@ class MethodToProperty:
 class PropertyToMethod:
     name = "convert property to method"
     selection: CodeSelection
+
+    @classmethod
+    def from_selection(cls, selection: CodeSelection) -> Self | None:
+        return cls(selection=selection) if cls.applies_to(selection) else None
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -1490,6 +1542,10 @@ class PropertyToMethod:
 class ExtractClass:
     name = "extract class"
     selection: CodeSelection
+
+    @classmethod
+    def from_selection(cls, selection: CodeSelection) -> Self | None:
+        return cls(selection=selection) if cls.applies_to(selection) else None
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -1632,6 +1688,10 @@ class ExtractClass:
 class ReplaceWithMethodObject:
     name = "replace with method object"
     selection: CodeSelection
+
+    @classmethod
+    def from_selection(cls, selection: CodeSelection) -> Self | None:
+        return cls(selection=selection) if cls.applies_to(selection) else None
 
     @classmethod
     def applies_to(cls, selection: CodeSelection) -> bool:
@@ -1793,16 +1853,8 @@ class ConvertToIfExpression:
     selection: CodeSelection
 
     @classmethod
-    def applies_to(cls, selection: CodeSelection) -> bool:
-        return bool(IfExpressionCandidate.from_text_range(selection.text_range))
-
-    @property
-    def edits(self) -> tuple[Edit, ...]:
-        if candidate := IfExpressionCandidate.from_text_range(
-            self.selection.text_range
-        ):
-            return candidate.edits
-        return ()
+    def from_selection(cls, selection: CodeSelection) -> Editor | None:
+        return IfExpressionCandidate.from_text_range(selection.text_range)
 
 
 @dataclass
@@ -1904,16 +1956,8 @@ class ConvertToIfStatement:
     selection: CodeSelection
 
     @classmethod
-    def applies_to(cls, selection: CodeSelection) -> bool:
-        return bool(IfStatementCandidate.from_text_range(selection.text_range))
-
-    @property
-    def edits(self) -> tuple[Edit, ...]:
-        if candidate := IfStatementCandidate.from_text_range(
-            self.selection.text_range
-        ):
-            return candidate.edits
-        return ()
+    def from_selection(cls, selection: CodeSelection) -> Editor | None:
+        return IfStatementCandidate.from_text_range(selection.text_range)
 
 
 @dataclass

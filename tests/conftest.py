@@ -1,6 +1,6 @@
 import ast
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from pathlib import Path
 from textwrap import dedent
 
@@ -57,20 +57,23 @@ def assert_refactors_to(
     source = make_source(code) if isinstance(code, str) else code
     selection_range = range_for(target, source, occurrence)
     selection = CodeSelection(selection_range)
-    assert refactoring.applies_to(selection)
-    edits = refactoring(selection=selection).edits
+    editor = refactoring.from_selection(selection)
+    assert editor
+    edits = editor.edits
     actual = apply_edits(source=source, edits=edits)
     expected = dedent(expected).strip()
     assert_ast_equals(actual, expected)
 
 
-def apply_edits(source: types.Source, edits: Sequence[types.Edit]):
+def apply_edits(source: types.Source, edits: Iterable[types.Edit]):
     end = source.position(len(source.lines), 0)
     full_range = TextRange(source.position(0, 0), end)
 
-    new_text = "\n".join(full_range.text_with_substitutions(edits))
+    edit_list = list(edits)
 
-    print(edits)
+    new_text = "\n".join(full_range.text_with_substitutions(edit_list))
+
+    print(edit_list)
     print(new_text)
     return new_text
 
