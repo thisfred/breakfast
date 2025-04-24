@@ -1976,10 +1976,6 @@ class MakeIfStatement:
                     range=assignments[-1].range,
                 )
             case _:
-                from astpretty import pprint
-
-                pprint(assignments[-1].node)
-
                 return None
 
     @property
