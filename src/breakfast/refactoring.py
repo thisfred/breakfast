@@ -154,13 +154,6 @@ class CodeSelection:
             )
         )
 
-    @cached_property
-    def occurrences_of_name_at_cursor(self) -> Sequence[Occurrence]:
-        try:
-            return all_occurrences(self.start, graph=self.scope_graph)
-        except NotFoundError:
-            return ()
-
     def rtrim(self) -> "CodeSelection":
         lines = self.text_range.text.rstrip().split("\n")
         offset = 0
@@ -706,20 +699,30 @@ class InlineVariable:
         name_at_cursor = selection.source.get_name_at(selection.start)
         if not name_at_cursor:
             return None
+        try:
+            occurrences_of_name_at_cursor = all_occurrences(
+                selection.text_range.start, graph=selection.scope_graph
+            )
+        except NotFoundError:
+            return None
+
         return InlineVariableEditor(
-            selection=selection, name_at_cursor=name_at_cursor
+            range=selection.text_range,
+            occurrences_of_name_at_cursor=occurrences_of_name_at_cursor,
+            name_at_cursor=name_at_cursor,
         )
 
 
 @dataclass
 class InlineVariableEditor:
-    selection: CodeSelection
+    range: TextRange
     name_at_cursor: str
+    occurrences_of_name_at_cursor: Sequence[Occurrence]
 
     @property
     def edits(self) -> Iterator[Edit]:
         grouped: dict[bool, list[Occurrence]] = defaultdict(list)
-        for o in self.selection.occurrences_of_name_at_cursor:
+        for o in self.occurrences_of_name_at_cursor:
             grouped[o.node_type is NodeType.DEFINITION].append(o)
 
         last_definition = grouped.get(True, [None])[-1]
@@ -732,12 +735,12 @@ class InlineVariableEditor:
             logger.warning("Could not find assignment for definition.")
             return
 
-        if self.selection.start in assignment.range:
+        if self.range.start in assignment.range:
             after_cursor = (
                 o
                 for o in dropwhile(
-                    lambda x: x.position <= self.selection.start,
-                    self.selection.occurrences_of_name_at_cursor,
+                    lambda x: x.position <= self.range.start,
+                    self.occurrences_of_name_at_cursor,
                 )
             )
             to_replace: tuple[TextRange, ...] = tuple(
@@ -746,22 +749,22 @@ class InlineVariableEditor:
                     lambda x: x.node_type is not NodeType.DEFINITION,
                     after_cursor,
                 )
-                if o.position > self.selection.start
+                if o.position > self.range.start
             )
         else:
             to_replace = (
-                self.selection.start.to(
-                    self.selection.start + len(self.name_at_cursor)
+                self.range.start.to(
+                    self.range.start + len(self.name_at_cursor)
                 ),
             )
 
-        if self.selection.start in assignment.range:
+        if self.range.start in assignment.range:
             can_remove_last_definition = True
         else:
             other_occurrences = [
                 o
                 for o in grouped.get(False, [])
-                if o.position not in self.selection.text_range
+                if o.position not in self.range
             ]
             last_occurrence = (
                 other_occurrences[-1] if other_occurrences else None
@@ -771,24 +774,21 @@ class InlineVariableEditor:
                 or last_occurrence.position < assignment.start
             )
 
-        edits: tuple[Edit, ...] = tuple(
+        yield from (
             replace_with_node(name_range, assignment.node.value)
             for name_range in to_replace
         )
 
         if can_remove_last_definition:
             if len(assignment.node.targets) == 1:
-                delete = delete_range(assignment.range)
+                yield delete_range(assignment.range)
             else:
                 assignment.node.targets = [
                     t
                     for t in assignment.node.targets
                     if isinstance(t, ast.Name) and t.id != self.name_at_cursor
                 ]
-                delete = replace_with_node(assignment.range, assignment.node)
-            edits = (*edits, delete)
-
-        yield from edits
+                yield replace_with_node(assignment.range, assignment.node)
 
 
 @register
