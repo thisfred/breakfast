@@ -10,7 +10,7 @@ from collections.abc import (
 from dataclasses import dataclass, replace
 from functools import cached_property, singledispatch
 from itertools import dropwhile, takewhile
-from typing import ClassVar, Protocol
+from typing import ClassVar, Protocol, Self
 
 from breakfast.code_generation import unparse
 from breakfast.configuration import configuration
@@ -28,6 +28,7 @@ from breakfast.search import (
     find_returns,
     find_statements,
     get_nodes,
+    is_structurally_identical,
 )
 from breakfast.types import (
     DEFAULT,
@@ -302,12 +303,11 @@ class ExtractFunction:
         enclosing_scope: ScopeWithRange,
         start_of_scope: Position,
     ) -> int:
-        if isinstance(enclosing_scope.node, ast.Module | ast.FunctionDef):
-            insert_position = self.source.node_position(
-                enclosing_scope.node.body[0]
-            )
-        else:
-            insert_position = self.selection.start.line.start
+        insert_position = (
+            self.source.node_position(enclosing_scope.node.body[0])
+            if isinstance(enclosing_scope.node, ast.Module | ast.FunctionDef)
+            else self.selection.start.line.start
+        )
 
         new_level = insert_position.column // 4
         return new_level
@@ -1785,6 +1785,75 @@ class ReplaceWithMethodObject:
         return self.selection.text_range.enclosing_nodes_by_type(
             ast.FunctionDef
         )[-1]
+
+
+@register
+@dataclass
+class ConvertToIfExpression:
+    name = "convert if statement to if expression"
+    selection: CodeSelection
+
+    @classmethod
+    def applies_to(cls, selection: CodeSelection) -> bool:
+        return bool(TernaryCandidate.from_text_range(selection.text_range))
+
+    @property
+    def edits(self) -> tuple[Edit, ...]:
+        if candidate := TernaryCandidate.from_text_range(
+            self.selection.text_range
+        ):
+            return candidate.edits
+        return ()
+
+
+@dataclass
+class TernaryCandidate:
+    test: ast.expr
+    if_body: ast.Assign
+    else_body: ast.Assign
+    range: TextRange
+
+    @classmethod
+    def from_text_range(cls, text_range: TextRange) -> Self | None:
+        if not (if_statements := text_range.enclosing_nodes_by_type(ast.If)):
+            return None
+        match if_statements[-1].node:
+            case (
+                ast.If(body=[body], orelse=[orelse]) as if_statement
+            ) if isinstance(body, ast.Assign) and isinstance(
+                orelse, ast.Assign
+            ):
+                if len(body.targets) == len(
+                    orelse.targets
+                ) == 1 and is_structurally_identical(
+                    body.targets[0], orelse.targets[0]
+                ):
+                    return cls(
+                        test=if_statement.test,
+                        if_body=body,
+                        else_body=orelse,
+                        range=if_statements[-1].range,
+                    )
+                else:
+                    return None
+            case _:
+                return None
+
+    @property
+    def edits(self) -> tuple[Edit, ...]:
+        return (
+            replace_with_node(
+                self.range,
+                ast.Assign(
+                    targets=[self.if_body.targets[0]],
+                    value=ast.IfExp(
+                        body=self.if_body.value,
+                        test=self.test,
+                        orelse=self.else_body.value,
+                    ),
+                ),
+            ),
+        )
 
 
 def to_class_name(var_name: str) -> str:

@@ -1,6 +1,7 @@
 from breakfast.refactoring import (
     AddParameter,
     CodeSelection,
+    ConvertToIfExpression,
     Edit,
     EncapsulateRecord,
     ExtractClass,
@@ -2495,5 +2496,44 @@ def test_extract_variable_in_first_line_of_method_should_not_extract_outside_bod
                 v = ast.Call
                 calls = self.enclosing_nodes_by_type(v)
                 return calls[-1] if calls else None
+        """,
+    )
+
+
+def test_convert_to_ternary_coverts_an_if_else():
+    assert_refactors_to(
+        refactoring=ConvertToIfExpression,
+        target="if",
+        code="""
+        class C:
+            def compute_new_level(
+                self,
+                enclosing_scope: ScopeWithRange,
+                start_of_scope: Position,
+            ) -> int:
+                if isinstance(enclosing_scope.node, ast.Module | ast.FunctionDef):
+                    insert_position = self.source.node_position(
+                        enclosing_scope.node.body[0]
+                    )
+                else:
+                    insert_position = self.selection.start.line.start
+
+                new_level = insert_position.column // 4
+                return new_level
+        """,
+        expected="""
+        class C:
+            def compute_new_level(
+                self,
+                enclosing_scope: ScopeWithRange,
+                start_of_scope: Position,
+            ) -> int:
+                insert_position = (
+                    self.source.node_position(enclosing_scope.node.body[0])
+                    if isinstance(enclosing_scope.node, ast.Module | ast.FunctionDef)
+                    else self.selection.start.line.start
+                )
+                new_level = insert_position.column // 4
+                return new_level
         """,
     )

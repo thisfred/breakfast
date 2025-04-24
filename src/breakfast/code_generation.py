@@ -532,7 +532,7 @@ def match_case(node: ast.match_case, level: int) -> Iterator[str]:
     yield start_line("case ", level)
     yield from to_source(node.pattern, level)
     if node.guard:
-        yield "if "
+        yield " if "
         yield from to_source(node.guard, level)
     yield ":"
     yield from render_body(node.body, level + 1)
