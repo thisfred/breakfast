@@ -265,7 +265,6 @@ class Editor(Protocol):
 
 class Refactoring(Protocol):
     name: str
-    selection: CodeSelection
 
     @classmethod
     def from_selection(cls, selection: CodeSelection) -> Editor | None: ...
@@ -593,31 +592,38 @@ def make_argument(occurrence: Occurrence) -> ast.arg:
 @dataclass
 class ExtractVariable:
     name = "extract variable"
-    selection: CodeSelection
 
     @classmethod
-    def from_selection(cls, selection: CodeSelection) -> Self | None:
-        return (
-            cls(selection=selection)
-            if selection.end > selection.start
-            else None
-        )
+    def from_selection(cls, selection: CodeSelection) -> Editor | None:
+        return ExtractVariableEditor.from_text_range(selection.text_range)
+
+
+@dataclass
+class ExtractVariableEditor:
+    range: TextRange
+
+    @classmethod
+    def from_text_range(cls, text_range: TextRange) -> Self | None:
+        if text_range.end > text_range.start:
+            return cls(text_range)
+
+        return None
 
     @property
     def edits(self) -> Iterator[Edit]:
-        extracted = self.selection.text_range.text
+        extracted = self.range.text
 
         if not (expression := self.get_single_expression_value(extracted)):
             logger.warning("Could not extract single expression value.")
             return
 
         other_occurrences = find_other_nodes(
-            source_ast=self.selection.source.ast,
+            source_ast=self.range.source.ast,
             node=expression,
-            position=self.selection.start,
+            position=self.range.start,
         )
 
-        enclosing_scope = self.selection.text_range.enclosing_scopes[-1]
+        enclosing_scope = self.range.enclosing_scopes[-1]
         name = make_unique_name(
             original_name="v", enclosing_scope=enclosing_scope
         )
@@ -625,16 +631,16 @@ class ExtractVariable:
         target_range = get_body_range(enclosing_scope=enclosing_scope)
 
         other_edits = [
-            (start := self.selection.source.node_position(o))
+            (start := self.range.source.node_position(o))
             .to(start + len(extracted))
             .replace(name)
             for o in other_occurrences
-            if (node_position := self.selection.source.node_position(o))
+            if (node_position := self.range.source.node_position(o))
             and node_position in target_range
         ]
         edits = sorted(
             [
-                Edit(text_range=self.selection.text_range, text=name),
+                Edit(text_range=self.range, text=name),
                 *other_edits,
             ]
         )
@@ -644,8 +650,8 @@ class ExtractVariable:
             takewhile(
                 lambda p: p < first_edit_position,
                 (
-                    self.selection.source.node_position(s)
-                    for s in find_statements(self.selection.source.ast)
+                    self.range.source.node_position(s)
+                    for s in find_statements(self.range.source.ast)
                 ),
             )
         )
