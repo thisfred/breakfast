@@ -30,6 +30,7 @@ from breakfast.search import (
     get_nodes,
     is_structurally_identical,
 )
+from breakfast.source import has_node_type
 from breakfast.types import (
     DEFAULT,
     Edit,
@@ -1860,9 +1861,6 @@ class IfExpressionCandidate:
                     range=if_statements[-1].range,
                 )
             case _:
-                from astpretty import pprint
-
-                pprint(if_statements[-1].node)
                 return None
 
     @property
@@ -1879,7 +1877,7 @@ class IfExpressionCandidate:
                             test=self.test,
                             orelse=self.else_value,
                         ),
-                        simple=0,
+                        simple=1,
                     ),
                 ),
             )
@@ -1920,21 +1918,29 @@ class ConvertToIfStatement:
 
 @dataclass
 class IfStatementCandidate:
-    target: ast.expr
+    target: ast.Name | ast.Attribute | ast.Subscript
     test: ast.expr
     if_value: ast.expr
     else_value: ast.expr
     range: TextRange
+    annotation: ast.expr | None = None
 
     @classmethod
     def from_text_range(cls, text_range: TextRange) -> Self | None:
-        if not (assignments := text_range.enclosing_nodes_by_type(ast.Assign)):
+        if not (
+            assignments := [
+                n
+                for n in text_range.enclosing_nodes
+                if has_node_type(n, ast.Assign)
+                or has_node_type(n, ast.AnnAssign)
+            ]
+        ):
             return None
         match assignments[-1].node:
             case ast.Assign(
                 targets=[target],
                 value=ast.IfExp(test=test, body=body, orelse=orelse),
-            ):
+            ) if isinstance(target, ast.Name | ast.Attribute | ast.Subscript):
                 return cls(
                     target=target,
                     test=test,
@@ -1942,8 +1948,24 @@ class IfStatementCandidate:
                     else_value=orelse,
                     range=assignments[-1].range,
                 )
-
+            case ast.AnnAssign(
+                target=target,
+                annotation=annotation,
+                value=ast.IfExp(test=test, body=body, orelse=orelse),
+            ):
+                return cls(
+                    target=target,
+                    annotation=annotation,
+                    test=test,
+                    if_value=body,
+                    else_value=orelse,
+                    range=assignments[-1].range,
+                )
             case _:
+                from astpretty import pprint
+
+                pprint(assignments[-1].node)
+
                 return None
 
     @property
@@ -1954,7 +1976,16 @@ class IfStatementCandidate:
                 ast.If(
                     test=self.test,
                     body=[
-                        ast.Assign(targets=[self.target], value=self.if_value)
+                        ast.AnnAssign(
+                            target=self.target,
+                            annotation=self.annotation,
+                            value=self.if_value,
+                            simple=1,
+                        )
+                        if self.annotation
+                        else ast.Assign(
+                            targets=[self.target], value=self.if_value
+                        )
                     ],
                     orelse=[
                         ast.Assign(targets=[self.target], value=self.else_value)

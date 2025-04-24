@@ -2579,7 +2579,7 @@ def test_convert_to_if_statement_converts_to_if_else_with_two_assignment():
     )
 
 
-def test_convert_to_if_expression_regression():
+def test_convert_to_if_expression_handles_annotated_assigments():
     assert_refactors_to(
         refactoring=ConvertToIfExpression,
         target="if len(targets) > 1:",
@@ -2616,6 +2616,52 @@ def test_convert_to_if_expression_regression():
                 if enclosing_assignment := selection.text_range.enclosing_assignment:
                     targets = enclosing_assignment.node.targets
                     value: ast.expr | ast.Tuple = ast.Tuple(targets) if len(targets) > 1 else targets[0]
+                    nodes = [enclosing_assignment.node, ast.Return(value=value)]
+
+            if return_node:
+                nodes.append(return_node)
+            return nodes
+        """,
+    )
+
+
+def test_convert_to_if_statement_handles_annotated_assigments():
+    assert_refactors_to(
+        refactoring=ConvertToIfStatement,
+        target="value: ast.expr | ast.Tuple =",
+        code="""
+        def make_body(
+            selection: CodeSelection, return_node: ast.Return | None
+        ) -> list[ast.stmt]:
+            if selection.text_range.expression is not None:
+                return [ast.Return(value=selection.text_range.expression)]
+
+            nodes = list(selection.text_range.statements)
+            if not nodes:
+                if enclosing_assignment := selection.text_range.enclosing_assignment:
+                    targets = enclosing_assignment.node.targets
+                    value: ast.expr | ast.Tuple = ast.Tuple(targets) if len(targets) > 1 else targets[0]
+                    nodes = [enclosing_assignment.node, ast.Return(value=value)]
+
+            if return_node:
+                nodes.append(return_node)
+            return nodes
+        """,
+        expected="""
+        def make_body(
+            selection: CodeSelection, return_node: ast.Return | None
+        ) -> list[ast.stmt]:
+            if selection.text_range.expression is not None:
+                return [ast.Return(value=selection.text_range.expression)]
+
+            nodes = list(selection.text_range.statements)
+            if not nodes:
+                if enclosing_assignment := selection.text_range.enclosing_assignment:
+                    targets = enclosing_assignment.node.targets
+                    if len(targets) > 1:
+                        value: ast.expr | ast.Tuple = ast.Tuple(targets)
+                    else:
+                        value = targets[0]
                     nodes = [enclosing_assignment.node, ast.Return(value=value)]
 
             if return_node:
