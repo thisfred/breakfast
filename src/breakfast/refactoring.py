@@ -155,10 +155,6 @@ class CodeSelection:
         )
 
     @cached_property
-    def name_at_cursor(self) -> str | None:
-        return self.source.get_name_at(self.start)
-
-    @cached_property
     def occurrences_of_name_at_cursor(self) -> Sequence[Occurrence]:
         try:
             return all_occurrences(self.start, graph=self.scope_graph)
@@ -614,6 +610,18 @@ class ExtractVariableEditor:
 
         return cls(range=text_range, expression=expression)
 
+    @classmethod
+    def get_single_expression_value(cls, text: str) -> ast.AST | None:
+        try:
+            parsed = ast.parse(text)
+        except SyntaxError:
+            return None
+
+        if len(parsed.body) != 1 or not isinstance(parsed.body[0], ast.Expr):
+            return None
+
+        return parsed.body[0].value
+
     @property
     def edits(self) -> Iterator[Edit]:
         extracted = self.range.text
@@ -670,18 +678,6 @@ class ExtractVariableEditor:
         yield insert
         yield from edits
 
-    @classmethod
-    def get_single_expression_value(cls, text: str) -> ast.AST | None:
-        try:
-            parsed = ast.parse(text)
-        except SyntaxError:
-            return None
-
-        if len(parsed.body) != 1 or not isinstance(parsed.body[0], ast.Expr):
-            return None
-
-        return parsed.body[0].value
-
 
 def get_body_range(enclosing_scope: ScopeWithRange) -> TextRange:
     if not isinstance(
@@ -706,8 +702,19 @@ class InlineVariable:
     selection: CodeSelection
 
     @classmethod
-    def from_selection(cls, selection: CodeSelection) -> Self | None:
-        return cls(selection=selection) if selection.name_at_cursor else None
+    def from_selection(cls, selection: CodeSelection) -> Editor | None:
+        name_at_cursor = selection.source.get_name_at(selection.start)
+        if not name_at_cursor:
+            return None
+        return InlineVariableEditor(
+            selection=selection, name_at_cursor=name_at_cursor
+        )
+
+
+@dataclass
+class InlineVariableEditor:
+    selection: CodeSelection
+    name_at_cursor: str
 
     @property
     def edits(self) -> Iterator[Edit]:
@@ -725,10 +732,6 @@ class InlineVariable:
             logger.warning("Could not find assignment for definition.")
             return
 
-        name = self.selection.name_at_cursor
-        if name is None:
-            logger.warning("No variable at cursor that can be inlined.")
-            return
         if self.selection.start in assignment.range:
             after_cursor = (
                 o
@@ -738,7 +741,7 @@ class InlineVariable:
                 )
             )
             to_replace: tuple[TextRange, ...] = tuple(
-                o.position.to(o.position + len(name))
+                o.position.to(o.position + len(self.name_at_cursor))
                 for o in takewhile(
                     lambda x: x.node_type is not NodeType.DEFINITION,
                     after_cursor,
@@ -747,7 +750,9 @@ class InlineVariable:
             )
         else:
             to_replace = (
-                self.selection.start.to(self.selection.start + len(name)),
+                self.selection.start.to(
+                    self.selection.start + len(self.name_at_cursor)
+                ),
             )
 
         if self.selection.start in assignment.range:
@@ -778,7 +783,7 @@ class InlineVariable:
                 assignment.node.targets = [
                     t
                     for t in assignment.node.targets
-                    if isinstance(t, ast.Name) and t.id != name
+                    if isinstance(t, ast.Name) and t.id != self.name_at_cursor
                 ]
                 delete = replace_with_node(assignment.range, assignment.node)
             edits = (*edits, delete)
