@@ -601,25 +601,26 @@ class ExtractVariable:
 @dataclass
 class ExtractVariableEditor:
     range: TextRange
+    expression: ast.AST
 
     @classmethod
     def from_text_range(cls, text_range: TextRange) -> Self | None:
-        if text_range.end > text_range.start:
-            return cls(text_range)
+        if not text_range.end > text_range.start:
+            return None
 
-        return None
+        if not (expression := cls.get_single_expression_value(text_range.text)):
+            logger.warning("Could not extract single expression value.")
+            return None
+
+        return cls(range=text_range, expression=expression)
 
     @property
     def edits(self) -> Iterator[Edit]:
         extracted = self.range.text
 
-        if not (expression := self.get_single_expression_value(extracted)):
-            logger.warning("Could not extract single expression value.")
-            return
-
         other_occurrences = find_other_nodes(
             source_ast=self.range.source.ast,
-            node=expression,
+            node=self.expression,
             position=self.range.start,
         )
 
@@ -669,8 +670,8 @@ class ExtractVariableEditor:
         yield insert
         yield from edits
 
-    @staticmethod
-    def get_single_expression_value(text: str) -> ast.AST | None:
+    @classmethod
+    def get_single_expression_value(cls, text: str) -> ast.AST | None:
         try:
             parsed = ast.parse(text)
         except SyntaxError:

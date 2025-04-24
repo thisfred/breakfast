@@ -114,9 +114,7 @@ def test_extract_variable_will_not_extract_partial_expression():
     refactor = ExtractVariableEditor.from_text_range(
         TextRange(extraction_start, extraction_end)
     )
-    assert refactor is not None
-    edits = list(refactor.edits)
-    assert not edits
+    assert refactor is None
 
 
 def test_extract_variable_should_move_definition_before_current_statement():
