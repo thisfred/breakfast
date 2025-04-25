@@ -1,3 +1,5 @@
+from pytest import mark
+
 from breakfast.refactoring import (
     AddParameter,
     CodeSelection,
@@ -2680,5 +2682,97 @@ def test_convert_to_if_statement_handles_annotated_assigments():
             if return_node:
                 nodes.append(return_node)
             return nodes
+        """,
+    )
+
+
+def test_refactoring_should_handle_newline_literals_in_triple_quoted_strings():
+    assert_refactors_to(
+        refactoring=ExtractFunction,
+        target=(
+            "document = server.workspace.get_text_document(params.text_document.uri)",
+            "line = source_lines[params.position.line]",
+        ),
+        code=r"""
+        document = server.workspace.get_text_document(params.text_document.uri)
+        source_lines = tuple(document.source.split("\n"))
+        line = source_lines[params.position.line]
+
+        a = line
+        """,
+        expected=r"""
+        def f():
+            document = server.workspace.get_text_document(params.text_document.uri)
+            source_lines = tuple(document.source.split("\n"))
+            line = source_lines[params.position.line]
+
+            return line
+
+        line = f()
+        a = line
+        """,
+    )
+
+
+@mark.xfail
+def test_extract_function_with_full_lines_should_work():
+    assert_refactors_to(
+        refactoring=ExtractFunction,
+        target=(
+            "    document = server.workspace.get_text_document(params.text_document.uri)",
+            "    occurrences = project.get_occurrences(position)",
+        ),
+        code=r"""
+        @LSP_SERVER.feature(TEXT_DOCUMENT_RENAME)
+        def rename(
+            server: LanguageServer, params: RenameParams
+        ) -> WorkspaceEdit | None:
+            document = server.workspace.get_text_document(params.text_document.uri)
+            source_lines = tuple(split_lines(document.source))
+            line = source_lines[params.position.line]
+
+            start = find_identifier_start(line, params.position)
+            if start is None:
+                return None
+
+            project_root = server.workspace.root_uri[len("file://") :]
+            source = get_source(
+                uri=params.text_document.uri,
+                project_root=project_root,
+                lines=(*source_lines, ""),
+            )
+            project = Project(source=source, root=project_root)
+            position = source.position(row=params.position.line, column=start)
+            occurrences = project.get_occurrences(position)
+            if not occurrences:
+                return None
+        """,
+        expected=r"""
+        @LSP_SERVER.feature(TEXT_DOCUMENT_RENAME)
+        def rename(
+            server: LanguageServer, params: RenameParams
+        ) -> WorkspaceEdit | None:
+            def f(server: LanguageServer, params: RenameParams):
+                document = server.workspace.get_text_document(params.text_document.uri)
+                source_lines = tuple(split_lines(document.source))
+                line = source_lines[params.position.line]
+
+                start = find_identifier_start(line, params.position)
+                if start is None:
+                    return None
+
+                project_root = server.workspace.root_uri[len("file://") :]
+                source = get_source(
+                    uri=params.text_document.uri,
+                    project_root=project_root,
+                    lines=(*source_lines, ""),
+                )
+                project = Project(source=source, root=project_root)
+                position = source.position(row=params.position.line, column=start)
+                occurrences = project.get_occurrences(position)
+                return occurrences
+            occurrences = f(server=server, params=params)
+            if not occurrences:
+                return None
         """,
     )
