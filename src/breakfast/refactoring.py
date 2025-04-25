@@ -1349,12 +1349,12 @@ class EncapsulateRecordEditor:
         class_name = make_unique_name(
             self.make_class_name() or "Record", self.range.enclosing_scope
         )
-        fake_module = make_dataclass(
+        dataclass_definition = make_dataclass(
             class_name=class_name, new_statements=new_statements
         )
         yield replace_with_node(
             self.enclosing_assignment.start.as_range,
-            fake_module,
+            dataclass_definition,
             add_newline_after=True,
         )
         yield replace_with_node(
