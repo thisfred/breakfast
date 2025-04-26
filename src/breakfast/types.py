@@ -242,7 +242,7 @@ class NodeType(Enum):
     CLASS = auto()
 
 
-class Occurrence(Protocol):
+class Occurrence(Protocol):  # pragma: nocover
     @property
     def name(self) -> str: ...
 
