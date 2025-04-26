@@ -239,12 +239,18 @@ class NodeType(Enum):
     CLASS = auto()
 
 
-@dataclass(frozen=True)
 class Occurrence(Protocol):
-    name: str
-    position: Position
-    ast: ast.AST | None
-    node_type: NodeType
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def position(self) -> Position: ...
+
+    @property
+    def ast(self) -> ast.AST | None: ...
+
+    @property
+    def node_type(self) -> NodeType: ...
 
     @property
     def source(self) -> Source: ...

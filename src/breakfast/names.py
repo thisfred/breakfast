@@ -9,7 +9,6 @@ from collections import defaultdict
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from functools import singledispatch
-from typing import cast
 
 from breakfast.scope_graph import (
     Configuration,
@@ -17,6 +16,7 @@ from breakfast.scope_graph import (
     Gadget,
     IncompleteFragment,
     NotFoundError,
+    OccurrenceNode,
     Path,
     ScopeGraph,
     ScopeNode,
@@ -31,14 +31,6 @@ logger = logging.getLogger(__name__)
 CLASS_OFFSET = len("class ")
 DEF_OFFSET = len("def ")
 ASYNC_DEF_OFFSET = len("async def ")
-
-
-def is_positioned(node: ScopeNode) -> bool:
-    return (
-        node.position is not None
-        and node.name is not None
-        and node.source is not None
-    )
 
 
 def all_occurrence_positions(
@@ -87,10 +79,11 @@ def all_occurrences(
 
     return sorted(
         (
-            cast(Occurrence, o)
+            o
             for _, o in consolidate_occurrences(
                 definitions, found_definition
             ).items()
+            if isinstance(o, OccurrenceNode)
             if o.position is not None and o.source is not None
         ),
         key=lambda o: o.position,
@@ -100,7 +93,7 @@ def all_occurrences(
 
 def find_definitions(
     graph: ScopeGraph, position: Position
-) -> tuple[ScopeNode, dict[ScopeNode, set[ScopeNode]]]:
+) -> tuple[OccurrenceNode, dict[OccurrenceNode, set[OccurrenceNode]]]:
     scopes_for_position = graph.positions.get(position)
     if not scopes_for_position:
         raise NotFoundError
@@ -120,15 +113,12 @@ def find_definitions(
 
 def filter_possible_occurrences(
     position: Position,
-    possible_occurrences: Iterable[ScopeNode],
+    possible_occurrences: Iterable[OccurrenceNode],
     graph: ScopeGraph,
-) -> tuple[ScopeNode, dict[ScopeNode, set[ScopeNode]]]:
-    definitions: dict[ScopeNode, set[ScopeNode]] = defaultdict(set)
+) -> tuple[OccurrenceNode, dict[OccurrenceNode, set[OccurrenceNode]]]:
+    definitions: dict[OccurrenceNode, set[OccurrenceNode]] = defaultdict(set)
     found_definition = None
-    for scope_node in possible_occurrences:
-        occurrence = scope_node
-        if not is_positioned(occurrence):
-            continue
+    for occurrence in possible_occurrences:
         if occurrence.node_type is NodeType.DEFINITION:
             definitions[occurrence].add(occurrence)
             if position == occurrence.position:
@@ -136,11 +126,8 @@ def filter_possible_occurrences(
             continue
 
         try:
-            prior_definition = graph.find_definition(scope_node)
+            prior_definition = graph.find_definition(occurrence)
         except NotFoundError:
-            continue
-
-        if not is_positioned(prior_definition):
             continue
 
         definitions[prior_definition].add(occurrence)
@@ -153,7 +140,9 @@ def filter_possible_occurrences(
     return found_definition, definitions
 
 
-def find_definition(graph: ScopeGraph, position: Position) -> ScopeNode | None:
+def find_definition(
+    graph: ScopeGraph, position: Position
+) -> OccurrenceNode | None:
     try:
         return find_definitions(graph, position)[0]
     except NotFoundError:
@@ -161,10 +150,11 @@ def find_definition(graph: ScopeGraph, position: Position) -> ScopeNode | None:
 
 
 def consolidate_occurrences(
-    definitions: dict[ScopeNode, set[ScopeNode]], found_definition: ScopeNode
-) -> dict[Position, ScopeNode]:
-    groups: list[dict[Position, ScopeNode]] = []
-    found_group: dict[Position, ScopeNode] = {}
+    definitions: dict[OccurrenceNode, set[OccurrenceNode]],
+    found_definition: OccurrenceNode,
+) -> dict[Position, OccurrenceNode]:
+    groups: list[dict[Position, OccurrenceNode]] = []
+    found_group: dict[Position, OccurrenceNode] = {}
     for definition, occurrences in definitions.items():
         positions = {o.position: o for o in occurrences if o.position}
         if not definition.position:
@@ -771,7 +761,7 @@ def process_body(
                 case IncompleteFragment(
                     entry_point, exit_point
                 ) if entry_point is exit_point and isinstance(
-                    entry_point, ScopeNode
+                    entry_point, OccurrenceNode
                 ) and entry_point.node_type is NodeType.DEFINITION:
                     current_scope = graph.add_scope(link_to=current_scope)
                     graph.connect(current_scope, fragment)

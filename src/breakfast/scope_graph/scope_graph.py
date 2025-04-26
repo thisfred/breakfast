@@ -50,8 +50,26 @@ class ScopeNode:
     ast: AST | None = None
 
     @property
-    def source(self) -> Source | None:
-        return self.position.source if self.position else None
+    def entry(self) -> "ScopeNode":
+        return self
+
+    @property
+    def exit(self) -> "ScopeNode":
+        return self
+
+
+class OccurrenceNode(ScopeNode):
+    node_id: int
+    name: str
+    position: Position
+    action: Action | None = field(hash=False, default=None)
+    node_type: NodeType = NodeType.REFERENCE
+    rules: tuple[Rule, ...] = ()
+    ast: AST | None = None
+
+    @property
+    def source(self) -> Source:
+        return self.position.source
 
     @property
     def entry(self) -> "ScopeNode":
@@ -89,7 +107,7 @@ class IncompleteFragment:
 
 @dataclass
 class Gadget:
-    nodes: Sequence["ScopeNode"]
+    nodes: Sequence[ScopeNode]
     is_statement: bool = True
 
     @property
@@ -111,8 +129,8 @@ class ScopeGraph:
     nodes: dict[int, ScopeNode]
     edges: dict[int, set[tuple[Edge, int]]]
     root: ScopeNode
-    references: dict[str, list[ScopeNode]]
-    positions: dict[Position, list[ScopeNode]]
+    references: dict[str, list[OccurrenceNode]]
+    positions: dict[Position, list[OccurrenceNode]]
     module_roots: dict[str, ScopeNode]
 
     def __init__(self) -> None:
@@ -144,7 +162,7 @@ class ScopeGraph:
         else:
             node_type = NodeType.REFERENCE if name else NodeType.SCOPE
 
-        new_scope = ScopeNode(
+        new_scope = OccurrenceNode(
             node_id=self.new_id(),
             name=name,
             position=position,
@@ -201,12 +219,10 @@ class ScopeGraph:
 
         return new_scope
 
-    def _add_node(self, node: ScopeNode) -> None:
+    def _add_node(self, node: OccurrenceNode) -> None:
         self.nodes[node.node_id] = node
-        if node.name:
-            self.references[node.name].append(node)
-        if node.position:
-            self.positions[node.position].append(node)
+        self.references[node.name].append(node)
+        self.positions[node.position].append(node)
 
     def add_edge(
         self,
@@ -301,10 +317,12 @@ class ScopeGraph:
                     continue
                 queue.append(next_node)
 
-    def find_definition(self, scope: ScopeNode) -> ScopeNode:
+    def find_definition(self, scope: ScopeNode) -> OccurrenceNode:
         return self.traverse_with_stack(scope, stack=())
 
-    def traverse_with_stack(self, scope: ScopeNode, stack: Path) -> ScopeNode:
+    def traverse_with_stack(
+        self, scope: ScopeNode, stack: Path
+    ) -> OccurrenceNode:
         node_id = scope.node_id
         rules = scope.rules
 
@@ -332,7 +350,11 @@ class ScopeGraph:
             if node.action:
                 stack = node.action(stack)
 
-            if node.node_type is NodeType.DEFINITION and not stack:
+            if (
+                isinstance(node, OccurrenceNode)
+                and node.node_type is NodeType.DEFINITION
+                and not stack
+            ):
                 return node
 
             self.extend_queues(node.node_id, stack, queues, rules)
