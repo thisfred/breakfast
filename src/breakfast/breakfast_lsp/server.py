@@ -7,6 +7,7 @@ from pathlib import Path
 from lsprotocol.types import (
     INITIALIZE,
     TEXT_DOCUMENT_CODE_ACTION,
+    TEXT_DOCUMENT_DEFINITION,
     TEXT_DOCUMENT_PREPARE_RENAME,
     TEXT_DOCUMENT_RENAME,
     AnnotatedTextEdit,
@@ -15,8 +16,13 @@ from lsprotocol.types import (
     CodeActionOptions,
     CodeActionParams,
     CreateFile,
+    Definition,
+    DefinitionLink,
+    DefinitionParams,
     DeleteFile,
     InitializeParams,
+    Location,
+    LocationLink,
     MessageType,
     OptionalVersionedTextDocumentIdentifier,
     Position,
@@ -34,8 +40,9 @@ from pygls.server import LanguageServer
 from breakfast import __version__
 from breakfast.project import Project
 from breakfast.refactoring import CodeSelection, Editor
+from breakfast.scope_graph import NodeType
 from breakfast.source import Source, TextRange
-from breakfast.types import Edit
+from breakfast.types import Edit, Occurrence
 
 logger = logging.getLogger(__name__)
 BREAKFAST_DEBUG = bool(os.environ.get("BREAKFAST_DEBUG", False))
@@ -160,8 +167,9 @@ def rename(
         project_root=project_root,
         lines=source_lines,
     )
-    project = Project(source=source, root=project_root)
     position = source.position(row=params.position.line, column=start)
+
+    project = Project(source=source, root=project_root)
     occurrences = project.get_occurrences(position)
     if not occurrences:
         return None
@@ -190,10 +198,13 @@ def rename(
                 edits=[
                     TextEdit(
                         range=Range(
-                            start=Position(line=o.row, character=o.column),
+                            start=Position(
+                                line=o.position.row, character=o.position.column
+                            ),
                             end=Position(
-                                line=o.row,
-                                character=o.column + len(old_identifier),
+                                line=o.position.row,
+                                character=o.position.column
+                                + len(old_identifier),
                             ),
                         ),
                         new_text=params.new_name,
@@ -307,6 +318,56 @@ def get_edits(
         )
     ]
     return WorkspaceEdit(document_changes=document_changes)
+
+
+@LSP_SERVER.feature(TEXT_DOCUMENT_DEFINITION)
+def go_to_definition(
+    server: LanguageServer, params: DefinitionParams
+) -> Definition | list[DefinitionLink] | None:
+    document = server.workspace.get_text_document(params.text_document.uri)
+    source_lines = tuple(document.source.splitlines())
+    line = source_lines[params.position.line]
+
+    start = find_identifier_start(line, params.position)
+    if start is None:
+        return None
+
+    project_root = server.workspace.root_uri[len("file://") :]
+    source = get_source(
+        uri=params.text_document.uri,
+        project_root=project_root,
+        lines=source_lines,
+    )
+    project = Project(source=source, root=project_root)
+    position = source.position(row=params.position.line, column=start)
+    occurrences = project.get_occurrences(position)
+    if not occurrences:
+        return None
+
+    definitions = [o for o in occurrences if o.node_type is NodeType.DEFINITION]
+    if len(definitions) == 1:
+        return make_location(definitions[0])
+
+    return [make_location_link(o) for o in definitions]
+
+
+def make_location(occurrence: Occurrence) -> Location:
+    return Location(uri="", range=to_range(occurrence))
+
+
+def make_location_link(occurrence: Occurrence) -> LocationLink:
+    return LocationLink(
+        target_uri="",
+        target_range=to_range(occurrence),
+        target_selection_range=to_range(occurrence),
+    )
+
+
+def to_range(occurrence: Occurrence) -> Range:
+    return Range(
+        start=Position(occurrence.position.row, occurrence.position.column),
+        end=Position(occurrence.position.row, occurrence.position.column),
+    )
 
 
 # @LSP_SERVER.command("breakfast.slideStatementsDown")

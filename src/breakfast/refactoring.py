@@ -547,13 +547,16 @@ def make_call(
     arguments: Sequence[Occurrence],
     has_returns: bool,
 ) -> ast.Call | ast.Assign | ast.Return:
-    call = ast.Call(
-        func=func,
-        args=[],
-        keywords=[
+    if len(arguments) == 1:
+        keywords = []
+        args: list[ast.expr] = [ast.Name(o.name) for o in arguments]
+    else:
+        keywords = [
             ast.keyword(arg=o.name, value=ast.Name(o.name)) for o in arguments
-        ],
-    )
+        ]
+        args = []
+
+    call = ast.Call(func=func, args=args, keywords=keywords)
     if return_node:
         if isinstance(return_node.value, ast.expr):
             return ast.Assign(targets=[return_node.value], value=call)

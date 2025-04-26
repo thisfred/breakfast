@@ -283,7 +283,7 @@ def test_extract_function_should_insert_function_definition():
         def f(value):
             return abs(value + 8)
 
-        something = f(value=value)
+        something = f(value)
         """,
     )
 
@@ -303,7 +303,7 @@ def test_extract_function_should_insert_function_definition_with_multiple_statem
             print(value + 20)
             print(max(value, 0))
 
-        f(value=value)
+        f(value)
         """,
     )
 
@@ -345,7 +345,7 @@ def test_extract_function_should_return_modified_variable_used_after_call():
         def f(a):
             b = a + 2
             return b
-        b = f(a=a)
+        b = f(a)
         print(b)
         """,
     )
@@ -364,7 +364,7 @@ def test_extract_function_should_extract_inside_function():
         expected="""
         def f():
             a = 1
-            b = f_0(a=a)
+            b = f_0(a)
             print(b)
 
         def f_0(a):
@@ -392,7 +392,7 @@ def test_extract_function_should_handle_indented_arguments_of_enclosing_scope():
             j,
         ):
             a = 1
-            b = f(a=a)
+            b = f(a)
             print(b)
 
         def f(a):
@@ -417,7 +417,7 @@ def test_extract_function_should_only_consider_variables_in_scope():
         b = 1
 
         def f2(a):
-            b = f(a=a)
+            b = f(a)
             print(b)
 
         def f(a):
@@ -467,7 +467,7 @@ def test_extract_function_should_replace_extracted_code_with_function_call():
         expected="""
         def function():
             a = 1
-            b = f(a=a)
+            b = f(a)
             print(b)
 
         def f(a):
@@ -517,7 +517,7 @@ def function(a):
         b = 1
 
         def function(a):
-            b = f(a=a)
+            b = f(a)
             print(b)
 
         def f(a):
@@ -542,7 +542,7 @@ def test_extract_method_should_replace_extracted_code_with_method_call():
         class A:
             def f(self):
                 a = 1
-                self.m(a=a)
+                self.m(a)
                 print(self.b)
 
             def m(self, a):
@@ -566,7 +566,7 @@ def test_extract_method_should_handle_multitarget_assignment():
         class A:
             def f(self):
                 a = 1
-                c = self.m(a=a)
+                c = self.m(a)
                 print(c)
 
             def m(self, a):
@@ -591,7 +591,7 @@ def test_extract_method_should_extract_after_current_method():
         class A:
             def f(self):
                 a = 1
-                self.m(a=a)
+                self.m(a)
                 print(b)
 
             def m(self, a):
@@ -674,7 +674,7 @@ def test_extract_method_should_extract_class_method_from_class_method():
         class C:
             @classmethod
             def m1(cls, end):
-                sum = cls.m(end=end)
+                sum = cls.m(end)
                 print(sum)
 
             @classmethod
@@ -838,7 +838,7 @@ def test_extract_function_should_extract_to_local_scope():
             @staticmethod
             def m():
                 a = 1
-                a = f(a=a)
+                a = f(a)
                 return a
 
         def f(a):
@@ -861,7 +861,7 @@ def test_extract_function_should_consider_function_scope():
         expected="""
         def function(p):
             if True:
-                d = f(p=p)
+                d = f(p)
                 return d
 
         def f(p):
@@ -1574,7 +1574,7 @@ def test_extract_function_should_not_use_existing_name():
         def f_0(a):
            return a + 2
 
-        b = f_0(a=a)
+        b = f_0(a)
         print(b, f)
         """,
     )
@@ -1628,7 +1628,7 @@ def test_extract_method_should_extract_from_for_loop():
         class C:
             def method(self):
                 for i in range(10):
-                    self.m(i=i)
+                    self.m(i)
 
             def m(self, i):
                 return print(self, i)
@@ -1656,7 +1656,7 @@ def test_extract_method_should_not_over_indent_when_extracting_from_for_loop():
 
             def update_quality(self):
                 for item in self.items:
-                    self.m(item=item)
+                    self.m(item)
 
             @staticmethod
             def m(item):
@@ -1689,7 +1689,7 @@ def test_extract_function_should_not_double_extract_nested_statements():
 
             def update_quality(self):
                 for item in self.items:
-                    f(item=item)
+                    f(item)
 
         def f(item):
             if (

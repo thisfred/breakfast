@@ -1,11 +1,11 @@
 import logging
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from glob import iglob
 from pathlib import Path
 
 from breakfast import source
-from breakfast.names import all_occurrence_positions
-from breakfast.types import Position, Source
+from breakfast.names import all_occurrences
+from breakfast.types import Occurrence, Position, Source
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +17,8 @@ class Project:
 
     def get_occurrences(
         self, position: Position, known_sources: list[Source] | None = None
-    ) -> list[Position]:
-        return all_occurrence_positions(
+    ) -> Sequence[Occurrence]:
+        return all_occurrences(
             position,
             sources=((self._initial_source,) if self._initial_source else ())
             + self.find_sources(),
