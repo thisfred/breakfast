@@ -173,10 +173,12 @@ class CodeSelection:
 class UsageCollector:
     def __init__(
         self,
-        code_selection: CodeSelection,
+        text_range: TextRange,
         enclosing_scope: ScopeWithRange,
+        in_static_method: bool,
     ) -> None:
-        self.selection = code_selection
+        self.in_static_method = in_static_method
+        self.range = text_range
         self.enclosing_scope = enclosing_scope
         self._defined_before: dict[str, list[Occurrence]] = defaultdict(list)
         self._used_in: dict[str, list[Occurrence]] = defaultdict(list)
@@ -214,20 +216,20 @@ class UsageCollector:
 
     def _collect(self) -> None:
         for i, occurrence in enumerate(
-            find_names(self.enclosing_scope.node, self.selection.source)
+            find_names(self.enclosing_scope.node, self.range.source)
         ):
             if (
-                occurrence.position < self.selection.start
+                occurrence.position < self.range.start
                 and occurrence.node_type is NodeType.DEFINITION
             ):
-                if i == 1 and not (self.selection.in_static_method):
+                if i == 1 and not (self.in_static_method):
                     self.self_or_cls = occurrence
                 self._defined_before[occurrence.name].append(occurrence)
-            if occurrence.position in self.selection.text_range:
+            if occurrence.position in self.range:
                 self._used_in[occurrence.name].append(occurrence)
                 if occurrence.node_type is NodeType.DEFINITION:
                     self._modified_in[occurrence.name].append(occurrence)
-            if occurrence.position > self.selection.end:
+            if occurrence.position > self.range.end:
                 self._used_after[occurrence.name].append(occurrence)
 
     def get_subsequent_usage(
@@ -466,8 +468,11 @@ def make_extract_callable_edits(
     refactoring: ExtractFunctionEditor | ExtractMethodEditor, name: str
 ) -> Iterator[Edit]:
     enclosing_scope = refactoring.range.enclosing_scopes[-1]
-    # TODO: make UsageCollector take a text_range instead of CodeSelection
-    usages = UsageCollector(refactoring.selection, enclosing_scope)
+    usages = UsageCollector(
+        refactoring.selection.text_range,
+        enclosing_scope,
+        in_static_method=refactoring.selection.in_static_method,
+    )
     return_node = make_return_node(
         usages.modified_in_selection, usages.used_after_selection
     )
@@ -1078,7 +1083,11 @@ class SlideStatementsDown:
         lines = first.start.to(last.end)
         names_defined_in_range = lines.definitions
         enclosing_scope = self.selection.text_range.enclosing_scopes[-1]
-        usages = UsageCollector(self.selection, enclosing_scope)
+        usages = UsageCollector(
+            self.selection.text_range,
+            enclosing_scope,
+            in_static_method=self.selection.in_static_method,
+        )
         first_usage_after_range = usages.get_subsequent_usage(
             names_defined_in_range=names_defined_in_range
         )
