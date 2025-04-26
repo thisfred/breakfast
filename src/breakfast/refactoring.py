@@ -278,6 +278,8 @@ class ExtractFunctionEditor:
 
     @classmethod
     def from_selection(cls, selection: CodeSelection) -> Self | None:
+        if selection.end <= selection.start:
+            return None
         match selection.text_range.enclosing_scopes:
             case (
                 [
@@ -310,15 +312,11 @@ class ExtractFunctionEditor:
                 insert_position = selection.text_range.start.line.start
                 new_level = insert_position.column // 4
 
-        return (
-            cls(
-                selection=selection,
-                range=selection.text_range,
-                insert_position=insert_position,
-                new_level=new_level,
-            )
-            if selection.end > selection.start
-            else None
+        return cls(
+            selection=selection,
+            range=selection.text_range,
+            insert_position=insert_position,
+            new_level=new_level,
         )
 
     @property
