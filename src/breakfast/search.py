@@ -1,13 +1,38 @@
 import ast
 import logging
 from collections.abc import Iterable, Iterator
+from dataclasses import dataclass
 from functools import singledispatch
 from typing import Any, Protocol
 
-from breakfast.types import NodeType, Occurrence, Position, Source
+from breakfast import types
+from breakfast.types import NodeType, Position, Ranged, Source, contains
 from breakfast.visitor import generic_visit
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class Occurrence:
+    name: str
+    position: Position
+    ast: ast.AST | None
+    node_type: NodeType
+
+    @property
+    def source(self) -> Source:
+        return self.position.source
+
+    @property
+    def start(self) -> Position:
+        return self.position
+
+    @property
+    def end(self) -> Position:
+        return self.position + len(self.name)
+
+    def __contains__(self, other: Ranged) -> bool:
+        return contains(self, other)
 
 
 def find_nested_statements(
@@ -134,12 +159,14 @@ def is_structurally_identical(node: ast.AST, other_node: Any) -> bool:
 
 
 @singledispatch
-def find_names(node: ast.AST, source: Source) -> Iterator[Occurrence]:
+def find_names(node: ast.AST, source: Source) -> Iterator[types.Occurrence]:
     yield from generic_visit(find_names, node, source)
 
 
 @find_names.register
-def find_names_in_name(node: ast.Name, source: Source) -> Iterator[Occurrence]:
+def find_names_in_name(
+    node: ast.Name, source: Source
+) -> Iterator[types.Occurrence]:
     yield Occurrence(
         name=node.id,
         position=source.node_position(node),
@@ -153,7 +180,7 @@ def find_names_in_name(node: ast.Name, source: Source) -> Iterator[Occurrence]:
 @find_names.register
 def find_names_in_function(
     node: ast.FunctionDef | ast.AsyncFunctionDef, source: Source
-) -> Iterator[Occurrence]:
+) -> Iterator[types.Occurrence]:
     yield Occurrence(
         name=node.name,
         position=source.position(node.lineno - 1, node.col_offset),
@@ -164,7 +191,9 @@ def find_names_in_function(
 
 
 @find_names.register
-def find_names_in_arg(node: ast.arg, source: Source) -> Iterator[Occurrence]:
+def find_names_in_arg(
+    node: ast.arg, source: Source
+) -> Iterator[types.Occurrence]:
     yield Occurrence(
         name=node.arg,
         position=source.position(node.lineno - 1, node.col_offset),
@@ -176,7 +205,7 @@ def find_names_in_arg(node: ast.arg, source: Source) -> Iterator[Occurrence]:
 @find_names.register
 def find_names_in_attribute(
     node: ast.Attribute, source: Source
-) -> Iterator[Occurrence]:
+) -> Iterator[types.Occurrence]:
     yield from find_names(node.value, source)
 
 

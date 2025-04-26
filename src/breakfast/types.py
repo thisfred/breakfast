@@ -240,23 +240,11 @@ class NodeType(Enum):
 
 
 @dataclass(frozen=True)
-class Occurrence:
+class Occurrence(Protocol):
     name: str
     position: Position
     ast: ast.AST | None
     node_type: NodeType
 
     @property
-    def source(self) -> Source:
-        return self.position.source
-
-    @property
-    def start(self) -> Position:
-        return self.position
-
-    @property
-    def end(self) -> Position:
-        return self.position + len(self.name)
-
-    def __contains__(self, other: "Ranged") -> bool:
-        return contains(self, other)
+    def source(self) -> Source: ...
