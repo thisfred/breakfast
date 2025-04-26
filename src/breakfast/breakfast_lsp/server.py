@@ -274,8 +274,8 @@ def code_action(
             row=extraction_range.end.line,
             column=max(extraction_range.end.character, 0),
         )
-        selection = CodeSelection(text_range=TextRange(start, end))
-        selection = selection.rtrim()
+
+        selection = CodeSelection(text_range=TextRange(start, end)).rtrim()
 
         for name, refactoring in selection.refactorings.items():
             edits = get_edits(refactoring, document_uri, version)
@@ -345,6 +345,7 @@ def go_to_definition(
         return None
 
     definitions = [o for o in occurrences if o.node_type is NodeType.DEFINITION]
+    logger.warning(f"{definitions=}")
     if len(definitions) == 1:
         return make_location(definitions[0])
 
@@ -352,12 +353,15 @@ def go_to_definition(
 
 
 def make_location(occurrence: Occurrence) -> Location:
-    return Location(uri="", range=to_range(occurrence))
+    return Location(
+        uri=f"file://{occurrence.position.source.path}",
+        range=to_range(occurrence),
+    )
 
 
 def make_location_link(occurrence: Occurrence) -> LocationLink:
     return LocationLink(
-        target_uri="",
+        target_uri=f"file://{occurrence.position.source.path}",
         target_range=to_range(occurrence),
         target_selection_range=to_range(occurrence),
     )
