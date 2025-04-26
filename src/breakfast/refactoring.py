@@ -263,16 +263,60 @@ class Refactoring(Protocol):
 @dataclass
 class ExtractFunction:
     name = "extract function"
-    selection: CodeSelection
 
-    @property
-    def source(self) -> Source:
-        return self.selection.source
+    @classmethod
+    def from_selection(cls, selection: CodeSelection) -> Editor | None:
+        return ExtractFunctionEditor.from_selection(selection)
+
+
+@dataclass
+class ExtractFunctionEditor:
+    selection: CodeSelection
+    range: TextRange
+    insert_position: Position
+    new_level: int
 
     @classmethod
     def from_selection(cls, selection: CodeSelection) -> Self | None:
+        match selection.text_range.enclosing_scopes:
+            case (
+                [
+                    *_,
+                    NodeWithRange(node=ast.ClassDef()),
+                    NodeWithRange(node=ast.FunctionDef()),
+                ] as scopes
+            ):
+                class_scope = scopes[-2]
+                insert_position = (
+                    class_scope.end.line.next.start
+                    if class_scope.end.line.next
+                    else class_scope.end.line.end
+                )
+                new_level = class_scope.start.column // 4
+            case (
+                [
+                    *_,
+                    NodeWithRange(node=ast.FunctionDef()),
+                ] as scopes
+            ):
+                function_scope = scopes[-1]
+                insert_position = (
+                    function_scope.end.line.next.start
+                    if function_scope.end.line.next
+                    else function_scope.end.line.end
+                )
+                new_level = function_scope.start.column // 4
+            case _:
+                insert_position = selection.text_range.start.line.start
+                new_level = insert_position.column // 4
+
         return (
-            cls(selection=selection)
+            cls(
+                selection=selection,
+                range=selection.text_range,
+                insert_position=insert_position,
+                new_level=new_level,
+            )
             if selection.end > selection.start
             else None
         )
@@ -280,6 +324,10 @@ class ExtractFunction:
     @property
     def edits(self) -> Iterator[Edit]:
         yield from make_extract_callable_edits(refactoring=self, name="f")
+
+    @property
+    def source(self) -> Source:
+        return self.range.source
 
     @staticmethod
     def make_call(
@@ -297,24 +345,13 @@ class ExtractFunction:
         enclosing_scope: ScopeWithRange,
         start_of_scope: Position,
     ) -> int:
-        insert_position = (
-            self.source.node_position(enclosing_scope.node.body[0])
-            if isinstance(enclosing_scope.node, ast.Module | ast.FunctionDef)
-            else self.selection.start.line.start
-        )
-
-        new_level = insert_position.column // 4
-        return new_level
+        return self.new_level
 
     def get_insert_position(
         self,
         enclosing_scope: ScopeWithRange,
     ) -> Position:
-        return (
-            self.source.node_position(enclosing_scope.node.body[0])
-            if isinstance(enclosing_scope.node, ast.Module | ast.FunctionDef)
-            else self.selection.start.line.start
-        )
+        return self.insert_position
 
     def make_decorators(self, usages: UsageCollector) -> list[ast.expr]:
         return []
@@ -358,12 +395,26 @@ def make_body(
 @dataclass
 class ExtractMethod:
     name = "extract method"
+
+    @classmethod
+    def from_selection(cls, selection: CodeSelection) -> Editor | None:
+        return ExtractMethodEditor.from_selection(selection)
+
+
+@dataclass
+class ExtractMethodEditor:
     selection: CodeSelection
+    range: TextRange
+    in_class_method: bool
 
     @classmethod
     def from_selection(cls, selection: CodeSelection) -> Self | None:
         return (
-            cls(selection=selection)
+            cls(
+                selection=selection,
+                range=selection.text_range,
+                in_class_method=selection.in_class_method,
+            )
             if (
                 selection.end > selection.start
                 and selection.in_method
@@ -424,16 +475,16 @@ class ExtractMethod:
         else:
             decorator_list = (
                 [ast.Name(CLASS_METHOD)]
-                if usages.self_or_cls and self.selection.in_class_method
+                if usages.self_or_cls and self.in_class_method
                 else []
             )
         return decorator_list
 
 
 def make_extract_callable_edits(
-    refactoring: ExtractFunction | ExtractMethod, name: str
+    refactoring: ExtractFunctionEditor | ExtractMethodEditor, name: str
 ) -> Iterator[Edit]:
-    enclosing_scope = refactoring.selection.text_range.enclosing_scopes[-1]
+    enclosing_scope = refactoring.range.enclosing_scopes[-1]
     usages = UsageCollector(refactoring.selection, enclosing_scope)
     return_node = make_return_node(
         usages.modified_in_selection, usages.used_after_selection
@@ -483,6 +534,8 @@ def make_extract_callable_edits(
         add_indentation_after=True,
         level=new_level,
     )
+    print(f"{insert_position=}")
+    print(f"{refactoring.selection.text_range=}")
     yield replace_with_node(
         text_range=refactoring.selection.text_range,
         node=calling_statement,

@@ -1,5 +1,3 @@
-from pytest import mark
-
 from breakfast.refactoring import (
     AddParameter,
     CodeSelection,
@@ -22,7 +20,7 @@ from breakfast.refactoring import (
     SlideStatementsDown,
     SlideStatementsUp,
 )
-from breakfast.source import Source, TextRange
+from breakfast.source import TextRange
 from tests.conftest import assert_refactors_to, dedent, make_source
 
 
@@ -280,10 +278,11 @@ def test_extract_function_should_insert_function_definition():
         something = abs(value + 8)
         """,
         expected="""
+        value = 0
+
         def f(value):
             return abs(value + 8)
 
-        value = 0
         something = f(value=value)
         """,
     )
@@ -299,11 +298,11 @@ def test_extract_function_should_insert_function_definition_with_multiple_statem
         print(max(value, 0))
         """,
         expected="""
+        value = 0
         def f(value):
             print(value + 20)
             print(max(value, 0))
 
-        value = 0
         f(value=value)
         """,
     )
@@ -320,12 +319,12 @@ def test_extract_function_should_create_arguments_for_local_variables():
         print(max(other_value, value))
         """,
         expected="""
+        value = 0
+        other_value = 1
+
         def f(value, other_value):
             print(value + 20)
             print(max(other_value, value))
-
-        value = 0
-        other_value = 1
 
         f(value=value, other_value=other_value)
         """,
@@ -342,11 +341,10 @@ def test_extract_function_should_return_modified_variable_used_after_call():
         print(b)
         """,
         expected="""
+        a = 1
         def f(a):
             b = a + 2
             return b
-
-        a = 1
         b = f(a=a)
         print(b)
         """,
@@ -365,13 +363,12 @@ def test_extract_function_should_extract_inside_function():
         """,
         expected="""
         def f():
-            def f_0(a):
-                return a + 2
-
             a = 1
             b = f_0(a=a)
             print(b)
 
+        def f_0(a):
+            return a + 2
         """,
     )
 
@@ -394,55 +391,67 @@ def test_extract_function_should_handle_indented_arguments_of_enclosing_scope():
             i,
             j,
         ):
-            def f(a):
-                b = a + 2
-                return b
-
             a = 1
             b = f(a=a)
             print(b)
 
+        def f(a):
+            b = a + 2
+            return b
         """,
     )
 
 
 def test_extract_function_should_only_consider_variables_in_scope():
-    source = make_source(
-        """
+    assert_refactors_to(
+        refactoring=ExtractFunction,
+        target="b = a + 2",
+        code="""
         b = 1
 
         def f2(a):
             b = a + 2
             print(b)
-        """
+        """,
+        expected="""
+        b = 1
+
+        def f2(a):
+            b = f(a=a)
+            print(b)
+
+        def f(a):
+            b = a + 2
+            return b
+        """,
     )
-    start = source.position(4, 0)
-    end = source.position(4, 12)
-
-    refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
-    insert, replace = list(refactor.edits)
-
-    assert "f(a)" in insert.text
 
 
 def test_extract_function_should_only_pass_in_variables_defined_in_local_scope():
-    source = make_source(
-        """
+    assert_refactors_to(
+        refactoring=ExtractFunction,
+        target="a = C()",
+        code="""
         class C:
             ...
 
         def f2():
             a = C()
             print(a)
-        """
+        """,
+        expected="""
+        class C:
+            ...
+
+        def f2():
+            a = f()
+            print(a)
+
+        def f():
+            a = C()
+            return a
+        """,
     )
-    start = source.position(5, 0)
-    end = source.position(6, 0)
-
-    refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
-    insert, replace = list(refactor.edits)
-
-    assert "f()" in insert.text
 
 
 def test_extract_function_should_replace_extracted_code_with_function_call():
@@ -457,14 +466,13 @@ def test_extract_function_should_replace_extracted_code_with_function_call():
         """,
         expected="""
         def function():
-            def f(a):
-                b = a + 2
-                return b
-
             a = 1
             b = f(a=a)
             print(b)
 
+        def f(a):
+            b = a + 2
+            return b
         """,
     )
 
@@ -494,25 +502,29 @@ def test_extract_function_should_return_multiple_values_where_necessary():
 
 
 def test_extract_function_should_handle_empty_lines():
-    code = """\
+    assert_refactors_to(
+        refactoring=ExtractFunction,
+        target="    b = a + 2",
+        code="""\
 b = 1
 
 def function(a):
 
     b = a + 2
-    print(b)"""
-    source = Source(
-        input_lines=tuple(line for line in code.split("\n")),
-        path="",
-        project_root=".",
-    )
-    start = source.position(4, 0)
-    end = source.position(4, 12)
-    refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
-    insert, replace = list(refactor.edits)
+    print(b)
+""",
+        expected="""
+        b = 1
 
-    assert "def f(a):" in insert.text
-    assert "b = f(a=a)" in replace.text
+        def function(a):
+            b = f(a=a)
+            print(b)
+
+        def f(a):
+            b = a + 2
+            return b
+        """,
+    )
 
 
 def test_extract_method_should_replace_extracted_code_with_method_call():
@@ -565,22 +577,27 @@ def test_extract_method_should_handle_multitarget_assignment():
 
 
 def test_extract_method_should_extract_after_current_method():
-    source = make_source(
-        """
+    assert_refactors_to(
+        refactoring=ExtractMethod,
+        target="self.b = a + 2",
+        code="""
         class A:
             def f(self):
                 a = 1
                 self.b = a + 2
                 print(b)
-        """
+        """,
+        expected="""
+        class A:
+            def f(self):
+                a = 1
+                self.m(a=a)
+                print(b)
+
+            def m(self, a):
+                self.b = a + 2
+        """,
     )
-    start = source.position(4, 8)
-    end = source.position(4, 21)
-
-    refactor = ExtractMethod(CodeSelection(TextRange(start, end)))
-    insert, _replace = list(refactor.edits)
-
-    assert insert.start.row == 6
 
 
 def test_extract_method_should_not_repeat_return_variables():
@@ -817,36 +834,41 @@ def test_extract_function_should_extract_to_local_scope():
                 return a
         """,
         expected="""
-
         class C:
             @staticmethod
             def m():
-                def f(a):
-                    a += 1
-                    return a
                 a = 1
                 a = f(a=a)
                 return a
+
+        def f(a):
+            a += 1
+            return a
         """,
     )
 
 
 def test_extract_function_should_consider_function_scope():
-    source = make_source(
-        """
+    assert_refactors_to(
+        refactoring=ExtractFunction,
+        target="d = c(p)",
+        code="""
         def function(p):
             if True:
                 d = c(p)
                 return d
-        """
+        """,
+        expected="""
+        def function(p):
+            if True:
+                d = f(p=p)
+                return d
+
+        def f(p):
+            d = c(p)
+            return d
+        """,
     )
-
-    start = source.position(3, 0)
-    end = source.position(4, 0)
-    refactor = ExtractFunction(CodeSelection(TextRange(start, end)))
-    insert, _ = refactor.edits
-
-    assert "def f(p):" in insert.text
 
 
 def test_extract_method_should_extract_part_of_a_line():
@@ -1112,10 +1134,10 @@ def test_extract_function_should_pass_on_variables_used_as_arguments_as_paramete
             return abs(c())
 
         def h():
-            def f():
-                return g(c=function)
-
             return f()
+
+        def f():
+            return g(c=function)
         """,
     )
 
@@ -1342,10 +1364,11 @@ def test_extract_callable_containing_return_statement_should_preserve_it():
         """,
         expected="""
         def function():
-            def f():
-                range_end = 3 + 2
-                return range_end
             return f()
+
+        def f():
+            range_end = 3 + 2
+            return range_end
         """,
     )
 
@@ -1545,11 +1568,11 @@ def test_extract_function_should_not_use_existing_name():
         print(b, f)
         """,
         expected="""
-        def f_0(a):
-           return a + 2
-
         a = 1
         f = 2
+
+        def f_0(a):
+           return a + 2
 
         b = f_0(a=a)
         print(b, f)
@@ -1665,15 +1688,15 @@ def test_extract_function_should_not_double_extract_nested_statements():
                 self.items = items
 
             def update_quality(self):
-                def f(item):
-                    if (
-                        item.name != "Aged Brie"
-                        and item.name != "Backstage passes to a TAFKAL80ETC concert"
-                    ):
-                        print(item)
                 for item in self.items:
                     f(item=item)
 
+        def f(item):
+            if (
+                item.name != "Aged Brie"
+                and item.name != "Backstage passes to a TAFKAL80ETC concert"
+            ):
+                print(item)
         """,
     )
 
@@ -1934,12 +1957,12 @@ def test_extract_function_should_pass_keyword_only_args_as_args():
         """,
         expected="""
         def statement(*, invoice, plays) -> str:
-            def f(plays, performance):
-                return plays[performance["play_id"]]
-
             for performance in invoice["performances"]:
                 play = f(plays=plays, performance=performance)
                 print(play)
+
+        def f(plays, performance):
+            return plays[performance["play_id"]]
         """,
     )
 
@@ -2311,30 +2334,30 @@ def test_extract_function_should_extract_full_lines():
         expected="""
         class C:
             def function_definition_edit(self, arg_name: str) -> Edit:
-                def f(arg_name: str, definition, arguments):
-                    new_function = ast.FunctionDef(
-                        name=definition.name,
-                        args=ast.arguments(
-                            posonlyargs=arguments.posonlyargs,
-                            args=[*arguments.args, ast.arg(arg_name)],
-                            vararg=arguments.vararg,
-                            kwonlyargs=arguments.kwonlyargs,
-                            kw_defaults=arguments.kw_defaults,
-                            kwarg=arguments.kwarg,
-                            defaults=arguments.defaults,
-                        ),
-                        body=definition.body,
-                        decorator_list=definition.decorator_list,
-                        returns=definition.returns,
-                        type_params=definition.type_params,
-                    )
-                    return new_function
-
                 definition = self.function_definition.node
                 arguments = definition.args
 
                 new_function = f(arg_name=arg_name, definition=definition, arguments=arguments)
                 print(new_function)
+
+        def f(arg_name: str, definition, arguments):
+            new_function = ast.FunctionDef(
+                name=definition.name,
+                args=ast.arguments(
+                    posonlyargs=arguments.posonlyargs,
+                    args=[*arguments.args, ast.arg(arg_name)],
+                    vararg=arguments.vararg,
+                    kwonlyargs=arguments.kwonlyargs,
+                    kw_defaults=arguments.kw_defaults,
+                    kwarg=arguments.kwarg,
+                    defaults=arguments.defaults,
+                ),
+                body=definition.body,
+                decorator_list=definition.decorator_list,
+                returns=definition.returns,
+                type_params=definition.type_params,
+            )
+            return new_function
         """,
     )
 
@@ -2376,18 +2399,6 @@ def test_extract_function_should_extract_full_lines2():
         """,
         expected="""
         def f(refactoring, name):
-            def f_0(refactoring, calling_statement):
-                call_text = unparse(
-                    calling_statement,
-                    level=refactoring.code_selection.text_range.start.level,
-                )
-                if refactoring.code_selection.text_range.start.column == 0:
-                    call_text = (
-                        f"{INDENTATION * refactoring.code_selection.text_range.start.level}"
-                        f"{call_text}"
-                    )
-                return call_text
-
             calling_statement = refactoring.make_call(
                 has_returns=has_returns,
                 arguments=arguments,
@@ -2408,6 +2419,18 @@ def test_extract_function_should_extract_full_lines2():
                     text=call_text,
                 ),
             )
+
+        def f_0(refactoring, calling_statement):
+            call_text = unparse(
+                calling_statement,
+                level=refactoring.code_selection.text_range.start.level,
+            )
+            if refactoring.code_selection.text_range.start.column == 0:
+                call_text = (
+                    f"{INDENTATION * refactoring.code_selection.text_range.start.level}"
+                    f"{call_text}"
+                )
+            return call_text
         """,
     )
 
@@ -2425,13 +2448,13 @@ def test_extract_function_should_extract_from_keyword_argument_value():
         """,
         expected="""
         def copy_function_def(definition, *, name):
-            def f(definition, name):
-                return definition.name if name is DEFAULT else name
-
             new_function = ast.FunctionDef(
                 name=f(definition=definition, name=name)
             )
             return new_function
+
+        def f(definition, name):
+            return definition.name if name is DEFAULT else name
         """,
     )
 
@@ -2457,13 +2480,13 @@ def test_extract_function_should_preserve_known_type_annotations():
             *,
             name: str | Sentinel = DEFAULT,
         ) -> ast.FunctionDef:
-            def f(definition: ast.FunctionDef, name: str | Sentinel):
-                return definition.name if name is DEFAULT else name
-
             new_function = ast.FunctionDef(
                 name=f(definition=definition, name=name)
             )
             return new_function
+
+        def f(definition: ast.FunctionDef, name: str | Sentinel):
+            return definition.name if name is DEFAULT else name
         """,
     )
 
@@ -2714,7 +2737,6 @@ def test_refactoring_should_handle_newline_literals_in_triple_quoted_strings():
     )
 
 
-@mark.xfail
 def test_extract_function_with_full_lines_should_work():
     assert_refactors_to(
         refactoring=ExtractFunction,
@@ -2752,27 +2774,28 @@ def test_extract_function_with_full_lines_should_work():
         def rename(
             server: LanguageServer, params: RenameParams
         ) -> WorkspaceEdit | None:
-            def f(server: LanguageServer, params: RenameParams):
-                document = server.workspace.get_text_document(params.text_document.uri)
-                source_lines = tuple(split_lines(document.source))
-                line = source_lines[params.position.line]
-
-                start = find_identifier_start(line, params.position)
-                if start is None:
-                    return None
-
-                project_root = server.workspace.root_uri[len("file://") :]
-                source = get_source(
-                    uri=params.text_document.uri,
-                    project_root=project_root,
-                    lines=(*source_lines, ""),
-                )
-                project = Project(source=source, root=project_root)
-                position = source.position(row=params.position.line, column=start)
-                occurrences = project.get_occurrences(position)
-                return occurrences
             occurrences = f(server=server, params=params)
             if not occurrences:
                 return None
+
+        def f(server: LanguageServer, params: RenameParams):
+            document = server.workspace.get_text_document(params.text_document.uri)
+            source_lines = tuple(split_lines(document.source))
+            line = source_lines[params.position.line]
+
+            start = find_identifier_start(line, params.position)
+            if start is None:
+                return None
+
+            project_root = server.workspace.root_uri[len("file://") :]
+            source = get_source(
+                uri=params.text_document.uri,
+                project_root=project_root,
+                lines=(*source_lines, ""),
+            )
+            project = Project(source=source, root=project_root)
+            position = source.position(row=params.position.line, column=start)
+            occurrences = project.get_occurrences(position)
+            return occurrences
         """,
     )
