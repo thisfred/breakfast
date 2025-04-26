@@ -154,18 +154,18 @@ ScopeWithRange = (
 )
 
 
-@dataclass(order=True, frozen=True)  # pragma: nocover
 class Line(Protocol):
-    source: "Source"
-    row: int
+    @property
+    def source(self) -> "Source": ...
+
+    @property
+    def row(self) -> int: ...
 
     @property
     def start(self) -> "Position": ...
 
     @property
     def end(self) -> "Position": ...
-
-    def __contains__(self, other: "Ranged") -> bool: ...
 
     @property
     def text(self) -> str: ...
@@ -175,6 +175,8 @@ class Line(Protocol):
 
     @property
     def previous(self) -> "Line | None": ...
+
+    def __contains__(self, other: "Ranged") -> bool: ...
 
 
 class Source(Ranged, Protocol):  # pragma: nocover
