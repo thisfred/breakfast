@@ -357,14 +357,14 @@ def make_unique_name(
 
 
 def make_body(
-    selection: CodeSelection, return_node: ast.Return | None
+    text_range: TextRange, return_node: ast.Return | None
 ) -> list[ast.stmt]:
-    if selection.text_range.expression is not None:
-        return [ast.Return(value=selection.text_range.expression)]
+    if text_range.expression is not None:
+        return [ast.Return(value=text_range.expression)]
 
-    nodes = list(selection.text_range.statements)
+    nodes = list(text_range.statements)
     if not nodes:
-        if enclosing_assignment := selection.text_range.enclosing_assignment:
+        if enclosing_assignment := text_range.enclosing_assignment:
             targets = enclosing_assignment.node.targets
             value: ast.expr | ast.Tuple = (
                 ast.Tuple(targets) if len(targets) > 1 else targets[0]
@@ -373,7 +373,7 @@ def make_body(
 
     if return_node:
         nodes.append(return_node)
-    return nodes
+    return nodes or [ast.Pass()]
 
 
 @register
@@ -466,18 +466,16 @@ def make_extract_callable_edits(
     refactoring: ExtractFunctionEditor | ExtractMethodEditor, name: str
 ) -> Iterator[Edit]:
     enclosing_scope = refactoring.range.enclosing_scopes[-1]
+    # TODO: make UsageCollector take a text_range instead of CodeSelection
     usages = UsageCollector(refactoring.selection, enclosing_scope)
     return_node = make_return_node(
         usages.modified_in_selection, usages.used_after_selection
     )
-    body = make_body(selection=refactoring.selection, return_node=return_node)
-    if not body:
-        logger.warning("Could not extract callable body.")
-        return
+    body = make_body(text_range=refactoring.range, return_node=return_node)
 
     name = make_unique_name(
         original_name=name,
-        enclosing_scope=refactoring.selection.text_range.enclosing_scopes[0],
+        enclosing_scope=refactoring.range.enclosing_scopes[0],
     )
     arguments = make_arguments(
         usages.defined_before_selection, usages.used_in_selection
@@ -489,7 +487,7 @@ def make_extract_callable_edits(
 
     has_returns = any(
         found
-        for node in refactoring.selection.text_range.statements
+        for node in refactoring.range.statements
         for found in find_returns(node)
     )
     calling_statement = refactoring.make_call(
