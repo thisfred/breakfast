@@ -338,19 +338,6 @@ class ExtractFunctionEditor:
         func = ast.Name(id=name)
         return make_call(return_node, func, arguments, has_returns)
 
-    def compute_new_level(
-        self,
-        enclosing_scope: ScopeWithRange,
-        start_of_scope: Position,
-    ) -> int:
-        return self.new_level
-
-    def get_insert_position(
-        self,
-        enclosing_scope: ScopeWithRange,
-    ) -> Position:
-        return self.insert_position
-
     def make_decorators(self, usages: UsageCollector) -> list[ast.expr]:
         return []
 
@@ -404,14 +391,26 @@ class ExtractMethodEditor:
     selection: CodeSelection
     range: TextRange
     in_class_method: bool
+    insert_position: Position
+    new_level: int
 
     @classmethod
     def from_selection(cls, selection: CodeSelection) -> Self | None:
+        enclosing_scope = selection.text_range.enclosing_scopes[-1]
+        new_level = enclosing_scope.start.column // 4
+
+        insert_position = (
+            enclosing_scope.end.line.next.start
+            if enclosing_scope.end.line.next
+            else enclosing_scope.end.line.end
+        )
         return (
             cls(
                 selection=selection,
                 range=selection.text_range,
                 in_class_method=selection.in_class_method,
+                new_level=new_level,
+                insert_position=insert_position,
             )
             if (
                 selection.end > selection.start
@@ -447,22 +446,6 @@ class ExtractMethodEditor:
                 return_node, func, arguments, has_returns
             )
         return calling_statement
-
-    @staticmethod
-    def compute_new_level(
-        enclosing_scope: ScopeWithRange, start_of_scope: Position
-    ) -> int:
-        return start_of_scope.column // 4
-
-    @staticmethod
-    def get_insert_position(
-        enclosing_scope: ScopeWithRange,
-    ) -> Position:
-        return (
-            enclosing_scope.end.line.next.start
-            if enclosing_scope.end.line.next
-            else enclosing_scope.end.line.end
-        )
 
     def make_decorators(self, usages: UsageCollector) -> list[ast.expr]:
         if (
@@ -503,10 +486,6 @@ def make_extract_callable_edits(
     callable_definition = make_function(
         decorator_list=decorator_list, name=name, body=body, arguments=arguments
     )
-    start_of_scope = enclosing_scope.start
-    new_level = refactoring.compute_new_level(
-        enclosing_scope=enclosing_scope, start_of_scope=start_of_scope
-    )
 
     has_returns = any(
         found
@@ -522,17 +501,15 @@ def make_extract_callable_edits(
             usages.self_or_cls.name if usages.self_or_cls else None
         ),
     )
-    insert_position = refactoring.get_insert_position(
-        enclosing_scope=enclosing_scope
-    )
+
     yield replace_with_node(
-        insert_position.as_range,
+        refactoring.insert_position.as_range,
         callable_definition,
         add_newline_after=True,
         add_indentation_after=True,
-        level=new_level,
+        level=refactoring.new_level,
     )
-    print(f"{insert_position=}")
+    print(f"{refactoring.insert_position=}")
     print(f"{refactoring.selection.text_range=}")
     yield replace_with_node(
         text_range=refactoring.selection.text_range,
