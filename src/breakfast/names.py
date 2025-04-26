@@ -34,7 +34,11 @@ ASYNC_DEF_OFFSET = len("async def ")
 
 
 def is_occurrence(node: ScopeNode) -> TypeGuard[Occurrence]:
-    return node.position is not None and node.name is not None
+    return (
+        node.position is not None
+        and node.name is not None
+        and node.source is not None
+    )
 
 
 def all_occurrence_positions(

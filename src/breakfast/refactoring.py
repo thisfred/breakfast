@@ -469,7 +469,7 @@ def make_extract_callable_edits(
 ) -> Iterator[Edit]:
     enclosing_scope = refactoring.range.enclosing_scopes[-1]
     usages = UsageCollector(
-        refactoring.selection.text_range,
+        refactoring.range,
         enclosing_scope,
         in_static_method=refactoring.selection.in_static_method,
     )
@@ -513,9 +513,9 @@ def make_extract_callable_edits(
         level=refactoring.new_level,
     )
     print(f"{refactoring.insert_position=}")
-    print(f"{refactoring.selection.text_range=}")
+    print(f"{refactoring.range=}")
     yield replace_with_node(
-        text_range=refactoring.selection.text_range,
+        text_range=refactoring.range,
         node=calling_statement,
     )
 

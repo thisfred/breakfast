@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from breakfast.types import NodeType, NotFoundError, Position
+from breakfast.types import NodeType, NotFoundError, Position, Source
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,10 @@ class ScopeNode:
     node_type: NodeType = NodeType.SCOPE
     rules: tuple[Rule, ...] = ()
     ast: AST | None = None
+
+    @property
+    def source(self) -> Source | None:
+        return self.position.source if self.position else None
 
     @property
     def entry(self) -> "ScopeNode":
