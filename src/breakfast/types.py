@@ -248,6 +248,3 @@ class Occurrence(Protocol):  # pragma: nocover
 
     @property
     def node_type(self) -> NodeType: ...
-
-    @property
-    def source(self) -> Source: ...
