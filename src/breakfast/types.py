@@ -61,7 +61,6 @@ class Position(Protocol):
     @property
     def end(self) -> "Position": ...
 
-    def __contains__(self, other: "Ranged") -> bool: ...
     def __add__(self, other: int, /) -> "Position": ...
     def __sub__(self, to_subtract: int, /) -> "Position": ...
     def through(self, end: "Position") -> "TextRange": ...
@@ -78,9 +77,12 @@ def contains(self: Ranged, other: Ranged) -> bool:
 
 
 @dataclass(order=True, frozen=True)  # pragma: nocover
-class TextRange(Ranged, Protocol):
+class TextRange(Protocol):
     start: Position
     end: Position
+
+    @property
+    def source(self) -> "Source": ...
 
     @property
     def text(self) -> str: ...
@@ -156,9 +158,6 @@ ScopeWithRange = (
 
 class Line(Protocol):
     @property
-    def source(self) -> "Source": ...
-
-    @property
     def row(self) -> int: ...
 
     @property
@@ -176,10 +175,8 @@ class Line(Protocol):
     @property
     def previous(self) -> "Line | None": ...
 
-    def __contains__(self, other: "Ranged") -> bool: ...
 
-
-class Source(Ranged, Protocol):  # pragma: nocover
+class Source(Protocol):  # pragma: nocover
     @property
     def path(self) -> str: ...
 
@@ -224,9 +221,6 @@ class Edit:
     @property
     def end(self) -> Position:
         return self.text_range.end
-
-    def __contains__(self, other: "Ranged") -> bool:
-        return contains(self, other)
 
     @property
     def source(self) -> "Source":
