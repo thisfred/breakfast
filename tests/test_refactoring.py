@@ -1,3 +1,5 @@
+from pytest import mark
+
 from breakfast.refactoring import (
     AddParameter,
     CodeSelection,
@@ -10,6 +12,7 @@ from breakfast.refactoring import (
     ExtractMethod,
     ExtractVariable,
     ExtractVariableEditor,
+    FieldToProperty,
     InlineCall,
     InlineVariable,
     MethodToProperty,
@@ -2797,5 +2800,39 @@ def test_extract_function_with_full_lines_should_work():
             position = source.position(row=params.position.line, column=start)
             occurrences = project.get_occurrences(position)
             return occurrences
+        """,
+    )
+
+
+@mark.xfail
+def test_field_to_property_renames_field():
+    assert_refactors_to(
+        refactoring=FieldToProperty,
+        target="self.foo",
+        code="""
+        class C:
+            def __init__(self, foo):
+                self.foo = foo
+
+            def update_foo(self, new_value):
+                self.foo = new_value
+
+            def print_foo(self):
+                print(self.foo)
+        """,
+        expected="""
+        class C:
+            def __init__(self, foo):
+                self._foo = foo
+
+            @property
+            def foo(self):
+                return self._foo
+
+            def update_foo(self, new_value):
+                self._foo = new_value
+
+            def print_foo(self):
+                print(self.foo)
         """,
     )
