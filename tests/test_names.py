@@ -1729,12 +1729,14 @@ class NameCollector:
             names=defaultdict(list),
             positions={},
             qualified_names=defaultdict(list),
-            scopes=[(("/",), {})],
+            scopes=[],
             rewrites=[],
         )
         for source in sources:
+            instance.jump_to(tuple(source.module_name.split(".")))
             for event in find_names(source.ast, source):
                 event(instance)
+            instance.leave_scope()
 
         return instance
 
