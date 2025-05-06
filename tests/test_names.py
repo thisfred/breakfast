@@ -146,7 +146,7 @@ def test_kwarg_value():
             foo = b
             return foo
         """,
-        # all_occurrences=new_all_occurrences,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -1825,9 +1825,9 @@ def name(node: ast.Name, source: types.Source) -> Iterator[Event]:
 def function_definition(
     node: ast.FunctionDef | ast.AsyncFunctionDef, source: types.Source
 ) -> Iterator[Event]:
-    print(f"{ast.dump(node)=}")
     match node:
-        case ast.FunctionDef(name=name, body=body):
+        case ast.FunctionDef(name=name, args=args, body=body):
+            yield from find_names(args, source)
             yield EnterScope(name)
             yield EnterScope("/")
             for statement in body:
