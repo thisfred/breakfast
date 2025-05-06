@@ -27,35 +27,6 @@ improve testing that will make stronger guarantees there.
 
 ...
 
-## Implementation
-
-Based in part on the work done on Scope Graphs/Stack Graphs by Eelco
-Visser, Hendrik van Antwerpen, Douglas Creager, and others. (Though none
-of these fine people are responsible for, involved in or aware of this
-project.)
-
-
-It's likely that my implementation is naive or incorrect in places, and
-I've certainly resorted to some hacks to deal with things I couldn't
-figure out how to handle from the papers and presentations I found
-online.
-
-Douglas Creager's excellent Strangeloop talk in particular, is what
-inspired me to switch to using Stack Graphs in this project. Even if you
-have no interest in using breakfast, I highly recommend his
-presentation.
-
-Links:
-
-* <https://www.youtube.com/watch?v=l2R1PTGcwrE>
-* <https://pl.ewi.tudelft.nl/research/projects/scope-graphs/>
-
-I've included some graphviz code to assist in debugging which renders
-scope graphs in a similar way to the one used in the presentation.The
-result is much uglier, but worked for its intended purpose.
-
-
-
 ## Why 'breakfast'?
 
 
