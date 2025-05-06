@@ -8,7 +8,7 @@ from pytest import fixture
 
 from breakfast import types
 from breakfast.code_generation import unparse
-from breakfast.names import all_occurrence_positions
+from breakfast.names import all_occurrence_positions, all_occurrences
 from breakfast.refactoring import CodeSelection, Refactoring
 from breakfast.source import Source, TextRange
 
@@ -60,6 +60,35 @@ def assert_refactors_to(
     editor = refactoring.from_selection(selection)
     assert editor
     edits = editor.edits
+    actual = apply_edits(source=source, edits=edits)
+    expected = dedent(expected).strip()
+    assert_ast_equals(actual, expected)
+
+
+def assert_renames_to(
+    *,
+    target: str,
+    new: str,
+    code: str | types.Source,
+    expected: str,
+    occurrence: int = 1,
+    all_occurrences=all_occurrences,
+):
+    source = make_source(code) if isinstance(code, str) else code
+    selection_range = range_for(target, source, occurrence)
+    position = selection_range.start
+    occurrences = all_occurrences(
+        position, sources=[source], in_reverse_order=True
+    )
+    edits = [
+        types.Edit(
+            text_range=TextRange(
+                start=o.position, end=o.position + len(target)
+            ),
+            text=new,
+        )
+        for o in occurrences
+    ]
     actual = apply_edits(source=source, edits=edits)
     expected = dedent(expected).strip()
     assert_ast_equals(actual, expected)
