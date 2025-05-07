@@ -1,6 +1,6 @@
 import ast
 import sys
-from collections import defaultdict
+from collections import defaultdict, deque
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from functools import singledispatch
@@ -307,7 +307,7 @@ def test_does_not_rename_random_attributes():
 
         renamed = os.path.dirname(__file__)
         """,
-        # all_occurrences=new_all_occurrences,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -329,6 +329,7 @@ def test_finds_parameter():
         arg = 8
         fun(renamed=arg)
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -1704,34 +1705,14 @@ class NameCollector:
     names: dict[str, list[Occurrence]]
     positions: dict[types.Position, tuple[Occurrence, QualifiedName]]
     qualified_names: dict[QualifiedName, list[Occurrence]]
-    scopes: list[tuple[QualifiedName, dict[str, QualifiedName]]]
+    scopes: list[QualifiedName]
     rewrites: list[Rewrite]
-    delays: list[
-        tuple[
-            list[tuple[QualifiedName, dict[str, QualifiedName]]],
-            Iterator[Event],
-        ]
-    ]
+    delays: deque[tuple[list[QualifiedName], Iterator[Event]]]
+    scope_names: dict[QualifiedName, dict[str, QualifiedName]]
 
     @classmethod
     def from_source(cls, source: types.Source) -> Self:
-        instance = cls(
-            sources={Path(source.path): source},
-            names=defaultdict(list),
-            positions={},
-            qualified_names=defaultdict(list),
-            scopes=[(tuple(source.module_name.split(".")), {})],
-            rewrites=[],
-            delays=[],
-        )
-        for event in find_names(source.ast, source):
-            event(instance)
-        for scopes, iterator in instance.delays:
-            instance.scopes = scopes
-            for event in iterator:
-                event(instance)
-
-        return instance
+        return cls.from_sources(sources=[source])
 
     @classmethod
     def from_sources(cls, sources: Iterable[types.Source]) -> Self:
@@ -1742,14 +1723,16 @@ class NameCollector:
             qualified_names=defaultdict(list),
             scopes=[],
             rewrites=[],
-            delays=[],
+            delays=deque([]),
+            scope_names=defaultdict(dict),
         )
         for source in sources:
             instance.jump_to(tuple(source.module_name.split(".")))
             for event in find_names(source.ast, source):
                 event(instance)
             instance.leave_scope()
-            for scopes, iterator in instance.delays:
+            while instance.delays:
+                scopes, iterator = instance.delays.popleft()
                 instance.scopes = scopes
                 for event in iterator:
                     event(instance)
@@ -1774,13 +1757,14 @@ class NameCollector:
     def add_occurrence(self, occurrence: Occurrence) -> None:
         self.names[occurrence.name].append(occurrence)
 
-        qualified_name = (*self.scopes[-1][0], occurrence.name)
-        if occurrence.name in self.scopes[-1][1]:
-            qualified_name = self.scopes[-1][1][occurrence.name]
+        qualified_name = (*self.scopes[-1], occurrence.name)
+        if occurrence.name in self.scope_names[self.scopes[-1]]:
+            qualified_name = self.scope_names[self.scopes[-1]][occurrence.name]
         elif occurrence.is_definition:
-            self.scopes[-1][1][occurrence.name] = qualified_name
+            self.scope_names[self.scopes[-1]][occurrence.name] = qualified_name
         else:
-            for _, names in self.scopes[-1::-1]:
+            for scope in self.scopes[-1::-1]:
+                names = self.scope_names[scope]
                 if occurrence.name in names:
                     qualified_name = names[occurrence.name]
 
@@ -1790,7 +1774,7 @@ class NameCollector:
     def add_substitute(self, name: str, replacement: QualifiedName) -> None:
         self.rewrites.append(
             Substitute(
-                original_name=(*self.scopes[-1][0], name),
+                original_name=(*self.scopes[-1], name),
                 replacement=replacement,
             )
         )
@@ -1800,19 +1784,22 @@ class NameCollector:
     ) -> None:
         self.rewrites.append(
             RewritePrefix(
-                prefix=(*self.scopes[-1][0], *target),
-                replacement=self.rewrite((*self.scopes[-1][0], *value)),
+                prefix=(*self.scopes[-1], *target),
+                replacement=self.rewrite((*self.scopes[-1], *value)),
             )
         )
 
     def enter_scope(self, name: str) -> None:
-        self.scopes.append(((*self.scopes[-1][0], name), {}))
+        self.scopes.append((*self.scopes[-1], name))
+        print(f"{self.scopes[-1]=}")
 
     def jump_to(self, scope: QualifiedName) -> None:
-        self.scopes.append((scope, {}))
+        self.scopes.append(scope)
+        print(f"{self.scopes[-1]=}")
 
     def leave_scope(self) -> None:
         self.scopes.pop()
+        print(f"{self.scopes[-1] if self.scopes else []=}")
 
     def delay(self, delayed: Iterator[Event]):
         self.delays.append((self.scopes[:], delayed))
@@ -1846,9 +1833,12 @@ def function_definition(
 ) -> Iterator[Event]:
     match node:
         case ast.FunctionDef(name=name, args=args, body=body):
-            yield from find_names(args, source)
+            for default in args.defaults:
+                yield from find_names(default, source)
             yield EnterScope(name)
             yield EnterScope("/")
+            for arg in args.args:
+                yield from find_names(arg, source)
 
             def process_body() -> Iterator[Event]:
                 for statement in body:
@@ -1860,21 +1850,62 @@ def function_definition(
 
 
 @find_names.register
-def attribute(node: ast.Attribute, source: types.Source) -> Iterator[Event]:
-    accumulator = Accumulator()
-    for event in find_names(node.value, source):
-        yield event
-        if name := accumulator.process(event):
+def call(node: ast.Call, source: types.Source) -> Iterator[Event]:
+    print(ast.dump(node))
+    yield from find_names(node.func, source)
+    for arg in node.args:
+        yield from find_names(arg, source)
+    for keyword in node.keywords:
+        yield from find_names(keyword.value, source)
+    match node.func:
+        case ast.Name():
+            name = node.func.id
             yield EnterScope(name)
+            yield EnterScope("/")
+            for keyword in node.keywords:
+                if keyword.arg is not None:
+                    yield Occurrence(
+                        name=keyword.arg,
+                        position=source.node_position(keyword),
+                        ast=keyword,
+                        is_definition=False,
+                    )
+            yield LeaveScope()
+            yield LeaveScope()
 
-    end = source.node_end_position(node.value)
 
+@find_names.register
+def arg(node: ast.arg, source: types.Source) -> Iterator[Event]:
     yield Occurrence(
-        name=node.attr,
-        position=end + 1 if end else source.node_position(node),
+        name=node.arg,
+        position=source.node_position(node),
         ast=node,
-        is_definition=isinstance(node.ctx, ast.Store),
+        is_definition=True,
     )
+
+
+@find_names.register
+def attribute(node: ast.Attribute, source: types.Source) -> Iterator[Event]:
+    match node:
+        case ast.Attribute(value=value, attr=attr) if isinstance(
+            value, ast.Name
+        ):
+            name = value.id
+            yield Occurrence(
+                name=name,
+                position=source.node_position(value),
+                ast=value,
+                is_definition=False,
+            )
+            yield EnterScope(name)
+            end = source.node_end_position(value)
+            yield Occurrence(
+                name=attr,
+                position=end + 1 if end else source.node_position(node),
+                ast=node,
+                is_definition=isinstance(node.ctx, ast.Store),
+            )
+            yield LeaveScope()
 
 
 @dataclass
