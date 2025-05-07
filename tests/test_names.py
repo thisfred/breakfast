@@ -240,6 +240,7 @@ def test_distinguishes_local_variables_from_global():
 
         var = 20
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -265,6 +266,7 @@ def test_finds_non_local_variable():
 
         renamed = 20
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -287,6 +289,7 @@ def test_finds_non_local_variable_defined_after_use():
 
         renamed = 20
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -304,6 +307,7 @@ def test_does_not_rename_random_attributes():
 
         renamed = os.path.dirname(__file__)
         """,
+        # all_occurrences=new_all_occurrences,
     )
 
 
@@ -1645,10 +1649,6 @@ class Rewrite(Protocol):
     def __call__(self, qualified_name: QualifiedName) -> QualifiedName: ...
 
 
-class ScopeRewrite(Protocol):
-    def __call__(self, applied_to: "NameCollector") -> None: ...
-
-
 class Event(Protocol):
     def __call__(self, applied_to: "NameCollector") -> None: ...
 
@@ -1706,6 +1706,12 @@ class NameCollector:
     qualified_names: dict[QualifiedName, list[Occurrence]]
     scopes: list[tuple[QualifiedName, dict[str, QualifiedName]]]
     rewrites: list[Rewrite]
+    delays: list[
+        tuple[
+            list[tuple[QualifiedName, dict[str, QualifiedName]]],
+            Iterator[Event],
+        ]
+    ]
 
     @classmethod
     def from_source(cls, source: types.Source) -> Self:
@@ -1716,9 +1722,14 @@ class NameCollector:
             qualified_names=defaultdict(list),
             scopes=[(tuple(source.module_name.split(".")), {})],
             rewrites=[],
+            delays=[],
         )
         for event in find_names(source.ast, source):
             event(instance)
+        for scopes, iterator in instance.delays:
+            instance.scopes = scopes
+            for event in iterator:
+                event(instance)
 
         return instance
 
@@ -1731,12 +1742,17 @@ class NameCollector:
             qualified_names=defaultdict(list),
             scopes=[],
             rewrites=[],
+            delays=[],
         )
         for source in sources:
             instance.jump_to(tuple(source.module_name.split(".")))
             for event in find_names(source.ast, source):
                 event(instance)
             instance.leave_scope()
+            for scopes, iterator in instance.delays:
+                instance.scopes = scopes
+                for event in iterator:
+                    event(instance)
 
         return instance
 
@@ -1798,6 +1814,9 @@ class NameCollector:
     def leave_scope(self) -> None:
         self.scopes.pop()
 
+    def delay(self, delayed: Iterator[Event]):
+        self.delays.append((self.scopes[:], delayed))
+
 
 def has_prefix(name: QualifiedName, prefix: QualifiedName) -> bool:
     if len(prefix) >= len(name):
@@ -1830,8 +1849,12 @@ def function_definition(
             yield from find_names(args, source)
             yield EnterScope(name)
             yield EnterScope("/")
-            for statement in body:
-                yield from find_names(statement, source)
+
+            def process_body() -> Iterator[Event]:
+                for statement in body:
+                    yield from find_names(statement, source)
+
+            yield Delay(process_body())
             yield LeaveScope()
             yield LeaveScope()
 
@@ -1921,6 +1944,14 @@ class AddPrefixRewrite:
 
     def __call__(self, applied_to: NameCollector) -> None:
         applied_to.add_prefix_rewrite(target=self.target, value=self.value)
+
+
+@dataclass
+class Delay:
+    delayed: Iterator[Event]
+
+    def __call__(self, applied_to: NameCollector) -> None:
+        applied_to.delay(delayed=self.delayed)
 
 
 @find_names.register
