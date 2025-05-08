@@ -347,6 +347,7 @@ def test_finds_function():
             return 'result'
         result = renamed()
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -366,6 +367,7 @@ def test_finds_class():
 
         instance = Renamed()
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -389,6 +391,7 @@ def test_finds_method_name():
 
         unbound = A.renamed
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -1833,6 +1836,12 @@ def function_definition(
 ) -> Iterator[Event]:
     match node:
         case ast.FunctionDef(name=name, args=args, body=body):
+            yield Occurrence(
+                name=name,
+                position=source.node_position(node) + len("def "),
+                ast=node,
+                is_definition=True,
+            )
             for default in args.defaults:
                 yield from find_names(default, source)
             yield EnterScope(name)
@@ -1850,8 +1859,28 @@ def function_definition(
 
 
 @find_names.register
-def call(node: ast.Call, source: types.Source) -> Iterator[Event]:
+def class_definition(
+    node: ast.ClassDef, source: types.Source
+) -> Iterator[Event]:
     print(ast.dump(node))
+    yield Occurrence(
+        name=node.name,
+        position=source.node_position(node) + len("class "),
+        ast=node,
+        is_definition=True,
+    )
+    yield EnterScope(node.name)
+
+    def process_body() -> Iterator[Event]:
+        for statement in node.body:
+            yield from find_names(statement, source)
+
+    yield Delay(process_body())
+    yield LeaveScope()
+
+
+@find_names.register
+def call(node: ast.Call, source: types.Source) -> Iterator[Event]:
     yield from find_names(node.func, source)
     for arg in node.args:
         yield from find_names(arg, source)
