@@ -612,6 +612,7 @@ def test_finds_dict_comprehension_variables():
         foo = {renamed: None for renamed in range(100) if renamed % 3}
         var = 2
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -632,6 +633,7 @@ def test_finds_list_comprehension_variables():
             renamed for renamed in range(100) if renamed % 3]
         var = 200
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -648,10 +650,11 @@ def test_finds_set_comprehension_variables():
         var = 100
         foo = {renamed for renamed in range(100) if renamed % 3}
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
-def test_finds_generator_comprehension_variables():
+def test_finds_generator_expression_variables():
     assert_renames_to(
         target="var",
         occurrence=3,
@@ -664,6 +667,7 @@ def test_finds_generator_comprehension_variables():
         var = 100
         foo = (renamed for renamed in range(100) if renamed % 3)
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -1968,6 +1972,31 @@ def call(node: ast.Call, source: types.Source) -> Iterator[Event]:
             yield LeaveScope()
             for _ in names:
                 yield LeaveScope()
+
+
+@find_names.register
+def comprehension(
+    node: ast.GeneratorExp | ast.SetComp | ast.ListComp, source: types.Source
+) -> Iterator[Event]:
+    yield EnterScope(f"/{node.lineno}-{node.col_offset}/")
+    for generator in node.generators:
+        yield from find_names(generator, source)
+    yield from find_names(node.elt, source)
+    yield LeaveScope()
+
+
+@find_names.register
+def dict_comprehension(
+    node: ast.DictComp, source: types.Source
+) -> Iterator[Event]:
+    yield EnterScope(f"/{node.lineno}-{node.col_offset}/")
+    print(ast.dump(node.key))
+    print(ast.dump(node.value))
+    for generator in node.generators:
+        yield from find_names(generator, source)
+    yield from find_names(node.key, source)
+    yield from find_names(node.value, source)
+    yield LeaveScope()
 
 
 def process_keywords(node: ast.Call, source: types.Source) -> Iterator[Event]:

@@ -2836,3 +2836,30 @@ def test_field_to_property_renames_field():
                 print(self.foo)
         """,
     )
+
+
+@mark.xfail
+def test_extract_generator():
+    assert_refactors_to(
+        refactoring=ExtractFunction,
+        target=("a = a + 1", "yield a"),
+        code="""
+        def fun(a):
+            if a == 1:
+                a = a + 1
+                yield a
+            else:
+                return
+        """,
+        expected="""
+        def fun()
+            if a == 1:
+                yield from f(a)
+            else:
+                return
+
+        def f(a):
+            a = a + 1
+            yield a
+        """,
+    )
