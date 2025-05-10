@@ -80,6 +80,7 @@ def assert_renames_to(
     occurrences = all_occurrences(
         position, sources=[source], in_reverse_order=True
     )
+
     edits = [
         types.Edit(
             text_range=TextRange(
