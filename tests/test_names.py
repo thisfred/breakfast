@@ -687,6 +687,7 @@ def test_finds_loop_variables_outside_loop():
             print(renamed)
         print(renamed)
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -702,6 +703,7 @@ def test_finds_loop_variables():
         for renamed in []:
             print(renamed)
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -717,6 +719,7 @@ def test_finds_tuple_unpack():
         foo, renamed = 1, 2
         print(renamed)
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -763,6 +766,7 @@ def test_recognizes_multiple_assignment_1():
         renamed = 1
         foo, bar = renamed, renamed
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -811,6 +815,7 @@ def test_finds_enclosing_scope_variable_from_comprehension():
         renamed = 3
         res = [foo for foo in range(100) if foo % renamed]
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -838,6 +843,7 @@ def test_finds_static_method():
         a = A()
         b = a.renamed('foo')
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -861,6 +867,7 @@ def test_finds_method_after_call():
 
         b = A().renamed('foo')
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -948,6 +955,7 @@ def test_finds_global_variable_in_method_scope():
             def bar(self):
                 return renamed
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -1032,6 +1040,7 @@ def test_finds_multiple_definitions():
             renamed = 3 - a
         print(renamed)
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -1091,6 +1100,7 @@ def test_does_not_rename_imported_names():
 
         b()
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -1132,6 +1142,7 @@ def test_finds_default_values():
         def f(a=renamed):
             ...
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -1149,6 +1160,7 @@ def test_finds_keyword_argument_values():
 
         f(a=renamed)
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -1164,6 +1176,7 @@ def test_finds_unpacked_names():
         for renamed, b in thing:
             print(renamed)
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -1179,6 +1192,7 @@ def test_unicode_strings():
         renamed = Thing()
         var = "↑" + renamed.attr
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -1282,6 +1296,7 @@ def test_none_type_annotation_should_not_break_things():
         def renamed() -> None:
             ...
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -1303,6 +1318,7 @@ def test_should_rename_annotated_class_property():
             def f(self):
                 self.renamed = ""
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -1387,6 +1403,7 @@ def test_should_rename_type_variable_bounds():
 
         type T[U: Renamed] = X[U]
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -1481,6 +1498,7 @@ def test_should_find_multiple_assignment_in_method():
                 start, renamed = self.extended_range
                 text = start.through(renamed).text
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -1497,6 +1515,7 @@ def test_should_find_arguments_in_chained_calls():
         renamed = 1
         b = c.d(renamed).e
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
@@ -1593,7 +1612,6 @@ def test_dogfood(project_root):
     assert graph is not None
 
 
-@mark.xfail
 def test_should_find_attribute_in_index():
     assert_renames_to(
         target="this",
@@ -1606,6 +1624,7 @@ def test_should_find_attribute_in_index():
         def add_occurrence(renamed, applied_to):
             applied_to.positions[renamed.position] = renamed
         """,
+        all_occurrences=new_all_occurrences,
     )
 
 
