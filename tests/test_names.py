@@ -1976,27 +1976,32 @@ def call(node: ast.Call, source: types.Source) -> Iterator[Event]:
 
 @find_names.register
 def comprehension(
-    node: ast.GeneratorExp | ast.SetComp | ast.ListComp, source: types.Source
+    node: ast.GeneratorExp | ast.SetComp | ast.ListComp | ast.DictComp,
+    source: types.Source,
 ) -> Iterator[Event]:
     yield EnterScope(f"/{node.lineno}-{node.col_offset}/")
     for generator in node.generators:
         yield from find_names(generator, source)
-    yield from find_names(node.elt, source)
+    for sub_node in sub_nodes(node):
+        yield from find_names(sub_node, source)
     yield LeaveScope()
 
 
-@find_names.register
-def dict_comprehension(
-    node: ast.DictComp, source: types.Source
-) -> Iterator[Event]:
-    yield EnterScope(f"/{node.lineno}-{node.col_offset}/")
-    print(ast.dump(node.key))
-    print(ast.dump(node.value))
-    for generator in node.generators:
-        yield from find_names(generator, source)
-    yield from find_names(node.key, source)
-    yield from find_names(node.value, source)
-    yield LeaveScope()
+@singledispatch
+def sub_nodes(node: ast.AST) -> Iterable[ast.AST]:
+    return ()
+
+
+@sub_nodes.register
+def sub_nodes_comprehension(
+    node: ast.GeneratorExp | ast.SetComp | ast.ListComp,
+) -> Iterable[ast.AST]:
+    return (node.elt,)
+
+
+@sub_nodes.register
+def sub_nodes_dictionary_comprehension(node: ast.DictComp) -> Iterable[ast.AST]:
+    return (node.key, node.value)
 
 
 def process_keywords(node: ast.Call, source: types.Source) -> Iterator[Event]:
