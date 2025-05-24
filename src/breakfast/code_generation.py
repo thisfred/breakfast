@@ -547,6 +547,13 @@ def match_as(node: ast.MatchAs, level: int) -> Iterator[str]:
 
 
 @to_source.register
+def match_or(node: ast.MatchOr, level: int) -> Iterator[str]:
+    yield "("
+    yield from with_separators(node.patterns, level, separator=" | ")
+    yield ")"
+
+
+@to_source.register
 def match_class(node: ast.MatchClass, level: int) -> Iterator[str]:
     yield from to_source(node.cls, level)
     yield "("
@@ -696,6 +703,16 @@ def constant(node: ast.Constant, level: int) -> Iterator[str]:
         yield result
     else:
         yield repr(node.value)
+
+
+@to_source.register
+def nonlocal_node(node: ast.Nonlocal, level: int) -> Iterator[str]:
+    yield f'nonlocal {', '.join (node.names)}'
+
+
+@to_source.register
+def global_node(node: ast.Nonlocal, level: int) -> Iterator[str]:
+    yield f'global {', '.join (node.names)}'
 
 
 def render_body(statements: Sequence[ast.AST], level: int) -> Iterator[str]:

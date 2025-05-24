@@ -74,7 +74,11 @@ def assert_renames_to(
     occurrence: int = 1,
     all_occurrences=all_occurrences,
 ):
-    source = make_source(code) if isinstance(code, str) else code
+    source = (
+        make_source(code, filename="source.py")
+        if isinstance(code, str)
+        else code
+    )
     selection_range = range_for(target, source, occurrence)
     position = selection_range.start
     occurrences = all_occurrences(
