@@ -16,7 +16,7 @@ from breakfast import types
 from breakfast.names import (
     all_occurrence_positions,
 )
-from breakfast.source import Position, TextRange
+from breakfast.source import Position, SubSource, TextRange
 from breakfast.visitor import generic_visit
 from tests.conftest import (
     apply_edits,
@@ -1166,7 +1166,6 @@ def test_unicode_strings():
     )
 
 
-@mark.xfail
 def test_pattern_matching_should_only_find_occurrences_in_a_single_case():
     assert_renames_to(
         target="a",
@@ -1190,7 +1189,6 @@ def test_pattern_matching_should_only_find_occurrences_in_a_single_case():
     )
 
 
-@mark.xfail
 def test_should_find_class_used_in_method_annotation():
     assert_renames_to(
         target="C",
@@ -1214,7 +1212,6 @@ def test_should_find_class_used_in_method_annotation():
     )
 
 
-@mark.xfail
 def test_should_find_class_used_in_string_annotation():
     assert_renames_to(
         target="C",
@@ -1236,7 +1233,6 @@ def test_should_find_class_used_in_string_annotation():
     )
 
 
-@mark.xfail
 def test_should_find_class_used_in_return_annotation():
     assert_renames_to(
         target="C",
@@ -1297,7 +1293,6 @@ def test_should_rename_annotated_class_property():
 @mark.skipif(
     sys.version_info < (3, 12), reason="requires Python 3.12 or higher"
 )
-@mark.xfail
 def test_should_rename_type_parameters():
     assert_renames_to(
         target="T",
@@ -1316,7 +1311,6 @@ def test_should_rename_type_parameters():
 @mark.skipif(
     sys.version_info < (3, 12), reason="requires Python 3.12 or higher"
 )
-@mark.xfail
 def test_should_consider_type_vars_local_to_function():
     assert_renames_to(
         target="T",
@@ -1341,7 +1335,6 @@ def test_should_consider_type_vars_local_to_function():
 @mark.skipif(
     sys.version_info < (3, 12), reason="requires Python 3.12 or higher"
 )
-@mark.xfail
 def test_should_rename_type_parameters_in_class():
     assert_renames_to(
         target="T",
@@ -1381,7 +1374,6 @@ def test_should_rename_type_variable_bounds():
     )
 
 
-@mark.xfail
 def test_should_consider_parameter_instance_of_type_annotation():
     assert_renames_to(
         target="m",
@@ -1405,7 +1397,6 @@ def test_should_consider_parameter_instance_of_type_annotation():
     )
 
 
-@mark.xfail
 def test_should_consider_return_value_instance_of_type_annotation():
     assert_renames_to(
         target="m",
@@ -1435,7 +1426,6 @@ def test_should_consider_return_value_instance_of_type_annotation():
     )
 
 
-@mark.xfail
 def test_should_find_decorators():
     assert_renames_to(
         target="f",
@@ -1459,7 +1449,6 @@ def test_should_find_decorators():
     )
 
 
-@mark.xfail
 def test_should_find_multiple_assignment_in_method():
     assert_renames_to(
         target="end",
@@ -1479,7 +1468,6 @@ def test_should_find_multiple_assignment_in_method():
     )
 
 
-@mark.xfail
 def test_should_find_arguments_in_chained_calls():
     assert_renames_to(
         target="a",
@@ -1516,7 +1504,6 @@ def test_should_find_async_function_definition():
     )
 
 
-@mark.xfail
 def test_should_find_name_in_index_lookup():
     assert_renames_to(
         target="b",
@@ -1524,16 +1511,15 @@ def test_should_find_name_in_index_lookup():
         new="renamed",
         code="""
         b = 1
-        b.c.d[b.f].e
+        b.c.d[b.f].e = 2
         """,
         expected="""
         renamed = 1
-        renamed.c.d[renamed.f].e
+        renamed.c.d[renamed.f].e = 2
         """,
     )
 
 
-@mark.xfail
 def test_name_for_type_of_keyword_only_argument_should_be_found():
     assert_renames_to(
         target="Refactor",
@@ -1561,7 +1547,6 @@ def test_name_for_type_of_keyword_only_argument_should_be_found():
     )
 
 
-@mark.xfail
 def test_attribute_in_string_annotation():
     assert_renames_to(
         target="Call",
@@ -2011,10 +1996,6 @@ class NameCollector:
 
     def all_occurrences_for(self, position: types.Position) -> set[Occurrence]:
         name = self.positions[position]
-        from pprint import pprint
-
-        pprint(name)
-
         if name:
             return name.occurrences
 
@@ -2158,8 +2139,6 @@ class NameCollector:
             and self.current_scope.parent.name
             else None
         )
-        print(f"{target=}")
-        print(f"{value=}")
         if target and value:
             target.types.append(value)
 
@@ -2257,40 +2236,111 @@ def module(node: ast.Module, source: types.Source) -> Iterator[Event]:
 
 
 @find_names.register
+def type_var(node: ast.TypeVar, source: types.Source) -> Iterator[Event]:
+    yield NameOccurrence(
+        node.name,
+        position=source.node_position(node),
+        ast=node,
+        is_definition=True,
+    )
+    if node.bound:
+        yield from find_names(node.bound, source)
+
+
+@find_names.register
 def function_definition(
     node: ast.FunctionDef | ast.AsyncFunctionDef, source: types.Source
 ) -> Iterator[Event]:
+    for decorator in node.decorator_list:
+        yield from find_names(decorator, source)
     definition = occurrence(node, source)
     yield definition
     for default in node.args.defaults:
         yield from find_names(default, source)
+
     yield EnterFunctionScope(definition)
-    for i, arg in enumerate(node.args.args):
-        last_event = None
-        for event in find_names(arg, source):
+
+    for type_parameter in node.type_params:
+        yield from find_names(type_parameter, source)
+
+    return_event = None
+    if node.returns:
+        for event in annotation(node.returns, source):
+            if isinstance(event, NameOccurrence | Attribute):
+                return_event = event
             yield event
-            if isinstance(event, NameOccurrence):
-                last_event = event
-        if i == 0:
-            if last_event and not any(
-                d.id == STATIC_METHOD
-                for d in node.decorator_list
-                if isinstance(d, ast.Name)
-            ):
-                yield FirstArgument(last_event)
+
+    if return_event:
+        yield Bind(definition, return_event)
+
+    in_static_method = any(
+        d.id == STATIC_METHOD
+        for d in node.decorator_list
+        if isinstance(d, ast.Name)
+    )
+    yield from arguments(node.args, source, in_static_method=in_static_method)
 
     def process_body() -> Iterator[Event]:
         for statement in node.body:
             yield from find_names(statement, source)
 
     yield Delay(process_body())
+
     yield LeaveScope()
+
+
+def arguments(
+    arguments: ast.arguments, source: types.Source, *, in_static_method
+) -> Iterator[Event]:
+    for i, arg in enumerate(
+        (*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs)
+    ):
+        name_event = type_event = None
+        for event in find_names(arg, source):
+            yield event
+            if isinstance(event, NameOccurrence):
+                name_event = event
+        if arg.annotation:
+            for event in annotation(arg.annotation, source):
+                yield event
+                if isinstance(event, NameOccurrence):
+                    type_event = event
+            if name_event and type_event:
+                yield Bind(name_event, type_event)
+        if i == 0:
+            if name_event and not in_static_method:
+                yield FirstArgument(name_event)
+
+
+def annotation(
+    annotation: ast.AST | None, source: types.Source
+) -> Iterator[Event]:
+    if not annotation:
+        return
+
+    if isinstance(annotation, ast.Constant) and isinstance(
+        annotation.value, str
+    ):
+        annotation_position = source.node_position(annotation)
+        for statement in ast.parse(annotation.value).body:
+            yield from find_names(
+                statement,
+                SubSource(
+                    source=source,
+                    start_position=annotation_position,
+                    code=annotation.value,
+                ),
+            )
+    else:
+        yield from find_names(annotation, source)
 
 
 @find_names.register
 def class_definition(
     node: ast.ClassDef, source: types.Source
 ) -> Iterator[Event]:
+    for decorator in node.decorator_list:
+        yield from find_names(decorator, source)
     class_occurrence = occurrence(node, source)
     yield class_occurrence
     for base in node.bases:
@@ -2303,6 +2353,15 @@ def class_definition(
             yield BaseClass(class_occurrence, last_event)
 
     yield EnterScope(class_occurrence.name, is_class=True)
+    for type_parameter in node.type_params:
+        yield from find_names(type_parameter, source)
+    yield from class_body(node, source, class_occurrence)
+    yield LeaveScope()
+
+
+def class_body(
+    node: ast.ClassDef, source: types.Source, class_occurrence: NameOccurrence
+) -> Iterator[Event]:
     for statement in node.body:
         attribute_occurrence = None
         match statement:
@@ -2319,7 +2378,6 @@ def class_definition(
             attribute=attribute_occurrence,
         )
         yield from find_names(statement, source)
-    yield LeaveScope()
 
 
 @find_names.register
@@ -2397,64 +2455,21 @@ def arg(node: ast.arg, source: types.Source) -> Iterator[Event]:
 
 @find_names.register
 def attribute(node: ast.Attribute, source: types.Source) -> Iterator[Event]:
-    match node:
-        case ast.Attribute(value=ast.Name(id=name) as value):
-            name_occurrence = NameOccurrence(
-                name=name,
-                position=source.node_position(value),
-                ast=value,
-                is_definition=isinstance(value.ctx, ast.Store),
-            )
-            yield name_occurrence
-            end = source.node_end_position(node.value)
-            yield Attribute(
-                value=name_occurrence,
-                attribute=NameOccurrence(
-                    name=node.attr,
-                    position=end + 1 if end else source.node_position(node),
-                    ast=node,
-                    is_definition=isinstance(node.ctx, ast.Store),
-                ),
-            )
-        case ast.Attribute(value=ast.Attribute() as value):
-            last_event = None
-            for event in find_names(value, source):
-                if isinstance(last_event, NameOccurrence | Attribute):
-                    last_event = event
-                yield event
-            if last_event is None:
-                return
-
-            end = source.node_end_position(node.value)
-
-            yield Attribute(
-                value=last_event,
-                attribute=NameOccurrence(
-                    name=node.attr,
-                    position=end + 1 if end else source.node_position(node),
-                    ast=node,
-                    is_definition=isinstance(node.ctx, ast.Store),
-                ),
-            )
-        case ast.Attribute(value=ast.Call() as value):
-            last_event = None
-            for event in find_names(value, source):
-                if isinstance(event, Attribute | NameOccurrence):
-                    last_event = event
-                yield event
-            if last_event is None:
-                return
-            end = source.node_end_position(node.value)
-            attribute = Attribute(
-                value=last_event,
-                attribute=NameOccurrence(
-                    name=node.attr,
-                    position=end + 1 if end else source.node_position(node),
-                    ast=node,
-                    is_definition=isinstance(node.ctx, ast.Store),
-                ),
-            )
-            yield attribute
+    last_event = None
+    for event in find_names(node.value, source):
+        if isinstance(event, Attribute | NameOccurrence):
+            last_event = event
+        yield event
+    if last_event is None:
+        return
+    end = source.node_end_position(node.value)
+    attribute = NameOccurrence(
+        name=node.attr,
+        position=end + 1 if end else source.node_position(node),
+        ast=node,
+        is_definition=isinstance(node.ctx, ast.Store),
+    )
+    yield Attribute(value=last_event, attribute=attribute)
 
 
 @find_names.register
@@ -2465,18 +2480,22 @@ def assignment(node: ast.Assign, source: types.Source) -> Iterator[Event]:  # no
             case ast.Tuple(elts=elements):
                 element_targets = []
                 for element in elements:
+                    last_target = None
                     for event in find_names(element, source):
                         if isinstance(event, NameOccurrence | Attribute):
                             last_target = event
                         yield event
-                    element_targets.append(last_target)
+                    if last_target:
+                        element_targets.append(last_target)
                 targets.append(element_targets)
             case _:
+                last_target = None
                 for event in find_names(target, source):
                     if isinstance(event, NameOccurrence | Attribute):
                         last_target = event
                     yield event
-                targets.append([last_target])
+                if last_target:
+                    targets.append([last_target])
 
     value_events: list[NameOccurrence | Attribute] = []
     match node.value:
@@ -2500,10 +2519,18 @@ def assignment(node: ast.Assign, source: types.Source) -> Iterator[Event]:  # no
         return
 
     for target_events in targets:
+        if len(target_events) != len(value_events):
+            return
         for target_event, value_event in zip(
             target_events, value_events, strict=True
         ):
             yield Bind(target_event, value_event)
+
+
+@find_names.register
+def slice_node(node: ast.Subscript, source: types.Source) -> Iterator[Event]:
+    yield from find_names(node.slice, source)
+    yield from find_names(node.value, source)
 
 
 @find_names.register
@@ -2541,6 +2568,28 @@ def import_from(node: ast.ImportFrom, source: types.Source) -> Iterator[Event]:
                 is_definition=False,
                 from_module=node.module,
             )
+
+
+@find_names.register
+def match_case(node: ast.match_case, source: types.Source) -> Iterator[Event]:
+    yield EnterScope()
+    yield from find_names(node.pattern, source)
+    if node.guard:
+        yield from find_names(node.guard, source)
+    for statement in node.body:
+        yield from find_names(statement, source)
+    yield LeaveScope()
+
+
+@find_names.register
+def match_as(node: ast.MatchAs, source: types.Source) -> Iterator[Event]:
+    if node.name:
+        yield NameOccurrence(
+            name=node.name,
+            position=source.node_position(node),
+            ast=node,
+            is_definition=True,
+        )
 
 
 @find_names.register
