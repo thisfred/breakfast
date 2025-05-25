@@ -2472,9 +2472,11 @@ def attribute(node: ast.Attribute, source: types.Source) -> Iterator[Event]:
     yield Attribute(value=last_event, attribute=attribute)
 
 
-@find_names.register
-def assignment(node: ast.Assign, source: types.Source) -> Iterator[Event]:  # noqa: C901
-    targets = []
+def get_targets(
+    node: ast.Assign,
+    source: types.Source,
+    targets=list[list[NameOccurrence | Attribute]],
+):
     for target in node.targets:
         match target:
             case ast.Tuple(elts=elements):
@@ -2497,10 +2499,14 @@ def assignment(node: ast.Assign, source: types.Source) -> Iterator[Event]:  # no
                 if last_target:
                     targets.append([last_target])
 
-    value_events: list[NameOccurrence | Attribute] = []
+
+def get_values(
+    node: ast.Assign,
+    source: types.Source,
+    value_events=list[list[NameOccurrence | Attribute]],
+):
     match node.value:
         case ast.Tuple(elts=elements):
-            value_events = []
             for element in elements:
                 last_event = None
                 for event in find_names(element, source):
@@ -2512,9 +2518,16 @@ def assignment(node: ast.Assign, source: types.Source) -> Iterator[Event]:  # no
         case _:
             for event in find_names(node.value, source):
                 if isinstance(event, NameOccurrence | Attribute):
-                    value_events = [event]
+                    value_events[:] = [event]
                 yield event
 
+
+@find_names.register
+def assignment(node: ast.Assign, source: types.Source) -> Iterator[Event]:
+    targets: list[list[NameOccurrence | Attribute]] = []
+    yield from get_targets(node, source, targets)
+    value_events: list[NameOccurrence | Attribute] = []
+    yield from get_values(node, source, value_events)
     if not value_events:
         return
 
