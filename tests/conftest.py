@@ -69,7 +69,7 @@ def assert_renames_to(
     *,
     target: str,
     new: str,
-    code: str | types.Source,
+    code: str,
     expected: str,
     occurrence: int = 1,
     all_occurrences=all_occurrences,
