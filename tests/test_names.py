@@ -7,7 +7,6 @@ from collections import deque
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from functools import singledispatch
-from pathlib import Path
 from typing import Any, Protocol, Self
 
 from pytest import mark
@@ -1688,22 +1687,8 @@ class Name:
 
 
 @dataclass
-class Module:
-    global_scope: Scope
-    parent: Module | None
-    children: list[Module]
-
-    @classmethod
-    def new(cls) -> Self:
-        return cls(
-            global_scope=Scope.new(),
-            parent=None,
-            children=[],
-        )
-
-
-@dataclass
 class Scope:
+    module: tuple[str, ...]
     names: dict[str, Name]
     children: list[Scope]
     blocks: dict[str, Scope]
@@ -1711,10 +1696,6 @@ class Scope:
     is_class: bool = False
     parent: Scope | None = None
     name: str | None = None
-
-    @classmethod
-    def new(cls, parent: Scope | None = None) -> Self:
-        return cls(names={}, parent=parent, children=[], blocks={})
 
     @property
     def root(self) -> Scope:
@@ -1740,6 +1721,7 @@ class Scope:
                 return self.blocks[name]
 
             child = Scope(
+                module=self.module,
                 names={},
                 children=[],
                 blocks={},
@@ -1750,6 +1732,7 @@ class Scope:
             self.blocks[name] = child
         else:
             child = Scope(
+                module=self.module,
                 names={},
                 children=[],
                 blocks={},
@@ -1778,6 +1761,14 @@ class MoveToScope:
 class ReturnFromScope: ...
 
 
+@dataclass(frozen=True)
+class MoveToModule:
+    name: tuple[str, ...]
+
+
+class ReturnFromModule: ...
+
+
 class LeaveScope: ...
 
 
@@ -1797,6 +1788,12 @@ class ClassAttribute:
 class Bind:
     target: NameOccurrence | Attribute
     value: NameOccurrence | Attribute
+
+
+@dataclass(frozen=True)
+class BindImport:
+    occurrence: NameOccurrence
+    module: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -1864,14 +1861,12 @@ def assert_renames_to(
 
 @dataclass
 class NameCollector:
-    sources: dict[Path, types.Source]
     positions: dict[types.Position, Name | None]
     delays: deque[tuple[Scope, Iterator[Event]]]
     current_scope: Scope
-    current_module: Module
     previous_scopes: list[Scope]
     name_scopes: dict[int, Scope]
-    modules: dict[tuple[str, ...], Module]
+    modules: dict[tuple[str, ...], Scope]
 
     @classmethod
     def from_source(cls, source: types.Source) -> Self:
@@ -1881,20 +1876,19 @@ class NameCollector:
     def from_sources(cls, sources: Iterable[types.Source]) -> Self:
         instance = None
         for source in sources:
+            module = tuple(source.module_name.split("."))
+            scope = Scope(module=module, names={}, blocks={}, children=[])
             if instance is None:
-                module = Module.new()
                 instance = cls(
-                    sources={Path(source.path): source for source in sources},
                     positions={},
                     delays=deque([]),
-                    current_scope=module.global_scope,
-                    current_module=module,
                     previous_scopes=[],
                     name_scopes={},
-                    modules={tuple(source.module_name.split(".")): module},
+                    current_scope=scope,
+                    modules={module: scope},
                 )
             else:
-                instance.enter_module(source.module_name)
+                instance.enter_module(module)
 
             for event in find_names(source.ast, source):
                 process(event, instance)
@@ -1928,7 +1922,7 @@ class NameCollector:
         self.current_scope.names[occurrence.name] = name
 
     def add_global(self, occurrence: Occurrence) -> None:
-        global_scope = self.current_module.global_scope
+        global_scope = self.modules[self.current_scope.module]
         if global_scope is None:
             return
 
@@ -2000,11 +1994,11 @@ class NameCollector:
         found_attribute.occurrences.add(attribute_occurrence)
         self.positions[attribute_occurrence.position] = found_attribute
 
-    def enter_module(self, module_name: str) -> None:
-        self.current_module = self.modules.setdefault(
-            tuple(module_name.split(".")), Module.new()
+    def enter_module(self, module_name: tuple[str, ...]) -> None:
+        self.current_scope = self.modules.setdefault(
+            module_name,
+            Scope(module=module_name, names={}, blocks={}, children=[]),
         )
-        self.current_scope = self.current_module.global_scope
 
     def enter_scope(
         self, name: str | None = None, is_class: bool = False
@@ -2035,6 +2029,10 @@ class NameCollector:
             return
 
         self.current_scope = scope
+
+    def move_to_module(self, module: tuple[str, ...]) -> None:
+        self.previous_scopes.append(self.current_scope)
+        self.enter_module(module)
 
     def return_from_scope(self) -> None:
         self.current_scope = self.previous_scopes.pop()
@@ -2108,6 +2106,17 @@ class NameCollector:
         if target_name and value_name:
             target_name.types.extend([value_name, *value_name.types])
 
+    def bind_import(
+        self,
+        occurrence: NameOccurrence,
+        module: tuple[str, ...],
+    ) -> None:
+        print(f"{module=}")
+        print(f"{list(self.modules.keys())=}")
+        print(f"{self.modules[module]=}")
+        imported_name = self.modules[module].lookup(occurrence.name)
+        print(f"{imported_name=}")
+
     def lookup_attribute_value(
         self, value: Occurrence | Attribute
     ) -> Name | None:
@@ -2147,13 +2156,25 @@ def _(event: MoveToScope, collector: NameCollector) -> None:
 
 
 @process.register
-def _(event: ReturnFromScope, collector: NameCollector) -> None:
+def _(
+    event: ReturnFromScope | ReturnFromModule, collector: NameCollector
+) -> None:
     collector.return_from_scope()
 
 
 @process.register
 def _(event: LeaveScope, collector: NameCollector) -> None:
     collector.leave_scope()
+
+
+@process.register
+def _(event: MoveToModule, collector: NameCollector) -> None:
+    collector.move_to_module(module=event.name)
+
+
+@process.register
+def _(event: ReturnFromModule, collector: NameCollector) -> None:
+    collector.return_from_scope()
 
 
 @process.register
@@ -2178,6 +2199,11 @@ def _(event: BaseClass, collector: NameCollector) -> None:
 @process.register
 def _(event: Bind, collector: NameCollector) -> None:
     collector.bind(target=event.target, value=event.value)
+
+
+@process.register
+def _(event: BindImport, collector: NameCollector) -> None:
+    collector.bind_import(occurrence=event.occurrence, module=event.module)
 
 
 @process.register
@@ -2403,6 +2429,24 @@ def comprehension(
     for sub_node in sub_nodes(node):
         yield from find_names(sub_node, source)
     yield LeaveScope()
+
+
+@find_names.register
+def import_from(node: ast.ImportFrom, source: types.Source):
+    if node.module is None:
+        return
+
+    module = tuple(node.module.split("."))
+    yield MoveToModule(name=module)
+    for name in node.names:
+        last_event = None
+        for event in find_names(name, source):
+            if isinstance(event, NameOccurrence):
+                last_event = event
+        if last_event:
+            yield BindImport(occurrence=last_event, module=module)
+
+    yield ReturnFromModule()
 
 
 @singledispatch
