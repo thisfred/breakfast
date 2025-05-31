@@ -1038,7 +1038,6 @@ def test_does_not_rename_imported_names():
     ]
 
 
-@mark.xfail
 def test_finds_namespace_imports():
     source1 = make_source(
         """
@@ -1055,10 +1054,14 @@ def test_finds_namespace_imports():
         filename="bar.py",
     )
     position = Position(source1, 1, 4)
-    assert all_occurrence_positions(position, sources=[source1, source2]) == [
-        Position(source1, 1, 4),
-        Position(source2, 2, 4),
-    ]
+    assert all_occurrence_positions(
+        position, sources=[source1, source2]
+    ) == sorted(
+        [
+            Position(source1, 1, 4),
+            Position(source2, 2, 4),
+        ]
+    )
 
 
 def test_finds_default_values():
@@ -1613,7 +1616,7 @@ class Delay:
 
 @singledispatch
 def occurrence(node: ast.AST, source: types.Source) -> NameOccurrence | None:
-    print(ast.dump(node))
+    logger.warning(f"Unable to handle {node=}")
     return None
 
 
@@ -1676,10 +1679,14 @@ def definition(
     return name_occurrence
 
 
+class Namespace(Protocol):
+    attributes: dict[str, Name]
+
+
 @dataclass
 class Name:
     attributes: dict[str, Name]
-    types: list[Name]
+    types: list[Namespace]
     occurrences: set[Occurrence]
 
     @classmethod
@@ -1690,7 +1697,7 @@ class Name:
 @dataclass
 class Scope:
     module: tuple[str, ...]
-    names: dict[str, Name]
+    attributes: dict[str, Name]
     children: list[Scope]
     blocks: dict[str, Scope]
     is_block: bool = False
@@ -1706,16 +1713,17 @@ class Scope:
         return current
 
     def lookup(self, name: str) -> Name | None:
-        if name in self.names:
-            return self.names[name]
+        if name in self.attributes:
+            return self.attributes[name]
 
         if self.parent:
             return self.parent.lookup(name)
 
         return None
 
-    def get_or_create(self, name: str) -> Name:
-        result = self.names.setdefault(name, Name.new())
+    def get_or_create(self, occurrence: NameOccurrence) -> Name:
+        result = self.attributes.setdefault(occurrence.name, Name.new())
+        result.occurrences.add(occurrence)
         return result
 
     def add_child(
@@ -1727,7 +1735,7 @@ class Scope:
 
             child = Scope(
                 module=self.module,
-                names={},
+                attributes={},
                 children=[],
                 blocks={},
                 parent=self,
@@ -1738,7 +1746,7 @@ class Scope:
         else:
             child = Scope(
                 module=self.module,
-                names={},
+                attributes={},
                 children=[],
                 blocks={},
                 parent=self,
@@ -1779,7 +1787,7 @@ class LeaveScope: ...
 
 @dataclass(frozen=True)
 class Attribute:
-    value: Occurrence | Attribute
+    value: NameOccurrence | Attribute
     attribute: NameOccurrence
 
 
@@ -1796,9 +1804,14 @@ class Bind:
 
 
 @dataclass(frozen=True)
-class BindImport:
+class BindImportFrom:
     occurrence: NameOccurrence
     module: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class BindImport:
+    occurrence: NameOccurrence | Attribute
 
 
 @dataclass(frozen=True)
@@ -1829,9 +1842,10 @@ def all_occurrence_positions(
     *,
     sources: Sequence[types.Source],
 ) -> list[types.Position]:
-    return sorted(
+    result = sorted(
         o.position for o in all_occurrences(position, sources=sources)
     )
+    return result
 
 
 def assert_renames_to(
@@ -1882,7 +1896,7 @@ class NameCollector:
         instance = None
         for source in import_ordered(sources):
             module = tuple(source.module_name)
-            scope = Scope(module=module, names={}, blocks={}, children=[])
+            scope = Scope(module=module, attributes={}, blocks={}, children=[])
             if instance is None:
                 instance = cls(
                     positions={},
@@ -1915,7 +1929,7 @@ class NameCollector:
 
         return set()
 
-    def add_occurrence(self, occurrence: Occurrence) -> None:
+    def add_occurrence(self, occurrence: NameOccurrence) -> None:
         if not self.positions.get(occurrence.position):
             self.add_name(occurrence)
 
@@ -1924,7 +1938,7 @@ class NameCollector:
         if name is None:
             return
         name.occurrences.add(occurrence)
-        self.current_scope.names[occurrence.name] = name
+        self.current_scope.attributes[occurrence.name] = name
 
     def add_global(self, occurrence: Occurrence) -> None:
         global_scope = self.modules[self.current_scope.module]
@@ -1936,16 +1950,11 @@ class NameCollector:
             return
 
         name.occurrences.add(occurrence)
-        self.current_scope.names[occurrence.name] = name
+        self.current_scope.attributes[occurrence.name] = name
 
-    def add_name(self, occurrence: Occurrence) -> Name | None:
+    def add_name(self, occurrence: NameOccurrence) -> Name | None:
         if occurrence.is_definition:
-            name: Name | None = self.current_scope.get_or_create(
-                occurrence.name,
-            )
-            self.current_scope.names[occurrence.name].occurrences.add(
-                occurrence
-            )
+            name: Name | None = self.current_scope.get_or_create(occurrence)
         else:
             name = self.current_scope.lookup(occurrence.name)
             if name:
@@ -1961,7 +1970,7 @@ class NameCollector:
         if self.current_scope.parent is None:
             return
 
-        cls = self.current_scope.parent.names[class_occurrence.name]
+        cls = self.current_scope.parent.attributes[class_occurrence.name]
         self.add_attribute_occurrence(value=cls, attribute_occurrence=attribute)
 
     def add_attribute(
@@ -1969,7 +1978,7 @@ class NameCollector:
         value: Occurrence | Attribute,
         occurrence: NameOccurrence,
     ) -> None:
-        current = self.lookup_attribute_value(value)
+        current = self.lookup(value)
         if current is None:
             return
         self.add_attribute_occurrence(
@@ -2001,7 +2010,7 @@ class NameCollector:
     def enter_module(self, module_name: tuple[str, ...]) -> None:
         self.current_scope = self.modules.setdefault(
             module_name,
-            Scope(module=module_name, names={}, blocks={}, children=[]),
+            Scope(module=module_name, attributes={}, blocks={}, children=[]),
         )
 
     def enter_scope(
@@ -2022,7 +2031,7 @@ class NameCollector:
     def move_to_scope(self, event: NameOccurrence | Attribute) -> None:
         self.previous_scopes.append(self.current_scope)
 
-        name = self.lookup_attribute_value(event)
+        name = self.lookup(event)
         if name is None:
             self.enter_scope()
             return
@@ -2054,9 +2063,9 @@ class NameCollector:
         ):
             return
 
-        target = self.lookup_attribute_value(arg)
+        target = self.lookup(arg)
         value = (
-            self.current_scope.parent.parent.names.get(
+            self.current_scope.parent.parent.attributes.get(
                 self.current_scope.parent.name
             )
             if self.current_scope.parent.parent
@@ -2072,12 +2081,14 @@ class NameCollector:
         ):
             return
 
-        target: Name | None = self.current_scope.names.setdefault(
+        target: Name | None = self.current_scope.attributes.setdefault(
             occurrence.name, Name(attributes={}, types=[], occurrences=set())
         )
-        self.current_scope.names[occurrence.name].occurrences.add(occurrence)
+        self.current_scope.attributes[occurrence.name].occurrences.add(
+            occurrence
+        )
         class_name = (
-            self.current_scope.parent.parent.names.get(
+            self.current_scope.parent.parent.attributes.get(
                 self.current_scope.parent.name
             )
             if self.current_scope.parent.parent
@@ -2095,8 +2106,8 @@ class NameCollector:
         class_occurrence: NameOccurrence | Attribute,
         base: NameOccurrence | Attribute,
     ) -> None:
-        class_name = self.lookup_attribute_value(class_occurrence)
-        base_name = self.lookup_attribute_value(base)
+        class_name = self.lookup(class_occurrence)
+        base_name = self.lookup(base)
         if class_name and base_name:
             class_name.types.append(base_name)
 
@@ -2105,42 +2116,55 @@ class NameCollector:
         target: NameOccurrence | Attribute,
         value: NameOccurrence | Attribute,
     ) -> None:
-        target_name = self.lookup_attribute_value(target)
-        value_name = self.lookup_attribute_value(value)
+        target_name = self.lookup(target)
+        value_name = self.lookup(value)
         if target_name and value_name:
             target_name.types.extend([value_name, *value_name.types])
 
-    def bind_import(
+    def bind_import_from(
         self,
         occurrence: NameOccurrence,
         module: tuple[str, ...],
     ) -> None:
-        print(f"{module=}")
         if occurrence.name == "*":
-            print("import *")
-            for key, value in self.modules[module].names.items():
-                print(f"{key=}")
-                self.current_scope.names[key] = value
+            for key, value in self.modules[module].attributes.items():
+                self.current_scope.attributes[key] = value
             return
 
-        print(f"{self.modules[module]=}")
-        print(f"{occurrence.name=}")
-        imported_name = self.modules[module].get_or_create(occurrence.name)
-        imported_name.occurrences.add(occurrence)
-        self.current_scope.names[occurrence.name] = imported_name
+        imported_name = self.modules[module].get_or_create(occurrence)
+        self.current_scope.attributes[occurrence.name] = imported_name
         self.positions[occurrence.position] = imported_name
 
-    def lookup_attribute_value(
-        self, value: Occurrence | Attribute
-    ) -> Name | None:
-        if isinstance(value, Attribute):
-            name = self.lookup_attribute_value(value.value)
+    def bind_import(self, occurrence: NameOccurrence | Attribute) -> None:
+        module = self.modules.get(module_name(occurrence))
+        name = self.lookup_or_create(occurrence)
+        if module is None:
+            return
+
+        name.types.append(module)
+
+    def lookup_or_create(self, occurrence: NameOccurrence | Attribute) -> Name:
+        if isinstance(occurrence, Attribute):
+            name = self.lookup_or_create(occurrence.value)
+            return lookup_attribute(
+                value=name, attribute=occurrence.attribute.name
+            )
+        else:
+            result = self.current_scope.get_or_create(occurrence)
+            self.positions[occurrence.position] = result
+            return result
+
+    def lookup(self, occurrence: Occurrence | Attribute) -> Name | None:
+        if isinstance(occurrence, Attribute):
+            name = self.lookup(occurrence.value)
             if name is None:
                 return None
 
-            return lookup_attribute(value=name, attribute=value.attribute.name)
+            return lookup_attribute(
+                value=name, attribute=occurrence.attribute.name
+            )
         else:
-            return self.current_scope.lookup(value.name)
+            return self.current_scope.lookup(occurrence.name)
 
 
 @singledispatch
@@ -2215,8 +2239,13 @@ def _(event: Bind, collector: NameCollector) -> None:
 
 
 @process.register
+def _(event: BindImportFrom, collector: NameCollector) -> None:
+    collector.bind_import_from(occurrence=event.occurrence, module=event.module)
+
+
+@process.register
 def _(event: BindImport, collector: NameCollector) -> None:
-    collector.bind_import(occurrence=event.occurrence, module=event.module)
+    collector.bind_import(occurrence=event.occurrence)
 
 
 @process.register
@@ -2456,7 +2485,21 @@ def import_from(node: ast.ImportFrom, source: types.Source):
             if isinstance(event, NameOccurrence):
                 last_event = event
         if last_event:
-            yield BindImport(occurrence=last_event, module=module)
+            yield BindImportFrom(occurrence=last_event, module=module)
+
+
+@find_names.register
+def import_node(node: ast.Import, source: types.Source):
+    for name in node.names:
+        last_event = None
+        for event in find_names(name, source):
+            if isinstance(event, NameOccurrence | Attribute):
+                last_event = event
+
+    if last_event is None:
+        return
+
+    yield BindImport(occurrence=last_event)
 
 
 @singledispatch
@@ -2677,6 +2720,13 @@ def module(source: types.Source) -> tuple[str, ...]:
     return tuple(source.module_name)
 
 
+def module_name(occurrence: NameOccurrence | Attribute) -> tuple[str, ...]:
+    if isinstance(occurrence, NameOccurrence):
+        return (occurrence.name,)
+
+    return (*module_name(occurrence.value), occurrence.attribute.name)
+
+
 @singledispatch
 def find_imported_modules(
     node: ast.AST, source: types.Source
@@ -2689,3 +2739,9 @@ def _(node: ast.ImportFrom, source: types.Source) -> Iterator[tuple[str, ...]]:
     if node.module is None:
         return
     yield tuple(node.module.split("."))
+
+
+@find_imported_modules.register
+def _(node: ast.Import, source: types.Source) -> Iterator[tuple[str, ...]]:
+    for alias in node.names:
+        yield tuple(alias.name.split("."))
