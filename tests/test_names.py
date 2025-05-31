@@ -12,6 +12,7 @@ from typing import Any, Protocol, Self
 from pytest import mark
 
 from breakfast import types
+from breakfast.project import Project
 from breakfast.source import Position, SubSource, TextRange
 from breakfast.visitor import generic_visit
 from tests.conftest import (
@@ -66,7 +67,6 @@ def test_should_find_occurrences_along_longer_import_paths():
     ]
 
 
-@mark.xfail
 def test_should_find_occurrences_along_relative_import_paths():
     source1 = make_source(
         """
@@ -1564,12 +1564,11 @@ def test_rename_should_find_local_variable():
     )
 
 
-# @mark.xfail
-# def test_dogfood(project_root):
-#     application = Project(root=project_root)
-#     sources = application.find_sources()
-#     collector = NameCollector.from_sources(sources)
-#     assert collector is not None
+def test_dogfood(project_root):
+    application = Project(root=project_root)
+    sources = application.find_sources()
+    collector = NameCollector.from_sources(sources)
+    assert collector is not None
 
 
 @dataclass(frozen=True)
@@ -1616,7 +1615,7 @@ class Delay:
 
 @singledispatch
 def occurrence(node: ast.AST, source: types.Source) -> NameOccurrence | None:
-    logger.warning(f"Unable to handle {node=}")
+    logger.warning(f"Unable to handle {ast.dump(node)=}")
     return None
 
 
@@ -1807,6 +1806,7 @@ class Bind:
 class BindImportFrom:
     occurrence: NameOccurrence
     module: tuple[str, ...]
+    level: int
 
 
 @dataclass(frozen=True)
@@ -2122,13 +2122,16 @@ class NameCollector:
             target_name.types.extend([value_name, *value_name.types])
 
     def bind_import_from(
-        self,
-        occurrence: NameOccurrence,
-        module: tuple[str, ...],
+        self, occurrence: NameOccurrence, module: tuple[str, ...], level: int
     ) -> None:
+        if level:
+            module = (*self.current_scope.module[:-level], *module)
         if occurrence.name == "*":
             for key, value in self.modules[module].attributes.items():
                 self.current_scope.attributes[key] = value
+            return
+
+        if module not in self.modules:
             return
 
         imported_name = self.modules[module].get_or_create(occurrence)
@@ -2240,7 +2243,9 @@ def _(event: Bind, collector: NameCollector) -> None:
 
 @process.register
 def _(event: BindImportFrom, collector: NameCollector) -> None:
-    collector.bind_import_from(occurrence=event.occurrence, module=event.module)
+    collector.bind_import_from(
+        occurrence=event.occurrence, module=event.module, level=event.level
+    )
 
 
 @process.register
@@ -2485,7 +2490,9 @@ def import_from(node: ast.ImportFrom, source: types.Source):
             if isinstance(event, NameOccurrence):
                 last_event = event
         if last_event:
-            yield BindImportFrom(occurrence=last_event, module=module)
+            yield BindImportFrom(
+                occurrence=last_event, module=module, level=node.level
+            )
 
 
 @find_names.register
@@ -2721,6 +2728,7 @@ def module(source: types.Source) -> tuple[str, ...]:
 
 
 def module_name(occurrence: NameOccurrence | Attribute) -> tuple[str, ...]:
+    print(f"{occurrence=}")
     if isinstance(occurrence, NameOccurrence):
         return (occurrence.name,)
 
@@ -2738,7 +2746,7 @@ def find_imported_modules(
 def _(node: ast.ImportFrom, source: types.Source) -> Iterator[tuple[str, ...]]:
     if node.module is None:
         return
-    yield tuple(node.module.split("."))
+    yield (*source.module_name[: -node.level], *node.module.split("."))
 
 
 @find_imported_modules.register
