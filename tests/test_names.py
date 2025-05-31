@@ -1685,6 +1685,10 @@ class Name:
     types: list[Name]
     occurrences: set[Occurrence]
 
+    @classmethod
+    def new(cls) -> Self:
+        return cls(attributes={}, types=[], occurrences=set())
+
 
 @dataclass
 class Scope:
@@ -1712,6 +1716,9 @@ class Scope:
             return self.parent.lookup(name)
 
         return None
+
+    def get_or_create(self, name: str) -> Name:
+        return self.names.setdefault(name, Name.new())
 
     def add_child(
         self, name: str | None = None, is_class: bool = False
@@ -1935,9 +1942,8 @@ class NameCollector:
 
     def add_name(self, occurrence: Occurrence) -> Name | None:
         if occurrence.is_definition:
-            name: Name | None = self.current_scope.names.setdefault(
+            name: Name | None = self.current_scope.get_or_create(
                 occurrence.name,
-                Name(attributes={}, types=[], occurrences=set()),
             )
             self.current_scope.names[occurrence.name].occurrences.add(
                 occurrence
@@ -2113,8 +2119,16 @@ class NameCollector:
     ) -> None:
         print(f"{module=}")
         print(f"{list(self.modules.keys())=}")
+        if occurrence.name == "*":
+            for imported_name in self.modules[module].names:
+                self.current_scope.names[occurrence.name] = imported_name
+            return
+
+        imported_name = self.modules[module].get_or_create(occurrence.name)
+        imported_name.occurrences.add(occurrence)
+        self.current_scope.names[occurrence.name] = imported_name
+        self.positions[occurrence.position] = imported_name
         print(f"{self.modules[module]=}")
-        imported_name = self.modules[module].lookup(occurrence.name)
         print(f"{imported_name=}")
 
     def lookup_attribute_value(
