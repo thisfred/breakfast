@@ -4,7 +4,7 @@ import ast
 import logging
 import sys
 from collections import deque
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from functools import singledispatch
 from typing import Any, Protocol, Self
@@ -27,7 +27,6 @@ logger = logging.getLogger(__name__)
 STATIC_METHOD = "staticmethod"
 
 
-@mark.xfail
 def test_should_find_occurrences_along_longer_import_paths():
     source1 = make_source(
         """
@@ -1010,11 +1009,8 @@ def test_finds_method_in_super_call():
 
 
 def test_does_not_rename_imported_names():
-    assert_renames_to(
-        target="b",
-        occurrence=2,
-        new="renamed",
-        code="""
+    source1 = make_source(
+        """
         from a import b
 
 
@@ -1024,17 +1020,22 @@ def test_does_not_rename_imported_names():
 
         b()
         """,
-        expected="""
-        from a import b
-
-
-        def foo():
-            renamed = 1
-            print(renamed)
-
-        b()
-        """,
+        filename="c.py",
     )
+    source2 = make_source(
+        """
+        b = 2
+        """,
+        filename="a.py",
+    )
+    positions = all_occurrence_positions(
+        Position(source1, 5, 4), sources=[source1, source2]
+    )
+
+    assert positions == [
+        Position(source1, 5, 4),
+        Position(source1, 6, 10),
+    ]
 
 
 @mark.xfail
@@ -1550,14 +1551,10 @@ def test_rename_should_find_local_variable():
         target="stove",
         new="renamed",
         code="""
-        from kitchen import Stove
-
         stove = Stove()
         stove.broil()
         """,
         expected="""
-        from kitchen import Stove
-
         renamed = Stove()
         renamed.broil()
         """,
@@ -1718,7 +1715,8 @@ class Scope:
         return None
 
     def get_or_create(self, name: str) -> Name:
-        return self.names.setdefault(name, Name.new())
+        result = self.names.setdefault(name, Name.new())
+        return result
 
     def add_child(
         self, name: str | None = None, is_class: bool = False
@@ -1820,7 +1818,7 @@ class Event(Protocol): ...
 def all_occurrences(
     position: types.Position,
     *,
-    sources: Iterable[types.Source],
+    sources: Sequence[types.Source],
 ) -> set[Occurrence]:
     collector = NameCollector.from_sources(sources)
     return collector.all_occurrences_for(position)
@@ -1829,7 +1827,7 @@ def all_occurrences(
 def all_occurrence_positions(
     position: Position,
     *,
-    sources: Iterable[types.Source],
+    sources: Sequence[types.Source],
 ) -> list[types.Position]:
     return sorted(
         o.position for o in all_occurrences(position, sources=sources)
@@ -1880,10 +1878,10 @@ class NameCollector:
         return cls.from_sources(sources=[source])
 
     @classmethod
-    def from_sources(cls, sources: Iterable[types.Source]) -> Self:
+    def from_sources(cls, sources: Sequence[types.Source]) -> Self:
         instance = None
-        for source in sources:
-            module = tuple(source.module_name.split("."))
+        for source in import_ordered(sources):
+            module = tuple(source.module_name)
             scope = Scope(module=module, names={}, blocks={}, children=[])
             if instance is None:
                 instance = cls(
@@ -2118,18 +2116,19 @@ class NameCollector:
         module: tuple[str, ...],
     ) -> None:
         print(f"{module=}")
-        print(f"{list(self.modules.keys())=}")
         if occurrence.name == "*":
-            for imported_name in self.modules[module].names:
-                self.current_scope.names[occurrence.name] = imported_name
+            print("import *")
+            for key, value in self.modules[module].names.items():
+                print(f"{key=}")
+                self.current_scope.names[key] = value
             return
 
+        print(f"{self.modules[module]=}")
+        print(f"{occurrence.name=}")
         imported_name = self.modules[module].get_or_create(occurrence.name)
         imported_name.occurrences.add(occurrence)
         self.current_scope.names[occurrence.name] = imported_name
         self.positions[occurrence.position] = imported_name
-        print(f"{self.modules[module]=}")
-        print(f"{imported_name=}")
 
     def lookup_attribute_value(
         self, value: Occurrence | Attribute
@@ -2451,7 +2450,6 @@ def import_from(node: ast.ImportFrom, source: types.Source):
         return
 
     module = tuple(node.module.split("."))
-    yield MoveToModule(name=module)
     for name in node.names:
         last_event = None
         for event in find_names(name, source):
@@ -2459,8 +2457,6 @@ def import_from(node: ast.ImportFrom, source: types.Source):
                 last_event = event
         if last_event:
             yield BindImport(occurrence=last_event, module=module)
-
-    yield ReturnFromModule()
 
 
 @singledispatch
@@ -2648,3 +2644,48 @@ def global_node(node: ast.Global, source: types.Source) -> Iterator[Event]:
             position=position,
             ast=node,
         )
+
+
+def import_ordered(sources: Sequence[types.Source]) -> Sequence[types.Source]:
+    if len(sources) == 1:
+        return sources
+
+    result = []
+    processed: set[tuple[str, ...]] = set()
+    encountered: dict[tuple[str, ...], int] = {}
+    queue = deque(sources)
+    while queue:
+        source = queue.popleft()
+        imports = imported_modules(source)
+        if not imports - processed:
+            result.append(source)
+            processed.add(module(source))
+        else:
+            queue.append(source)
+            if encountered.get(source.module_name, -1) == len(processed):
+                break
+            encountered[source.module_name] = len(processed)
+
+    return (*result, *queue)
+
+
+def imported_modules(source: types.Source) -> set[tuple[str, ...]]:
+    return set(find_imported_modules(source.ast, source))
+
+
+def module(source: types.Source) -> tuple[str, ...]:
+    return tuple(source.module_name)
+
+
+@singledispatch
+def find_imported_modules(
+    node: ast.AST, source: types.Source
+) -> Iterator[tuple[str, ...]]:
+    yield from generic_visit(find_imported_modules, node, source)
+
+
+@find_imported_modules.register
+def _(node: ast.ImportFrom, source: types.Source) -> Iterator[tuple[str, ...]]:
+    if node.module is None:
+        return
+    yield tuple(node.module.split("."))

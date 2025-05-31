@@ -465,7 +465,7 @@ class Source:
         return self.text[position.row][position.column :]
 
     @property
-    def module_name(self) -> str:
+    def module_name(self) -> tuple[str, ...]:
         path = self.path
 
         prefixes = [p for p in sys.path if self.path.startswith(p)]
@@ -486,9 +486,7 @@ class Source:
         if path.endswith(__init__):
             path = path[: -len(__init__)]
 
-        path = path.replace(os.path.sep, ".")
-
-        return path
+        return tuple(path.split(os.path.sep))
 
     def node_position(self, node: AST) -> types.Position:
         """
@@ -574,7 +572,7 @@ class SubSource:
         return hash((self.parent_source.path, self.parent_start_position))
 
     @property
-    def module_name(self) -> str:
+    def module_name(self) -> tuple[str, ...]:
         return self.parent_source.module_name
 
     @property

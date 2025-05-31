@@ -131,7 +131,7 @@ class ScopeGraph:
     root: ScopeNode
     references: dict[str, list[OccurrenceNode]]
     positions: dict[Position, list[OccurrenceNode]]
-    module_roots: dict[str, ScopeNode]
+    module_roots: dict[tuple[str, ...], ScopeNode]
 
     def __init__(self) -> None:
         self.max_id = 0

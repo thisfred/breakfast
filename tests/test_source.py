@@ -12,4 +12,4 @@ def test_ordering():
 
 def test_module_name():
     source = Source(path=__file__, project_root=".", input_lines=())
-    assert source.module_name == "tests.test_source"
+    assert source.module_name == ("tests", "test_source")

@@ -217,7 +217,7 @@ def visit_module(
     # nodes for a and b if they exist already.
     current = graph.root
     packages = []
-    for part in source.module_name.split("."):
+    for part in source.module_name:
         packages.append(part)
         found = None
         for _, other_id in graph.edges[current.node_id]:

@@ -17,10 +17,10 @@ def test_returns_paths(project_root):
 def test_returns_module_names(project_root):
     application = Project(root=project_root)
     found = [s.module_name for s in application.find_sources()]
-    assert "tests.data" in found
-    assert "tests.data.module1" in found
-    assert "tests.data.module2" in found
-    assert "tests.data.subpackage" in found
+    assert ("tests", "data") in found
+    assert ("tests", "data", "module1") in found
+    assert ("tests", "data", "module2") in found
+    assert ("tests", "data", "subpackage") in found
 
 
 def test_dunder_directory_names_are_not_allowed():
