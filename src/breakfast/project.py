@@ -1,5 +1,5 @@
 import logging
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator
 from glob import iglob
 from pathlib import Path
 
@@ -17,12 +17,17 @@ class Project:
 
     def get_occurrences(
         self, position: Position, known_sources: list[Source] | None = None
-    ) -> Sequence[Occurrence]:
-        return all_occurrences(
-            position,
-            sources=((self._initial_source,) if self._initial_source else ())
-            + self.find_sources(),
-            in_reverse_order=True,
+    ) -> list[Occurrence]:
+        return sorted(
+            all_occurrences(
+                position,
+                sources=(
+                    (self._initial_source,) if self._initial_source else ()
+                )
+                + self.find_sources(),
+            ),
+            key=lambda o: o.position,
+            reverse=True,
         )
 
     def find_sources(self) -> tuple[Source, ...]:

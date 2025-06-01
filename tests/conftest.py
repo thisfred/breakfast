@@ -8,29 +8,15 @@ from pytest import fixture
 
 from breakfast import types
 from breakfast.code_generation import unparse
-from breakfast.names import all_occurrence_positions, all_occurrences
+from breakfast.names import all_occurrences
 from breakfast.refactoring import CodeSelection, Refactoring
 from breakfast.source import Source, TextRange
-
-
-def all_occurrence_position_tuples(
-    position: types.Position,
-    *,
-    sources: Iterable[types.Source] | None = None,
-    debug: bool = False,
-) -> list[tuple[int, int]]:
-    return [
-        (p.row, p.column)
-        for p in all_occurrence_positions(
-            position, sources=sources, in_reverse_order=False, debug=debug
-        )
-    ]
 
 
 def make_source(code: str, filename: str | None = None) -> types.Source:
     return Source(
         input_lines=tuple(line for line in dedent(code).split("\n")),
-        path=filename or "",
+        path=filename or "code.py",
         project_root=".",
     )
 
@@ -69,21 +55,17 @@ def assert_renames_to(
     *,
     target: str,
     new: str,
-    code: str,
+    code: str | types.Source,
     expected: str,
     occurrence: int = 1,
-    all_occurrences=all_occurrences,
+    filename: str = "source.py",
 ):
     source = (
-        make_source(code, filename="source.py")
-        if isinstance(code, str)
-        else code
+        make_source(code, filename=filename) if isinstance(code, str) else code
     )
     selection_range = range_for(target, source, occurrence)
     position = selection_range.start
-    occurrences = all_occurrences(
-        position, sources=[source], in_reverse_order=True
-    )
+    occurrences = all_occurrences(position, sources=[source])
 
     edits = [
         types.Edit(

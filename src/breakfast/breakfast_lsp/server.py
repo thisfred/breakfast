@@ -40,7 +40,6 @@ from pygls.server import LanguageServer
 from breakfast import __version__
 from breakfast.project import Project
 from breakfast.refactoring import CodeSelection, Editor
-from breakfast.scope_graph import NodeType
 from breakfast.source import Source, TextRange
 from breakfast.types import Edit, Occurrence
 
@@ -182,7 +181,9 @@ def rename(
         TextDocumentEdit | CreateFile | RenameFile | DeleteFile
     ] = []
     client_documents = server.workspace.text_documents
-    for source, source_occurences in groupby(occurrences, lambda o: o.source):
+    for source, source_occurences in groupby(
+        occurrences, lambda o: o.position.source
+    ):
         document_uri = f"file://{source.path}"
         logger.debug(f"{document_uri=}")
         version = (
@@ -344,7 +345,7 @@ def go_to_definition(
     if not occurrences:
         return None
 
-    definitions = [o for o in occurrences if o.node_type is NodeType.DEFINITION]
+    definitions = [o for o in occurrences if o.is_definition]
     logger.warning(f"{definitions=}")
     if len(definitions) == 1:
         return make_location(definitions[0])

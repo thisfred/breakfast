@@ -181,9 +181,7 @@ class TextRange:
     @cached_property
     def definitions(self) -> list[types.Occurrence]:
         return [
-            occurrence
-            for occurrence in self.names
-            if occurrence.node_type is types.NodeType.DEFINITION
+            occurrence for occurrence in self.names if occurrence.is_definition
         ]
 
     @cached_property

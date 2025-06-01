@@ -10,8 +10,7 @@ from typing import Any
 from breakfast.names import (
     all_occurrences,
 )
-from breakfast.scope_graph import NodeType
-from breakfast.types import Occurrence, TextRange
+from breakfast.types import Occurrence, Source, TextRange
 from breakfast.visitor import generic_transform
 
 logger = logging.getLogger(__name__)
@@ -266,6 +265,7 @@ class ArgumentMapper:
     arguments: ast.arguments
     body_range: TextRange
     returned_names: Container[str]
+    sources: Sequence[Source]
 
     def get_occurrences(
         self, argument: ast.keyword | ast.arg, body_range: TextRange
@@ -274,7 +274,7 @@ class ArgumentMapper:
         arg_position = self.body_range.start.source.node_position(argument)
         return [
             o
-            for o in all_occurrences(arg_position)
+            for o in all_occurrences(arg_position, sources=self.sources)
             if o.position in body_range and o.ast
         ]
 
@@ -287,7 +287,7 @@ class ArgumentMapper:
         occurrences = self.get_occurrences(argument, self.body_range)
         if not (
             argument.arg in self.returned_names
-            or all(o.node_type is NodeType.REFERENCE for o in occurrences)
+            or all(not o.is_definition for o in occurrences)
         ):
             return
 

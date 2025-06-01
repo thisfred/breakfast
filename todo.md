@@ -2,8 +2,7 @@
 
 ### Features:
 
-* cache scope graphs (and/or partial paths?)
-* add go to definition
+* cache parsed file data
 
 ### Chores
 

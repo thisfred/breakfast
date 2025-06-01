@@ -6,7 +6,7 @@ from functools import singledispatch
 from typing import Any, Protocol
 
 from breakfast import types
-from breakfast.types import NodeType, Position, Ranged, Source, contains
+from breakfast.types import Position, Source
 from breakfast.visitor import generic_visit
 
 logger = logging.getLogger(__name__)
@@ -17,7 +17,7 @@ class Occurrence:
     name: str
     position: Position
     ast: ast.AST | None
-    node_type: NodeType
+    is_definition: bool
 
     @property
     def source(self) -> Source:
@@ -30,9 +30,6 @@ class Occurrence:
     @property
     def end(self) -> Position:
         return self.position + len(self.name)
-
-    def __contains__(self, other: Ranged) -> bool:
-        return contains(self, other)
 
 
 def find_nested_statements(
@@ -171,9 +168,7 @@ def find_names_in_name(
         name=node.id,
         position=source.node_position(node),
         ast=node,
-        node_type=NodeType.DEFINITION
-        if isinstance(node.ctx, ast.Store)
-        else NodeType.REFERENCE,
+        is_definition=isinstance(node.ctx, ast.Store),
     )
 
 
@@ -185,7 +180,7 @@ def find_names_in_function(
         name=node.name,
         position=source.position(node.lineno - 1, node.col_offset),
         ast=node,
-        node_type=NodeType.DEFINITION,
+        is_definition=True,
     )
     yield from generic_visit(find_names, node, source)
 
@@ -198,7 +193,7 @@ def find_names_in_arg(
         name=node.arg,
         position=source.position(node.lineno - 1, node.col_offset),
         ast=node,
-        node_type=NodeType.DEFINITION,
+        is_definition=True,
     )
 
 

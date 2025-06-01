@@ -65,7 +65,6 @@ disallow_untyped_decorators = false
 dev-dependencies = [
     "astpretty>=3.0.0",
     "coverage>=7.6.1",
-    "graphviz>=0.20.3",
     "lsp-devtools>=0.2.3",
     "mypy>=1.15.0",
     "pre-commit>=3.8.0",

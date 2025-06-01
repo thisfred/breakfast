@@ -9,7 +9,7 @@ import ast
 from ast import AST
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from enum import Enum, auto
+from enum import Enum
 from typing import Protocol
 
 
@@ -230,15 +230,6 @@ class Edit:
         return self.text_range.source
 
 
-class NodeType(Enum):
-    SCOPE = auto()
-    MODULE_SCOPE = auto()
-    DEFINITION = auto()
-    REFERENCE = auto()
-    INSTANCE = auto()
-    CLASS = auto()
-
-
 class Occurrence(Protocol):  # pragma: nocover
     @property
     def name(self) -> str: ...
@@ -250,4 +241,4 @@ class Occurrence(Protocol):  # pragma: nocover
     def ast(self) -> ast.AST | None: ...
 
     @property
-    def node_type(self) -> NodeType: ...
+    def is_definition(self) -> bool: ...

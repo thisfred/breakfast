@@ -15,13 +15,8 @@ from typing import ClassVar, Protocol, Self
 
 from breakfast.code_generation import unparse
 from breakfast.configuration import configuration
-from breakfast.names import (
-    all_occurrences,
-    build_graph,
-    find_definition,
-)
+from breakfast.names import all_occurrences, find_definition
 from breakfast.rewrites import ArgumentMapper, rewrite_body
-from breakfast.scope_graph import NodeType, ScopeGraph
 from breakfast.search import (
     NodeFilter,
     find_names,
@@ -65,12 +60,15 @@ def register(refactoring: "type[Refactoring]") -> "type[Refactoring]":
 @dataclass
 class CodeSelection:
     text_range: TextRange
-    _scope_graph: ScopeGraph | None = None
     _refactorings: ClassVar[dict[str, "type[Refactoring]"]] = {}
 
     @property
     def source(self) -> Source:
         return self.text_range.source
+
+    @property
+    def sources(self) -> Sequence[Source]:
+        return [self.source]
 
     @property
     def start(self) -> "Position":
@@ -94,14 +92,6 @@ class CodeSelection:
             for refactoring in self._refactorings.values()
             if (refactoring_instance := refactoring.from_selection(self))
         }
-
-    @property
-    def scope_graph(self) -> ScopeGraph:
-        if self._scope_graph is None:
-            self._scope_graph = build_graph(
-                [self.source], follow_redefinitions=False
-            )
-        return self._scope_graph
 
     @cached_property
     def in_method(self) -> bool:
@@ -220,14 +210,14 @@ class UsageCollector:
         ):
             if (
                 occurrence.position < self.range.start
-                and occurrence.node_type is NodeType.DEFINITION
+                and occurrence.is_definition
             ):
                 if i == 1 and not (self.in_static_method):
                     self.self_or_cls = occurrence
                 self._defined_before[occurrence.name].append(occurrence)
             if occurrence.position in self.range:
                 self._used_in[occurrence.name].append(occurrence)
-                if occurrence.node_type is NodeType.DEFINITION:
+                if occurrence.is_definition:
                     self._modified_in[occurrence.name].append(occurrence)
             if occurrence.position > self.range.end:
                 self._used_after[occurrence.name].append(occurrence)
@@ -512,8 +502,6 @@ def make_extract_callable_edits(
         add_indentation_after=True,
         level=refactoring.new_level,
     )
-    print(f"{refactoring.insert_position=}")
-    print(f"{refactoring.range=}")
     yield replace_with_node(
         text_range=refactoring.range,
         node=calling_statement,
@@ -735,7 +723,7 @@ class InlineVariable:
             return None
         try:
             occurrences_of_name_at_cursor = all_occurrences(
-                selection.text_range.start, graph=selection.scope_graph
+                selection.text_range.start, sources=selection.sources
             )
         except NotFoundError:
             return None
@@ -757,7 +745,7 @@ class InlineVariableEditor:
     def edits(self) -> Iterator[Edit]:
         grouped: dict[bool, list[Occurrence]] = defaultdict(list)
         for o in self.occurrences_of_name_at_cursor:
-            grouped[o.node_type is NodeType.DEFINITION].append(o)
+            grouped[o.is_definition].append(o)
 
         last_definition = grouped.get(True, [None])[-1]
 
@@ -770,17 +758,16 @@ class InlineVariableEditor:
             return
 
         if self.range.start in assignment.range:
-            after_cursor = (
-                o
-                for o in dropwhile(
-                    lambda x: x.position <= self.range.start,
+            after_cursor = list(
+                dropwhile(
+                    lambda x: x.position <= assignment.range.end,
                     self.occurrences_of_name_at_cursor,
                 )
             )
             to_replace: tuple[TextRange, ...] = tuple(
                 o.position.to(o.position + len(self.name_at_cursor))
                 for o in takewhile(
-                    lambda x: x.node_type is not NodeType.DEFINITION,
+                    lambda x: not x.is_definition,
                     after_cursor,
                 )
                 if o.position > self.range.start
@@ -840,10 +827,6 @@ class InlineCall:
         )
 
     @property
-    def scope_graph(self) -> ScopeGraph:
-        return self.selection.scope_graph
-
-    @property
     def text_range(self) -> TextRange:
         return self.selection.text_range
 
@@ -865,7 +848,7 @@ class InlineCall:
 
         name_start = self.get_start_of_name(call=call)
 
-        definition = find_definition(self.scope_graph, name_start)
+        definition = find_definition(name_start, sources=self.selection.sources)
         if definition is None or definition.position is None:
             logger.warning(f"No definition position {definition=}.")
             return
@@ -915,11 +898,12 @@ class InlineCall:
         )
         yield from result
 
-    @staticmethod
     def maybe_remove_definition(
-        name_start: Position, definition: Occurrence
+        self, name_start: Position, definition: Occurrence
     ) -> Iterator[Edit]:
-        number_of_occurrences = len(all_occurrences(name_start))
+        number_of_occurrences = len(
+            all_occurrences(name_start, sources=self.selection.sources)
+        )
         if (
             number_of_occurrences > 2
             or definition.ast is None
@@ -993,7 +977,10 @@ class InlineCall:
                         returned_names.add(return_node.value.id)
 
         arg_mapper = ArgumentMapper(
-            definition_ast.args, body_range, returned_names
+            definition_ast.args,
+            body_range,
+            returned_names,
+            sources=self.selection.sources,
         )
         arg_mapper.add_substitutions(call, substitutions)
 
@@ -1207,7 +1194,9 @@ class RemoveParameter:
             len(
                 [
                     o
-                    for o in all_occurrences(self.arg.start)
+                    for o in all_occurrences(
+                        self.arg.start, sources=self.selection.sources
+                    )
                     if o.position in self.function_definition.range
                 ]
             )
@@ -1220,9 +1209,10 @@ class RemoveParameter:
         index = self.function_definition.node.args.args.index(self.arg.node)
         for occurrence in all_occurrences(
             self.selection.source.node_position(self.function_definition.node)
-            + len("def ")
+            + len("def "),
+            sources=self.selection.sources,
         ):
-            if occurrence.node_type is not NodeType.REFERENCE:
+            if occurrence.is_definition:
                 continue
             if not (
                 calls := occurrence.position.as_range.enclosing_nodes_by_type(
@@ -1302,9 +1292,10 @@ class AddParameter:
         call_edits = []
         for occurrence in all_occurrences(
             self.selection.source.node_position(self.function_definition.node)
-            + len("def ")
+            + len("def "),
+            sources=self.selection.sources,
         ):
-            if occurrence.node_type is not NodeType.REFERENCE:
+            if occurrence.is_definition:
                 continue
             if not (
                 calls := occurrence.position.as_range.enclosing_nodes_by_type(
@@ -1349,7 +1340,6 @@ class EncapsulateRecord:
         if enclosing_assignment is None:
             logger.warning("Dictionary value not assigned to a name.")
             return None
-        print(f"{enclosing_assignment=}")
 
         match enclosing_assignment.node:
             case ast.Assign(targets):
@@ -1366,6 +1356,7 @@ class EncapsulateRecord:
                 range=selection.text_range,
                 enclosing_assignment=assignment,
                 targets=targets,
+                selection=selection,
             )
             if selection.text_range.enclosing_nodes_by_type(ast.Dict)
             else None
@@ -1379,6 +1370,7 @@ class EncapsulateRecordEditor:
         NodeWithRange[ast.Assign] | NodeWithRange[ast.AnnAssign]
     )
     targets: list[ast.expr]
+    selection: CodeSelection
 
     @property
     def edits(self) -> Iterator[Edit]:
@@ -1412,9 +1404,10 @@ class EncapsulateRecordEditor:
         )
 
         for occurrence in all_occurrences(
-            self.range.source.node_position(self.enclosing_assignment.node)
+            self.range.source.node_position(self.enclosing_assignment.node),
+            sources=self.selection.sources,
         ):
-            if occurrence.node_type is not NodeType.REFERENCE:
+            if occurrence.is_definition:
                 continue
             if not (
                 subscripts
@@ -1496,9 +1489,10 @@ class MethodToProperty:
         )
         for occurrence in all_occurrences(
             self.selection.source.node_position(self.function_definition.node)
-            + len("def ")
+            + len("def "),
+            sources=self.selection.sources,
         ):
-            if occurrence.node_type is not NodeType.REFERENCE:
+            if occurrence.is_definition:
                 continue
             if not (
                 calls := occurrence.position.as_range.enclosing_nodes_by_type(
@@ -1545,9 +1539,10 @@ class PropertyToMethod:
         yield replace_with_node(range_with_decorators, new_function)
         for occurrence in all_occurrences(
             self.selection.source.node_position(self.function_definition.node)
-            + len("def ")
+            + len("def "),
+            sources=self.selection.sources,
         ):
-            if occurrence.node_type is not NodeType.REFERENCE:
+            if occurrence.is_definition:
                 continue
             if not (
                 attributes
@@ -1615,9 +1610,10 @@ class ExtractClass:
                 for occurrence in all_occurrences(
                     self.selection.source.node_position(assignment.targets[0])
                     + len(assignment.targets[0].value.id)
-                    + 1
+                    + 1,
+                    sources=self.selection.sources,
                 ):
-                    if occurrence.node_type is not NodeType.REFERENCE:
+                    if occurrence.is_definition:
                         continue
                     attribute = (
                         occurrence.position.as_range.enclosing_nodes_by_type(
@@ -1870,7 +1866,9 @@ class ReplaceWithMethodObject:
         ).through(self.function_definition.end)
         return [
             o
-            for o in all_occurrences(arg_position)
+            for o in all_occurrences(
+                arg_position, sources=self.selection.sources
+            )
             if o.position in body_range and o.ast
         ]
 
@@ -2089,6 +2087,7 @@ class FieldToProperty:
                     attribute_range=attribute_range,
                     attribute_node=attribute_node,
                     class_scope=class_definition,
+                    selection=selection,
                 )
             case _:
                 return None
@@ -2101,21 +2100,21 @@ class FieldToPropertyEditor:
     attribute_range: TextRange
     attribute_node: ast.Attribute
     class_scope: ScopeWithRange
+    selection: CodeSelection
 
     @property
     def edits(self) -> Iterator[Edit]:
         old_attribute_name = self.attribute_node.attr
-        new_attribute_name = make_unique_name(
-            "_" + old_attribute_name, self.class_scope
-        )
-        print(f"{new_attribute_name=}")
+        # new_attribute_name = make_unique_name(
+        #     "_" + old_attribute_name, self.class_scope
+        # )
         for occurrence in all_occurrences(
             self.attribute_range.start.source.find_after(
                 old_attribute_name, self.attribute_range.start
-            )
+            ),
+            sources=self.selection.sources,
         ):
-            print(f"{occurrence=}")
-            if occurrence.node_type is not NodeType.DEFINITION:
+            if not occurrence.is_definition:
                 continue
 
         yield from ()

@@ -57,9 +57,6 @@ def test_to_source_should_not_add_unnecessary_parentheses(code):
         "src/breakfast/project.py",
         "src/breakfast/refactoring.py",
         "src/breakfast/rewrites.py",
-        "src/breakfast/scope_graph/__init__.py",
-        "src/breakfast/scope_graph/scope_graph.py",
-        "src/breakfast/scope_graph/visualization.py",
         "src/breakfast/search.py",
         "src/breakfast/source.py",
         "src/breakfast/types.py",
@@ -70,7 +67,6 @@ def test_to_source_should_not_add_unnecessary_parentheses(code):
         "tests/test_names.py",
         "tests/test_position.py",
         "tests/test_refactoring.py",
-        "tests/test_scope_graph.py",
         "tests/test_source.py",
     ),
 )

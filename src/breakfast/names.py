@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import ast
 import logging
 
@@ -5,27 +7,19 @@ try:
     from ast import TypeVar
 except ImportError:  # pragma: nocover
     TypeVar = None  # type: ignore[assignment,misc]
-from collections import defaultdict
+
+from collections import deque
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from functools import singledispatch
+from typing import Any, Protocol, Self
 
-from breakfast.scope_graph import (
-    Configuration,
-    Fragment,
-    Gadget,
-    IncompleteFragment,
-    NotFoundError,
-    OccurrenceNode,
-    Path,
-    ScopeGraph,
-    ScopeNode,
-    State,
-    no_lookup_in_enclosing_scope,
-)
+from breakfast import types
 from breakfast.source import SubSource
-from breakfast.types import NodeType, Occurrence, Position, Source
+from breakfast.types import Occurrence, Position
+from breakfast.visitor import generic_visit
 
+STATIC_METHOD = "staticmethod"
 logger = logging.getLogger(__name__)
 
 CLASS_OFFSET = len("class ")
@@ -33,695 +27,794 @@ DEF_OFFSET = len("def ")
 ASYNC_DEF_OFFSET = len("async def ")
 
 
-def all_occurrence_positions(
-    position: Position,
-    *,
-    sources: Iterable[Source] | None = None,
-    in_reverse_order: bool = False,
-    debug: bool = False,
-    graph: ScopeGraph | None = None,
-) -> list[Position]:
-    positions = [
-        o.position
-        for o in all_occurrences(
-            position,
-            sources=sources,
-            debug=debug,
-            graph=graph,
-        )
-    ]
-
-    return positions
+@dataclass(frozen=True)
+class NameOccurrence:
+    name: str
+    position: types.Position
+    ast: ast.AST | None
+    is_definition: bool
 
 
-def all_occurrences(
-    position: Position,
-    *,
-    sources: Iterable[Source] | None = None,
-    in_reverse_order: bool = False,
-    debug: bool = False,
-    graph: ScopeGraph | None = None,
-) -> Sequence[Occurrence]:
-    graph = graph or build_graph(sources or [position.source])
-    if debug:  # pragma: nocover
-        from breakfast.scope_graph.visualization import view_graph
-
-        view_graph(graph)
-
-    found_definition, definitions = find_definitions(
-        graph=graph, position=position
-    )
-
-    if not found_definition.position:
-        raise AssertionError(
-            "Should have found at least the original position."
-        )
-
-    return sorted(
-        (
-            o
-            for _, o in consolidate_occurrences(
-                definitions, found_definition
-            ).items()
-            if isinstance(o, OccurrenceNode)
-            if o.position is not None and o.source is not None
-        ),
-        key=lambda o: o.position,
-        reverse=in_reverse_order,
-    )
+@dataclass(frozen=True)
+class SuperCall:
+    occurrence: NameOccurrence
 
 
-def find_definitions(
-    graph: ScopeGraph, position: Position
-) -> tuple[OccurrenceNode, dict[OccurrenceNode, set[OccurrenceNode]]]:
-    scopes_for_position = graph.positions.get(position)
-    if not scopes_for_position:
-        raise NotFoundError
-
-    for scope in scopes_for_position:
-        if scope.name is not None:
-            possible_occurrences = graph.references[scope.name]
-            break
-    else:
-        raise NotFoundError
-    found_definition, definitions = filter_possible_occurrences(
-        position, possible_occurrences, graph
-    )
-
-    return found_definition, definitions
+@dataclass(frozen=True)
+class Nonlocal:
+    name: str
+    position: types.Position
+    ast: ast.AST | None
+    is_definition: bool = False
 
 
-def filter_possible_occurrences(
-    position: Position,
-    possible_occurrences: Iterable[OccurrenceNode],
-    graph: ScopeGraph,
-) -> tuple[OccurrenceNode, dict[OccurrenceNode, set[OccurrenceNode]]]:
-    definitions: dict[OccurrenceNode, set[OccurrenceNode]] = defaultdict(set)
-    found_definition = None
-    for occurrence in possible_occurrences:
-        if occurrence.node_type is NodeType.DEFINITION:
-            definitions[occurrence].add(occurrence)
-            if position == occurrence.position:
-                found_definition = occurrence
-            continue
-
-        try:
-            prior_definition = graph.find_definition(occurrence)
-        except NotFoundError:
-            continue
-
-        definitions[prior_definition].add(occurrence)
-        if position in (prior_definition.position, occurrence.position):
-            found_definition = prior_definition
-
-    if not found_definition:
-        raise NotFoundError
-
-    return found_definition, definitions
+@dataclass(frozen=True)
+class Global:
+    name: str
+    position: types.Position
+    ast: ast.AST | None
+    is_definition: bool = False
 
 
-def find_definition(
-    graph: ScopeGraph, position: Position
-) -> OccurrenceNode | None:
-    try:
-        return find_definitions(graph, position)[0]
-    except NotFoundError:
-        return None
-
-
-def consolidate_occurrences(
-    definitions: dict[OccurrenceNode, set[OccurrenceNode]],
-    found_definition: OccurrenceNode,
-) -> dict[Position, OccurrenceNode]:
-    groups: list[dict[Position, OccurrenceNode]] = []
-    found_group: dict[Position, OccurrenceNode] = {}
-    for definition, occurrences in definitions.items():
-        positions = {o.position: o for o in occurrences if o.position}
-        if not definition.position:
-            continue
-        positions[definition.position] = definition
-        for group in groups:
-            if positions.keys() & group.keys():
-                group.update(positions)
-                if found_definition.position in group:
-                    found_group = group
-                break
-        else:
-            groups.append(positions)
-            if found_definition.position in positions:
-                found_group = positions
-
-    return found_group
-
-
-def generic_visit(
-    node: ast.AST, source: Source, graph: ScopeGraph, state: State
-) -> Iterator[Fragment]:
-    """Called if no explicit visitor function exists for a node.
-
-    Adapted from NodeVisitor in:
-
-    https://github.com/python/cpython/blob/master/Lib/ast.py
-    """
-    for _, value in ast.iter_fields(node):
-        if isinstance(value, list):
-            yield from visit_all(value, source, graph, state)
-
-        elif isinstance(value, ast.AST):
-            yield from visit(value, source, graph, state)
+@dataclass
+class Delay:
+    delayed: Iterator[Event]
 
 
 @singledispatch
-def visit(
-    node: ast.AST, source: Source, graph: ScopeGraph, state: State
-) -> Iterator[Fragment]:
-    yield from generic_visit(node, source, graph, state)
+def occurrence(node: ast.AST, source: types.Source) -> NameOccurrence | None:
+    logger.warning(f"Unable to handle {ast.dump(node)=}")
+    return None
 
 
-def visit_all(
-    nodes: Iterable[ast.AST], source: Source, graph: ScopeGraph, state: State
-) -> Iterator[Fragment]:
-    for node in nodes:
-        if isinstance(node, ast.AST):
-            yield from visit(node, source, graph, state)
+@occurrence.register
+def name_occurrence(
+    node: ast.Name, source: types.Source
+) -> NameOccurrence | None:
+    return NameOccurrence(
+        name=node.id,
+        position=source.node_position(node),
+        ast=node,
+        is_definition=isinstance(node.ctx, ast.Store),
+    )
 
 
-@visit.register
-def visit_module(
-    node: ast.Module, source: Source, graph: ScopeGraph, state: State
-) -> Iterator[Fragment]:
-    module_root = graph.add_scope()
-    graph.module_roots[source.module_name] = module_root
-
-    # XXX: when we encounter a module name like a.b.c, we want to connect to existing
-    # nodes for a and b if they exist already.
-    current = graph.root
-    packages = []
-    for part in source.module_name:
-        packages.append(part)
-        found = None
-        for _, other_id in graph.edges[current.node_id]:
-            other_node = graph.nodes[other_id]
-            if (
-                isinstance(other_node.action, Pop)
-                and other_node.action.path == part
-            ):
-                found = other_node
-                break
-        if found:
-            current = found
-            found = None
-            for _, other_id in graph.edges[current.node_id]:
-                dot_node = graph.nodes[other_id]
-                if (
-                    isinstance(dot_node.action, Pop)
-                    and dot_node.action.path == "."
-                ):
-                    found = dot_node
-                    break
-            if found:
-                current = found
-            else:
-                current = graph.add_scope(
-                    link_from=current,
-                    action=Pop("."),
-                )
-
-        else:
-            current = graph.add_scope(
-                link_from=current,
-                action=Pop(part),
-                is_definition=True,
-            )
-            current = graph.add_scope(
-                link_from=current,
-                action=Pop("."),
-            )
-
-    graph.add_edge(current, module_root, same_rank=True)
-    with state.scope(module_root):
-        with state.packages(packages):
-            current = process_body(node.body, source, graph, state, current)
-
-    graph.add_edge(module_root, current)
-
-    yield Gadget([graph.root])
+@occurrence.register
+def ann_assign(
+    node: ast.AnnAssign, source: types.Source
+) -> NameOccurrence | None:
+    return occurrence(node.target, source=source)
 
 
-@visit.register
-def visit_name(
-    node: ast.Name, source: Source, graph: ScopeGraph, state: State
-) -> Iterator[Fragment]:
-    name = node.id
-    position = source.node_position(node)
-    if isinstance(node.ctx, ast.Store):
-        scopes = []
-        if state.configuration.follow_redefinitions:
-            scopes.append(
-                graph.add_scope(
-                    name=name,
-                    position=position,
-                    action=Push(name),
-                    rules=(no_lookup_in_enclosing_scope,),
-                    ast=node,
-                )
-            )
-        scopes.append(
-            graph.add_scope(
+@occurrence.register
+def assign(node: ast.Assign, source: types.Source) -> NameOccurrence | None:
+    return occurrence(node.targets[0], source=source)
+
+
+@occurrence.register
+def class_occurrence(
+    node: ast.ClassDef, source: types.Source
+) -> NameOccurrence | None:
+    return definition(node=node, source=source, prefix="class ")
+
+
+@occurrence.register
+def function_occurrence(
+    node: ast.FunctionDef, source: types.Source
+) -> NameOccurrence | None:
+    return definition(node=node, source=source, prefix="def ")
+
+
+@occurrence.register
+def async_function_occurrence(
+    node: ast.AsyncFunctionDef, source: types.Source
+) -> NameOccurrence | None:
+    return definition(node=node, source=source, prefix="async def ")
+
+
+def definition(
+    node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
+    source: types.Source,
+    prefix: str = "",
+) -> NameOccurrence | None:
+    name_occurrence = NameOccurrence(
+        name=node.name,
+        position=source.node_position(node) + len(prefix),
+        ast=node,
+        is_definition=True,
+    )
+    return name_occurrence
+
+
+class Namespace(Protocol):
+    attributes: dict[str, Name]
+
+
+@dataclass
+class Name:
+    attributes: dict[str, Name]
+    types: list[Namespace]
+    occurrences: set[Occurrence]
+
+    @classmethod
+    def new(cls) -> Self:
+        return cls(attributes={}, types=[], occurrences=set())
+
+
+@dataclass
+class Scope:
+    module: tuple[str, ...]
+    attributes: dict[str, Name]
+    children: list[Scope]
+    blocks: dict[str, Scope]
+    is_block: bool = False
+    is_class: bool = False
+    parent: Scope | None = None
+    name: str | None = None
+
+    def lookup(self, name: str) -> Name | None:
+        if name in self.attributes:
+            return self.attributes[name]
+
+        if self.parent:
+            return self.parent.lookup(name)
+
+        return None
+
+    def get_or_create(self, occurrence: NameOccurrence) -> Name:
+        result = self.attributes.setdefault(occurrence.name, Name.new())
+        result.occurrences.add(occurrence)
+        return result
+
+    def add_child(
+        self, name: str | None = None, is_class: bool = False
+    ) -> Scope:
+        if name:
+            if name in self.blocks:
+                return self.blocks[name]
+
+            child = Scope(
+                module=self.module,
+                attributes={},
+                children=[],
+                blocks={},
+                parent=self,
+                is_class=is_class,
                 name=name,
-                position=position,
-                action=Pop(name),
-                is_definition=True,
-                ast=node,
             )
+            self.blocks[name] = child
+        else:
+            child = Scope(
+                module=self.module,
+                attributes={},
+                children=[],
+                blocks={},
+                parent=self,
+            )
+        self.children.append(child)
+        return child
+
+
+@dataclass(frozen=True)
+class EnterScope:
+    name: str | None = None
+    is_class: bool = False
+
+
+@dataclass(frozen=True)
+class EnterFunctionScope:
+    occurrence: NameOccurrence
+
+
+@dataclass(frozen=True)
+class MoveToScope:
+    event: NameOccurrence | Attribute
+
+
+class ReturnFromScope: ...
+
+
+@dataclass(frozen=True)
+class MoveToModule:
+    name: tuple[str, ...]
+
+
+class ReturnFromModule: ...
+
+
+class LeaveScope: ...
+
+
+@dataclass(frozen=True)
+class Attribute:
+    value: NameOccurrence | Attribute
+    attribute: NameOccurrence
+
+
+@dataclass(frozen=True)
+class ClassAttribute:
+    class_occurrence: NameOccurrence
+    attribute: NameOccurrence
+
+
+@dataclass(frozen=True)
+class Bind:
+    target: NameOccurrence | Attribute
+    value: NameOccurrence | Attribute
+
+
+@dataclass(frozen=True)
+class BindImportFrom:
+    occurrence: NameOccurrence
+    module: tuple[str, ...]
+    level: int
+
+
+@dataclass(frozen=True)
+class BindImport:
+    occurrence: NameOccurrence | Attribute
+
+
+@dataclass(frozen=True)
+class BaseClass:
+    class_occurrence: NameOccurrence | Attribute
+    base: NameOccurrence | Attribute
+
+
+@dataclass
+class FirstArgument:
+    arg: NameOccurrence
+
+
+class Event(Protocol): ...
+
+
+def all_occurrences(
+    position: types.Position,
+    *,
+    sources: Sequence[types.Source],
+) -> list[Occurrence]:
+    collector = NameCollector.from_sources(sources)
+    return sorted(
+        collector.all_occurrences_for(position), key=lambda o: o.position
+    )
+
+
+def all_occurrence_positions(
+    position: Position,
+    *,
+    sources: Sequence[types.Source],
+) -> list[types.Position]:
+    result = sorted(
+        o.position for o in all_occurrences(position, sources=sources)
+    )
+    return result
+
+
+def find_definition(
+    position: Position, *, sources: Sequence[types.Source]
+) -> Occurrence | None:
+    definitions = [
+        o for o in all_occurrences(position, sources=sources) if o.is_definition
+    ]
+    if not definitions:
+        return None
+    return definitions[0]
+
+
+@dataclass
+class NameCollector:
+    positions: dict[types.Position, Name | None]
+    delays: deque[tuple[Scope, Iterator[Event]]]
+    current_scope: Scope
+    previous_scopes: list[Scope]
+    name_scopes: dict[int, Scope]
+    modules: dict[tuple[str, ...], Scope]
+
+    @classmethod
+    def from_source(cls, source: types.Source) -> Self:
+        return cls.from_sources(sources=[source])
+
+    @classmethod
+    def from_sources(cls, sources: Sequence[types.Source]) -> Self:
+        instance = None
+        for source in import_ordered(sources):
+            module = tuple(source.module_name)
+            scope = Scope(module=module, attributes={}, blocks={}, children=[])
+            if instance is None:
+                instance = cls(
+                    positions={},
+                    delays=deque([]),
+                    previous_scopes=[],
+                    name_scopes={},
+                    current_scope=scope,
+                    modules={module: scope},
+                )
+            else:
+                instance.enter_module(module)
+
+            for event in find_names(source.ast, source):
+                process(event, instance)
+            while instance.delays:
+                scope, iterator = instance.delays.popleft()
+                old_current = instance.current_scope
+                instance.current_scope = scope
+                for event in iterator:
+                    process(event, instance)
+                instance.current_scope = old_current
+
+        if instance is None:
+            raise types.NotFoundError()
+        return instance
+
+    def all_occurrences_for(self, position: types.Position) -> set[Occurrence]:
+        name = self.positions[position]
+        if name:
+            return name.occurrences
+
+        return set()
+
+    def add_occurrence(self, occurrence: NameOccurrence) -> None:
+        if not self.positions.get(occurrence.position):
+            self.add_name(occurrence)
+
+    def add_nonlocal(self, occurrence: Occurrence) -> None:
+        name = self.current_scope.lookup(occurrence.name)
+        if name is None:
+            return
+        name.occurrences.add(occurrence)
+        self.current_scope.attributes[occurrence.name] = name
+
+    def add_global(self, occurrence: Occurrence) -> None:
+        global_scope = self.modules[self.current_scope.module]
+        if global_scope is None:
+            return
+
+        name = global_scope.lookup(occurrence.name)
+        if name is None:
+            return
+
+        name.occurrences.add(occurrence)
+        self.current_scope.attributes[occurrence.name] = name
+
+    def add_name(self, occurrence: NameOccurrence) -> Name | None:
+        if occurrence.is_definition:
+            name: Name | None = self.current_scope.get_or_create(occurrence)
+        else:
+            name = self.current_scope.lookup(occurrence.name)
+            if name:
+                name.occurrences.add(occurrence)
+        self.positions[occurrence.position] = name
+        return name
+
+    def add_class_attribute(
+        self,
+        attribute: NameOccurrence,
+        class_occurrence: NameOccurrence,
+    ) -> None:
+        if self.current_scope.parent is None:
+            return
+
+        cls = self.current_scope.parent.attributes[class_occurrence.name]
+        self.add_attribute_occurrence(value=cls, attribute_occurrence=attribute)
+
+    def add_attribute(
+        self,
+        value: Occurrence | Attribute,
+        occurrence: NameOccurrence,
+    ) -> None:
+        current = self.lookup(value)
+        if current is None:
+            return
+        self.add_attribute_occurrence(
+            value=current, attribute_occurrence=occurrence
         )
 
-    else:
-        scopes = [
-            graph.add_scope(
-                name=name, position=position, action=Push(name), ast=node
-            )
-        ]
-
-    for scope in scopes:
-        yield IncompleteFragment(scope, scope)
-
-
-def build_target_fragments(
-    node: ast.Assign,
-    source: Source,
-    graph: ScopeGraph,
-    state: State,
-    current_scope: ScopeNode,
-    current_parent: ScopeNode,
-) -> list[Fragment]:
-    target_fragments = []
-    for node_target in node.targets:
-        for fragment in visit(node_target, source, graph, state):
-            if isinstance(fragment.entry.action, Pop):
-                graph.add_edge(current_scope, fragment.entry, same_rank=True)
-                target_fragments.append(fragment)
-            elif isinstance(fragment.exit.action, Push):
-                graph.add_edge(fragment.exit, current_parent, same_rank=True)
-
-    return target_fragments
-
-
-@visit.register
-def visit_assign(
-    node: ast.Assign, source: Source, graph: ScopeGraph, state: State
-) -> Iterator[Fragment]:
-    # XXX: Pretty hacky: haven't yet figured out an elegant/safe way to handle multiple
-    # targets.
-    exit_scope = graph.add_scope()
-    current_parent = exit_scope
-
-    scopes = [graph.add_scope(link_to=current_parent)]
-    target_fragments = build_target_fragments(
-        node=node,
-        source=source,
-        graph=graph,
-        state=state,
-        current_scope=scopes[0],
-        current_parent=current_parent,
-    )
-    value_fragments = []
-    for fragment in visit(node.value, source, graph, state):
-        match fragment:
-            case Gadget():
-                yield fragment
-            case _:
-                value_fragments.append(fragment)
-    if len(value_fragments) == len(target_fragments):
-        for target_fragment, value_fragment in zip(
-            target_fragments, value_fragments, strict=True
-        ):
-            graph.add_edge(
-                target_fragment.exit,
-                value_fragment.entry,
-                same_rank=True,
-            )
-            graph.add_edge(value_fragment.exit, current_parent)
-    else:
-        if target_fragments:
-            # XXX: this handles things like binary operator expressions on the rhs,
-            # which I need to find a different solution for yet.
-            for value_fragment in value_fragments:
-                graph.add_edge(
-                    target_fragments[0].exit,
-                    value_fragment.entry,
-                    same_rank=True,
+    def add_attribute_occurrence(
+        self, value: Name, attribute_occurrence: NameOccurrence
+    ) -> None:
+        for parent_type in (value, *value.types):
+            if result := parent_type.attributes.get(attribute_occurrence.name):
+                break
+        else:
+            if value.types:
+                result = value.types[0].attributes.setdefault(
+                    attribute_occurrence.name,
+                    Name(attributes={}, types=[], occurrences=set()),
                 )
-                graph.add_edge(value_fragment.exit, current_parent)
+            else:
+                result = value.attributes.setdefault(
+                    attribute_occurrence.name,
+                    Name(attributes={}, types=[], occurrences=set()),
+                )
+        result = result
+        found_attribute = result
+        found_attribute.occurrences.add(attribute_occurrence)
+        self.positions[attribute_occurrence.position] = found_attribute
 
-    yield Gadget([*scopes, exit_scope])
+    def enter_module(self, module_name: tuple[str, ...]) -> None:
+        self.current_scope = self.modules.setdefault(
+            module_name,
+            Scope(module=module_name, attributes={}, blocks={}, children=[]),
+        )
+
+    def enter_scope(
+        self, name: str | None = None, is_class: bool = False
+    ) -> None:
+        self.current_scope = self.current_scope.add_child(name, is_class)
+
+    def enter_function_scope(self, occurrence: NameOccurrence) -> None:
+        if occurrence.position in self.positions:
+            name = self.positions[occurrence.position]
+        else:
+            name = self.current_scope.lookup(occurrence.name)
+        self.enter_scope(occurrence.name)
+        if name is None:
+            return
+        self.name_scopes[id(name)] = self.current_scope
+
+    def move_to_scope(self, event: NameOccurrence | Attribute) -> None:
+        self.previous_scopes.append(self.current_scope)
+
+        name = self.lookup(event)
+        if name is None:
+            self.enter_scope()
+            return
+
+        scope = self.name_scopes.get(id(name))
+        if scope is None:
+            self.enter_scope()
+            return
+
+        self.current_scope = scope
+
+    def move_to_module(self, module: tuple[str, ...]) -> None:
+        self.previous_scopes.append(self.current_scope)
+        self.enter_module(module)
+
+    def return_from_scope(self) -> None:
+        self.current_scope = self.previous_scopes.pop()
+
+    def leave_scope(self) -> None:
+        if self.current_scope.parent:
+            self.current_scope = self.current_scope.parent
+
+    def delay(self, delayed: Iterator[Event]) -> None:
+        self.delays.append((self.current_scope, delayed))
+
+    def add_first_argument(self, arg: NameOccurrence) -> None:
+        if not (
+            self.current_scope.parent and self.current_scope.parent.is_class
+        ):
+            return
+
+        target = self.lookup(arg)
+        value = (
+            self.current_scope.parent.parent.attributes.get(
+                self.current_scope.parent.name
+            )
+            if self.current_scope.parent.parent
+            and self.current_scope.parent.name
+            else None
+        )
+        if target and value:
+            target.types.append(value)
+
+    def add_super_call(self, occurrence: NameOccurrence) -> None:
+        if not (
+            self.current_scope.parent and self.current_scope.parent.is_class
+        ):
+            return
+
+        target: Name | None = self.current_scope.attributes.setdefault(
+            occurrence.name, Name(attributes={}, types=[], occurrences=set())
+        )
+        self.current_scope.attributes[occurrence.name].occurrences.add(
+            occurrence
+        )
+        class_name = (
+            self.current_scope.parent.parent.attributes.get(
+                self.current_scope.parent.name
+            )
+            if self.current_scope.parent.parent
+            and self.current_scope.parent.name
+            else None
+        )
+        if class_name is None:
+            return
+
+        if target:
+            target.types.extend(class_name.types)
+
+    def add_base_class(
+        self,
+        class_occurrence: NameOccurrence | Attribute,
+        base: NameOccurrence | Attribute,
+    ) -> None:
+        class_name = self.lookup(class_occurrence)
+        base_name = self.lookup(base)
+        if class_name and base_name:
+            class_name.types.append(base_name)
+
+    def bind(
+        self,
+        target: NameOccurrence | Attribute,
+        value: NameOccurrence | Attribute,
+    ) -> None:
+        target_name = self.lookup(target)
+        value_name = self.lookup(value)
+        if target_name and value_name:
+            target_name.types.extend([value_name, *value_name.types])
+
+    def bind_import_from(
+        self, occurrence: NameOccurrence, module: tuple[str, ...], level: int
+    ) -> None:
+        if level:
+            module = (*self.current_scope.module[:-level], *module)
+        if occurrence.name == "*":
+            for key, value in self.modules[module].attributes.items():
+                self.current_scope.attributes[key] = value
+            return
+
+        if module not in self.modules:
+            return
+
+        imported_name = self.modules[module].get_or_create(occurrence)
+        self.current_scope.attributes[occurrence.name] = imported_name
+        self.positions[occurrence.position] = imported_name
+
+    def bind_import(self, occurrence: NameOccurrence | Attribute) -> None:
+        module = self.modules.get(module_name(occurrence))
+        name = self.lookup_or_create(occurrence)
+        if module is None:
+            return
+
+        name.types.append(module)
+
+    def lookup_or_create(self, occurrence: NameOccurrence | Attribute) -> Name:
+        if isinstance(occurrence, Attribute):
+            name = self.lookup_or_create(occurrence.value)
+            return lookup_attribute(
+                value=name, attribute=occurrence.attribute.name
+            )
+        else:
+            result = self.current_scope.get_or_create(occurrence)
+            self.positions[occurrence.position] = result
+            return result
+
+    def lookup(self, occurrence: Occurrence | Attribute) -> Name | None:
+        if isinstance(occurrence, Attribute):
+            name = self.lookup(occurrence.value)
+            if name is None:
+                return None
+
+            return lookup_attribute(
+                value=name, attribute=occurrence.attribute.name
+            )
+        else:
+            return self.current_scope.lookup(occurrence.name)
 
 
-@visit.register
-def visit_subscript(
-    node: ast.Subscript, source: Source, graph: ScopeGraph, state: State
-) -> Iterator[Fragment]:
-    current_scope = graph.add_scope()
-
-    for slice_fragment in visit(node.slice, source, graph, state):
-        graph.add_edge(slice_fragment.exit, current_scope)
-        yield Gadget([current_scope])
-
-    yield from visit(node.value, source, graph, state)
+@singledispatch
+def process(event: Any, collector: NameCollector) -> None:
+    raise NotImplementedError(f"{event=}")
 
 
-@visit.register
-def visit_attribute(
-    node: ast.Attribute, source: Source, graph: ScopeGraph, state: State
-) -> Iterator[Fragment]:
-    expressions = []
-    for fragment in visit(node.value, source, graph, state):
-        match fragment:
-            case IncompleteFragment():
-                expressions.append(fragment)
-            case _:
-                yield fragment
+@process.register
+def _(event: NameOccurrence, collector: NameCollector) -> None:
+    collector.add_occurrence(occurrence=event)
 
-    position = source.node_position(node)
-    names = names_from(node.value)
-    positions = []
-    for name in (*names, node.attr):
-        new_position = source.find_after(name, position)
-        positions.append(new_position)
-        position = new_position
 
-    in_scope = graph.add_scope(
-        name=node.attr,
-        position=position,
-        action=Push(node.attr),
+@process.register
+def _(event: EnterScope, collector: NameCollector) -> None:
+    collector.enter_scope(event.name, event.is_class)
+
+
+@process.register
+def _(event: EnterFunctionScope, collector: NameCollector) -> None:
+    collector.enter_function_scope(event.occurrence)
+
+
+@process.register
+def _(event: MoveToScope, collector: NameCollector) -> None:
+    collector.move_to_scope(event=event.event)
+
+
+@process.register
+def _(
+    event: ReturnFromScope | ReturnFromModule, collector: NameCollector
+) -> None:
+    collector.return_from_scope()
+
+
+@process.register
+def _(event: LeaveScope, collector: NameCollector) -> None:
+    collector.leave_scope()
+
+
+@process.register
+def _(event: MoveToModule, collector: NameCollector) -> None:
+    collector.move_to_module(module=event.name)
+
+
+@process.register
+def _(event: ReturnFromModule, collector: NameCollector) -> None:
+    collector.return_from_scope()
+
+
+@process.register
+def _(event: Attribute, collector: NameCollector) -> None:
+    collector.add_attribute(occurrence=event.attribute, value=event.value)
+
+
+@process.register
+def _(event: ClassAttribute, collector: NameCollector) -> None:
+    collector.add_class_attribute(
+        attribute=event.attribute, class_occurrence=event.class_occurrence
     )
-    dot_scope = graph.add_scope(
-        link_from=in_scope,
-        action=Push("."),
-        same_rank=True,
-    )
-    final_fragment = None
-    for fragment in expressions:
-        graph.add_edge(dot_scope, fragment.entry, same_rank=True)
-        final_fragment = fragment
 
-    yield IncompleteFragment(
-        in_scope,
-        final_fragment.exit if final_fragment else dot_scope,
+
+@process.register
+def _(event: BaseClass, collector: NameCollector) -> None:
+    collector.add_base_class(
+        class_occurrence=event.class_occurrence, base=event.base
     )
-    if not isinstance(node.ctx, ast.Store):
+
+
+@process.register
+def _(event: Bind, collector: NameCollector) -> None:
+    collector.bind(target=event.target, value=event.value)
+
+
+@process.register
+def _(event: BindImportFrom, collector: NameCollector) -> None:
+    collector.bind_import_from(
+        occurrence=event.occurrence, module=event.module, level=event.level
+    )
+
+
+@process.register
+def _(event: BindImport, collector: NameCollector) -> None:
+    collector.bind_import(occurrence=event.occurrence)
+
+
+@process.register
+def _(event: FirstArgument, collector: NameCollector) -> None:
+    collector.add_first_argument(event.arg)
+
+
+@process.register
+def _(event: Delay, collector: NameCollector) -> None:
+    collector.delay(delayed=event.delayed)
+
+
+@process.register
+def _(event: SuperCall, collector: NameCollector) -> None:
+    collector.add_super_call(occurrence=event.occurrence)
+
+
+@process.register
+def _(event: Nonlocal, collector: NameCollector) -> None:
+    collector.add_nonlocal(occurrence=event)
+
+
+@process.register
+def _(event: Global, collector: NameCollector) -> None:
+    collector.add_global(occurrence=event)
+
+
+def lookup_attribute(value: Name, attribute: str) -> Name:
+    for parent_type in (value, *value.types):
+        if result := parent_type.attributes.get(attribute):
+            break
+    else:
+        result = value.attributes.setdefault(
+            attribute, Name(attributes={}, types=[], occurrences=set())
+        )
+    return result
+
+
+@singledispatch
+def find_names(node: ast.AST, source: types.Source) -> Iterator[Event]:
+    yield from generic_visit(find_names, node, source)
+
+
+@find_names.register
+def name(node: ast.Name, source: types.Source) -> Iterator[Event]:
+    if name_occurrence := occurrence(node, source):
+        yield name_occurrence
+
+
+@find_names.register
+def type_var(node: ast.TypeVar, source: types.Source) -> Iterator[Event]:
+    yield NameOccurrence(
+        node.name,
+        position=source.node_position(node),
+        ast=node,
+        is_definition=True,
+    )
+    if node.bound:
+        yield from find_names(node.bound, source)
+
+
+@find_names.register
+def function_definition(  # noqa: C901
+    node: ast.FunctionDef | ast.AsyncFunctionDef, source: types.Source
+) -> Iterator[Event]:
+    for decorator in node.decorator_list:
+        yield from find_names(decorator, source)
+
+    if not (definition := occurrence(node, source)):
         return
 
-    previous_fragment = None
-    for name, name_position in zip(names, positions[:-1], strict=True):
-        fragment = graph.connect(
-            graph.add_scope(
-                name=name, position=name_position, action=Pop(name)
-            ),
-            graph.add_scope(action=Pop(".")),
-            same_rank=True,
-        )
-        if previous_fragment:
-            fragment = graph.connect(
-                previous_fragment, fragment, same_rank=True
-            )
-        previous_fragment = fragment
+    yield definition
+    for default in node.args.defaults:
+        yield from find_names(default, source)
 
-    fragment = graph.connect(
-        fragment,
-        graph.add_scope(
-            action=Pop(node.attr), position=position, same_rank=True
-        ),
+    yield EnterFunctionScope(definition)
+
+    for type_parameter in node.type_params:
+        yield from find_names(type_parameter, source)
+
+    return_event = None
+    if node.returns:
+        for event in annotation(node.returns, source):
+            if isinstance(event, NameOccurrence | Attribute):
+                return_event = event
+            yield event
+
+    if return_event:
+        yield Bind(definition, return_event)
+
+    in_static_method = any(
+        d.id == STATIC_METHOD
+        for d in node.decorator_list
+        if isinstance(d, ast.Name)
     )
-    yield fragment
+    yield from arguments(node.args, source, in_static_method=in_static_method)
 
-    # XXX: hate this
-    if len(names) == 1 and state.instance_scope and names[0] == state.self:
-        add_instance_property(
-            graph, state, node.attr, position, state.instance_scope
-        )
+    def process_body() -> Iterator[Event]:
+        for statement in node.body:
+            yield from find_names(statement, source)
 
+    # TODO: can factor out traversal and get rid of this
+    yield Delay(process_body())
 
-def add_instance_property(
-    graph: ScopeGraph,
-    state: State,
-    attribute: str,
-    attribute_position: Position,
-    instance_scope: ScopeNode,
-) -> None:
-    # XXX: this is a hack to set the property on the instance node, so it can be found
-    # by other methods referencing it, as well as code accessing it directly on an
-    # instance.
-    for _, other_id in graph.edges[instance_scope.node_id]:
-        dot_scope = graph.nodes[other_id]
-        if isinstance(dot_scope.action, Pop) and dot_scope.action.path == ".":
-            break
-    else:
-        dot_scope = graph.add_scope(
-            link_from=instance_scope,
-            action=Pop("."),
-            same_rank=True,
-        )
-
-    for node in graph.traverse(dot_scope):
-        if isinstance(node.action, Pop) and node.action.path == attribute:
-            break
-    else:
-        graph.add_scope(
-            link_from=dot_scope,
-            name=attribute,
-            position=attribute_position,
-            action=Pop(attribute),
-            same_rank=True,
-            is_definition=True,
-            # XXX: make this a link that is only traversed after other possibilities are
-            # exhausted, because if there is a class attribute, we want to reach that.
-            priority=1,
-        )
+    yield LeaveScope()
 
 
-@visit.register
-def visit_call(
-    node: ast.Call, source: Source, graph: ScopeGraph, state: State
-) -> Iterator[Fragment]:
-    for fragment in visit_all(node.args, source, graph, state):
-        scope = graph.add_scope()
-        graph.connect(fragment, scope, same_rank=True)
-        yield Gadget([scope])
-
-    yield from visit_all(node.args, source, graph, state)
-
-    in_scope = graph.add_scope(action=Push("()"))
-
-    expressions = []
-    for fragment in visit(node.func, source, graph, state):
-        match fragment:
-            case IncompleteFragment():
-                expressions.append(fragment)
-            case _:
-                yield fragment
-
-    for fragment in expressions:
-        graph.add_edge(in_scope, fragment.entry, same_rank=True)
-
-        keyword_position = source.node_position(node)
-        for keyword in node.keywords:
-            if not keyword.arg:
-                continue
-
-            yield from visit(keyword.value, source, graph, state)
-            keyword_position = source.node_position(keyword)
-            graph.add_scope(
-                link_to=in_scope,
-                name=keyword.arg,
-                position=keyword_position,
-                action=Push(keyword.arg),
-                same_rank=True,
-            )
-
-        yield IncompleteFragment(in_scope, fragment.exit)
-
-
-@visit.register
-def visit_for_loop(
-    node: ast.For, source: Source, graph: ScopeGraph, state: State
-) -> Iterator[Fragment]:
-    exit_scope = graph.add_scope()
-    current_parent = exit_scope
-    current_scope = graph.add_scope(link_to=current_parent)
-
-    for fragment in visit(node.target, source, graph, state):
-        if isinstance(fragment.entry.action, Pop):
-            graph.add_edge(current_scope, fragment.entry, same_rank=True)
-        elif isinstance(fragment.exit.action, Push):
-            graph.add_edge(fragment.exit, current_parent, same_rank=True)
-
-    yield Gadget([current_scope, exit_scope])
-    yield from visit(node.iter, source, graph, state)
-    yield from visit_all(node.body, source, graph, state)
-    yield from visit_all(node.orelse, source, graph, state)
-
-
-def add_super_gadgets(
-    state: State, current_scope: ScopeNode, graph: ScopeGraph
-) -> ScopeNode:
-    for base in state.inheritance_hierarchy:
-        parent = current_scope
-        current_scope = graph.add_scope(link_to=current_scope)
-        previous = graph.add_scope(
-            link_from=current_scope,
-            name="super",
-            action=Pop("super"),
-            is_definition=True,
-            same_rank=True,
-        )
-        for i, name in enumerate(base):
-            previous = graph.add_scope(
-                link_from=previous,
-                name=name,
-                action=Push(name),
-                same_rank=True,
-            )
-            if i < len(base) - 1:
-                previous = graph.add_scope(
-                    link_from=previous,
-                    name=".",
-                    action=Push("."),
-                    same_rank=True,
-                )
-
-        graph.add_edge(previous, parent)
-
-    return current_scope
-
-
-@visit.register
-def visit_function_definition(
-    node: ast.FunctionDef | ast.AsyncFunctionDef,
-    source: Source,
-    graph: ScopeGraph,
-    state: State,
-) -> Iterator[Fragment]:
-    yield from visit_all(node.decorator_list, source, graph, state)
-    name = node.name
-    offset = (
-        ASYNC_DEF_OFFSET
-        if isinstance(node, ast.AsyncFunctionDef)
-        else DEF_OFFSET
-    )
-    position = source.node_position(node) + offset
-    in_scope = out_scope = graph.add_scope()
-
-    function_scope = graph.add_scope(
-        link_from=in_scope,
-        name=name,
-        position=position,
-        action=Pop(name),
-        is_definition=True,
-        same_rank=True,
-        ast=node,
-    )
-    function_definition = graph.add_scope(
-        link_from=function_scope,
-        action=Pop("()"),
-        same_rank=True,
-    )
-
-    current_scope = graph.add_scope(
-        link_to=state.scope_hierarchy[-1]
-        or graph.module_roots[source.module_name],
-        to_enclosing_scope=True,
-    )
-    parent_scope = current_scope
-
-    if type_params := getattr(node, "type_params", None):
-        yield from visit_all(type_params, source, graph, state)
-    yield from visit_all(node.args.defaults, source, graph, state)
-
-    found = False
-    for fragment in visit_type_annotation(node.returns, source, graph, state):
-        if not found:
-            found = True
-            graph.add_edge(
-                function_definition.exit, fragment.entry, same_rank=True
-            )
-
-        yield fragment
-
-    is_method = (
-        state.instance_scope
-        and not is_static_method(node)
-        and not is_class_method(node)
-    )
-
-    if is_method:
-        current_scope = add_super_gadgets(
-            state=state, current_scope=current_scope, graph=graph
-        )
-
-    self_name = None
+def arguments(
+    arguments: ast.arguments, source: types.Source, *, in_static_method: bool
+) -> Iterator[Event]:
     for i, arg in enumerate(
-        node.args.posonlyargs
-        + node.args.args
-        + [node.args.vararg]
-        + node.args.kwonlyargs
-        + [node.args.kwarg]
-    ):
-        if not arg:
-            continue
-        current_scope = graph.add_scope(link_to=current_scope)
-        arg_position = source.node_position(arg)
-
-        arg_definition = graph.add_scope(
-            link_from=current_scope,
-            name=arg.arg,
-            position=arg_position,
-            action=Pop(arg.arg),
-            is_definition=True,
-            same_rank=True,
-            ast=arg,
+        (
+            *arguments.posonlyargs,
+            *arguments.args,
+            *arguments.kwonlyargs,
+            *([arguments.vararg] if arguments.vararg else []),
+            *([arguments.kwarg] if arguments.kwarg else []),
         )
-        found = False
-        for fragment in visit_type_annotation(
-            arg.annotation, source, graph, state
-        ):
-            if not found:
-                found = True
-                graph.add_edge(
-                    arg_definition.exit, fragment.entry, same_rank=True
-                )
-            yield fragment
-
-        if i == 0 and is_method and state.class_name:
-            self_name = arg.arg
-            call = graph.add_scope(
-                link_from=arg_definition, action=Push("()"), same_rank=True
-            )
-            class_name = state.class_name
-            class_name_scope = graph.add_scope(
-                link_from=call,
-                name=class_name,
-                action=Push(class_name),
-                same_rank=True,
-            )
-            graph.add_edge(class_name_scope, parent_scope)
-
-    graph.add_edge(function_definition, current_scope)
-
-    function_bottom = graph.add_scope()
-
-    with state.method(self_name=self_name):
-        with state.scope(function_bottom):
-            current_scope = process_body(
-                node.body, source, graph, state, current_scope
-            )
-    graph.add_edge(function_bottom, current_scope)
-    yield Gadget([in_scope, out_scope])
+    ):
+        name_event = type_event = None
+        for event in find_names(arg, source):
+            yield event
+            if isinstance(event, NameOccurrence):
+                name_event = event
+        if arg.annotation:
+            for event in annotation(arg.annotation, source):
+                yield event
+                if isinstance(event, NameOccurrence):
+                    type_event = event
+            if name_event and type_event:
+                yield Bind(name_event, type_event)
+        if i == 0:
+            if name_event and not in_static_method:
+                yield FirstArgument(name_event)
 
 
-def visit_type_annotation(
-    annotation: ast.AST | None, source: Source, graph: ScopeGraph, state: State
-) -> Iterator[Fragment]:
+def annotation(
+    annotation: ast.AST | None, source: types.Source
+) -> Iterator[Event]:
     if not annotation:
         return
 
@@ -729,456 +822,364 @@ def visit_type_annotation(
         annotation.value, str
     ):
         annotation_position = source.node_position(annotation)
-        yield from visit_all(
-            # XXX: parse always returns a module node, which we want to skip here,
-            # because the string annotation is part of the current module's scope.
-            ast.parse(annotation.value).body,
-            SubSource(
-                source=source,
-                start_position=annotation_position,
-                code=annotation.value,
-            ),
-            graph,
-            state,
-        )
-    else:
-        yield from visit(annotation, source, graph, state)
-
-
-def process_body(
-    body: Iterable[ast.AST],
-    source: Source,
-    graph: ScopeGraph,
-    state: State,
-    current_scope: ScopeNode,
-) -> ScopeNode:
-    for statement in body:
-        for fragment in visit(statement, source, graph, state):
-            match fragment:
-                case Gadget(nodes):
-                    graph.connect(fragment, current_scope)
-                    current_scope = nodes[0]
-                case IncompleteFragment(
-                    entry_point, exit_point
-                ) if entry_point is exit_point and isinstance(
-                    entry_point, OccurrenceNode
-                ) and entry_point.node_type is NodeType.DEFINITION:
-                    current_scope = graph.add_scope(link_to=current_scope)
-                    graph.connect(current_scope, fragment)
-                case IncompleteFragment(_, exit_point):
-                    current_scope = graph.add_scope(link_to=current_scope)
-                    graph.connect(exit_point, current_scope, same_rank=True)
-                case _:
-                    continue
-    return current_scope
-
-
-def is_static_method(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    return any(
-        n.id == "staticmethod"
-        for n in node.decorator_list
-        if isinstance(n, ast.Name)
-    )
-
-
-def is_class_method(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    return any(
-        n.id == "classmethod"
-        for n in node.decorator_list
-        if isinstance(n, ast.Name)
-    )
-
-
-@visit.register
-def visit_class_definition(
-    node: ast.ClassDef, source: Source, graph: ScopeGraph, state: State
-) -> Iterator[Fragment]:
-    yield from visit_all(node.decorator_list, source, graph, state)
-    name = node.name
-
-    current_scope = graph.add_scope()
-    original_scope = current_scope
-
-    position = source.node_position(node) + CLASS_OFFSET
-
-    instance_scope = graph.add_scope(action=Pop("."), same_rank=True)
-    i_scope = graph.add_scope(
-        link_to=instance_scope,
-        name="I",
-        same_rank=True,
-    )
-
-    parent = graph.add_scope(
-        link_from=current_scope,
-        name=name,
-        position=position,
-        action=Pop(name),
-        is_definition=True,
-        same_rank=True,
-        ast=node,
-    )
-    base_fragments = []
-    base_names = []
-    for base in node.bases:
-        base_fragment = None
-        for fragment in visit(base, source, graph, state):
-            if base_fragment:
-                base_fragment = graph.connect(fragment, base_fragment)
-            else:
-                base_fragment = fragment
-        if base_fragment:
-            graph.connect(parent, base_fragment)
-            if state.scope_hierarchy:
-                graph.add_edge(base_fragment.exit, state.scope_hierarchy[-1])
-            base_fragments.append(base_fragment)
-        base_names.append(names_from(base))
-
-    if type_params := getattr(node, "type_params", None):
-        yield from visit_all(type_params, source, graph, state)
-    class_top_scope = graph.add_scope(link_to=original_scope)
-    current_class_scope: ScopeNode = class_top_scope
-    with state.instance(instance_scope=i_scope, class_name=name):
-        with state.base_classes(base_names):
-            current_class_scope = process_body(
-                node.body, source, graph, state, current_class_scope
+        for statement in ast.parse(annotation.value).body:
+            yield from find_names(
+                statement,
+                SubSource(
+                    source=source,
+                    start_position=annotation_position,
+                    code=annotation.value,
+                ),
             )
-
-    graph.add_edge(instance_scope, current_class_scope)
-
-    graph.add_scope(
-        link_from=parent,
-        link_to=instance_scope,
-        name="C",
-        same_rank=True,
-    )
-
-    current_scope = graph.add_scope(action=Pop("()"), same_rank=True)
-    graph.add_edge(current_scope, i_scope)
-    graph.add_edge(parent, current_scope)
-
-    yield Gadget([original_scope])
+    else:
+        yield from find_names(annotation, source)
 
 
-def _get_relative_module_path(
-    node: ast.ImportFrom, state: State
-) -> Iterable[str]:
-    if node.level == 0:
+@find_names.register
+def class_definition(
+    node: ast.ClassDef, source: types.Source
+) -> Iterator[Event]:
+    for decorator in node.decorator_list:
+        yield from find_names(decorator, source)
+    if not (class_occurrence := occurrence(node, source)):
         return
 
-    module_path = (
-        tuple(state.package_path[: -node.level]) if state.package_path else ()
-    )
+    yield class_occurrence
+    for base in node.bases:
+        last_event = None
+        for event in find_names(base, source):
+            if isinstance(event, NameOccurrence | Attribute):
+                last_event = event
+            yield event
+        if last_event:
+            yield BaseClass(class_occurrence, last_event)
 
-    for p in module_path:
-        yield p
-        yield "."
+    yield EnterScope(class_occurrence.name, is_class=True)
+    for type_parameter in node.type_params:
+        yield from find_names(type_parameter, source)
+    yield from class_body(node, source, class_occurrence)
+    yield LeaveScope()
 
 
-@visit.register
-def visit_import_from(
-    node: ast.ImportFrom, source: Source, graph: ScopeGraph, state: State
-) -> Iterator[Fragment]:
-    current_scope = graph.add_scope()
-
-    module_path = tuple(_get_relative_module_path(node, state))
-
-    if node.module is None:
-        module_path += (".",)
-    else:
-        for module_name in node.module.split("."):
-            module_path += (module_name, ".")
-
-    for alias in node.names:
-        name = alias.name
-        if name == "*":
-            parent = current_scope
-            for part in module_path[::-1]:
-                parent = graph.add_scope(
-                    link_from=parent, action=Push(part), same_rank=True
-                )
-            graph.add_edge(parent, graph.root)
-        else:
-            local_name = alias.asname or name
-            position = source.node_position(alias)
-
-            parent = graph.add_scope(
-                link_from=current_scope,
-                name=local_name,
-                position=position,
-                action=Pop(local_name),
-                same_rank=True,
-                ast=alias,
+def class_body(
+    node: ast.ClassDef, source: types.Source, class_occurrence: NameOccurrence
+) -> Iterator[Event]:
+    for statement in node.body:
+        attribute_occurrence = None
+        if attribute_occurrence := occurrence(statement, source):
+            yield ClassAttribute(
+                class_occurrence=class_occurrence,
+                attribute=attribute_occurrence,
             )
-            for part in (*module_path, name)[::-1]:
-                parent = graph.add_scope(
-                    link_from=parent,
-                    name=part,
-                    position=position,
-                    action=Push(part),
-                    same_rank=True,
-                )
-
-            graph.add_edge(parent, graph.root)
-    yield Gadget([current_scope])
+        yield from find_names(statement, source)
 
 
-@visit.register
-def visit_import(
-    node: ast.Import, source: Source, graph: ScopeGraph, state: State
-) -> Iterator[Fragment]:
-    current_scope = graph.add_scope()
+@find_names.register
+def call(node: ast.Call, source: types.Source) -> Iterator[Event]:
+    for arg in node.args:
+        yield from find_names(arg, source)
+    for keyword in node.keywords:
+        yield from find_names(keyword.value, source)
+    last_event = None
+    for event in find_names(node.func, source):
+        last_event = event
+        yield event
 
-    for alias in node.names:
-        name = alias.name
-        local_name = alias.asname or name
-        position = source.node_position(alias)
+    if not isinstance(last_event, NameOccurrence | Attribute):
+        return
 
-        local = graph.add_scope(
-            link_from=current_scope,
-            name=local_name,
-            position=position,
-            action=Pop(local_name),
-            same_rank=True,
-            ast=alias,
-        )
-        remote = graph.add_scope(
-            link_from=local,
-            name=name,
-            position=position,
-            action=Push(name),
-            same_rank=True,
-            ast=alias,
-        )
-        graph.add_edge(remote, graph.root)
-    yield Gadget([current_scope])
+    if isinstance(last_event, NameOccurrence) and last_event.name == "super":
+        yield SuperCall(last_event)
+
+    yield MoveToScope(last_event)
+    yield from process_keywords(node, source)
+    yield ReturnFromScope()
 
 
-@visit.register
-def visit_global(
-    node: ast.Global, source: Source, graph: ScopeGraph, state: State
-) -> Iterator[Fragment]:
-    current_scope = graph.add_scope()
-
-    start = source.node_position(node)
-    for name in node.names:
-        position = source.find_after(name, start)
-
-        parent = graph.add_scope(
-            link_from=current_scope,
-            name=name,
-            position=position,
-            action=Pop(name),
-            same_rank=True,
-            ast=node,
-        )
-        parent = graph.add_scope(
-            link_from=parent,
-            name=name,
-            position=position,
-            action=Push(name),
-            same_rank=True,
-            ast=node,
-        )
-        graph.add_edge(parent, graph.module_roots[source.module_name])
-
-    yield Gadget([current_scope])
-
-
-@visit.register
-def visit_nonlocal(
-    node: ast.Nonlocal, source: Source, graph: ScopeGraph, state: State
-) -> Iterator[Fragment]:
-    current_scope = graph.add_scope()
-
-    start = source.node_position(node)
-    for name in node.names:
-        position = source.find_after(name, start)
-
-        parent = graph.add_scope(
-            link_from=current_scope,
-            name=name,
-            position=position,
-            action=Pop(name),
-            same_rank=True,
-            ast=node,
-        )
-        parent = graph.add_scope(
-            link_from=parent,
-            name=name,
-            position=position,
-            action=Push(name),
-            same_rank=True,
-            ast=node,
-        )
-        graph.add_edge(
-            parent,
-            state.scope_hierarchy[-2] or graph.module_roots[source.module_name],
-        )
-
-    yield Gadget([current_scope])
-
-
-@visit.register
-def visit_list_comprehension(
-    node: ast.ListComp, source: Source, graph: ScopeGraph, state: State
-) -> Iterator[Fragment]:
-    yield from visit_comprehension(node, source, graph, state, node.elt)
-
-
-@visit.register
-def visit_dictionary_comprehension(
-    node: ast.DictComp, source: Source, graph: ScopeGraph, state: State
-) -> Iterator[Fragment]:
-    yield from visit_comprehension(
-        node, source, graph, state, node.key, node.value
-    )
-
-
-@visit.register
-def visit_set_comprehension(
-    node: ast.SetComp,
-    source: Source,
-    graph: ScopeGraph,
-    state: State,
-) -> Iterator[Fragment]:
-    yield from visit_comprehension(node, source, graph, state, node.elt)
-
-
-@visit.register
-def visit_generator_expression(
-    node: ast.GeneratorExp, source: Source, graph: ScopeGraph, state: State
-) -> Iterator[Fragment]:
-    yield from visit_comprehension(node, source, graph, state, node.elt)
-
-
-def visit_comprehension(
-    node: ast.DictComp | ast.ListComp | ast.SetComp | ast.GeneratorExp,
-    source: Source,
-    graph: ScopeGraph,
-    state: State,
-    *sub_nodes: ast.AST,
-) -> Iterator[Fragment]:
-    top_scope = current_scope = graph.add_scope()
+@find_names.register
+def comprehension(
+    node: ast.GeneratorExp | ast.SetComp | ast.ListComp | ast.DictComp,
+    source: types.Source,
+) -> Iterator[Event]:
+    yield EnterScope()
     for generator in node.generators:
-        current_scope = graph.add_scope(link_to=current_scope)
-        for fragment in visit(generator.target, source, graph, state):
-            graph.add_edge(current_scope, fragment.entry)
-
-        current_scope = graph.add_scope(link_to=current_scope)
-        for fragment in visit(generator.iter, source, graph, state):
-            graph.add_edge(fragment.exit, current_scope)
-
-        current_scope = graph.add_scope(link_to=current_scope)
-        for if_node in generator.ifs:
-            for fragment in visit(if_node, source, graph, state):
-                graph.add_edge(fragment.exit, current_scope)
-
-    for sub_node in sub_nodes:
-        current_scope = graph.add_scope(link_to=current_scope)
-        for fragment in visit(sub_node, source, graph, state):
-            graph.add_edge(fragment.exit, current_scope)
-
-    yield IncompleteFragment(current_scope, top_scope)
+        yield from find_names(generator, source)
+    for sub_node in sub_nodes(node):
+        yield from find_names(sub_node, source)
+    yield LeaveScope()
 
 
-@visit.register
-def visit_match_as(
-    node: ast.MatchAs, source: Source, graph: ScopeGraph, state: State
-) -> Iterator[Fragment]:
-    current_scope = graph.add_scope()
+@find_names.register
+def import_from(node: ast.ImportFrom, source: types.Source) -> Iterator[Event]:
+    if node.module is None:
+        return
 
-    if node.name:
-        start = source.node_position(node)
-        position = source.find_after(node.name, start)
-        graph.add_scope(
-            link_from=current_scope,
-            name=node.name,
-            position=position,
-            action=Pop(node.name),
-            same_rank=True,
-            is_definition=True,
-            ast=node,
-        )
-    if node.pattern:
-        yield from visit(node.pattern, source, graph, state)
-
-    yield Gadget([current_scope])
+    module = tuple(node.module.split("."))
+    for name in node.names:
+        last_event = None
+        for event in find_names(name, source):
+            if isinstance(event, NameOccurrence):
+                last_event = event
+        if last_event:
+            yield BindImportFrom(
+                occurrence=last_event, module=module, level=node.level
+            )
 
 
-@visit.register
-def visit_type_var(
-    node: TypeVar, source: Source, graph: ScopeGraph, state: State
-) -> Iterator[Fragment]:
-    position = source.node_position(node)
-    name = node.name
-    scope = graph.add_scope(
-        name=name,
-        position=position,
-        action=Pop(name),
-        is_definition=True,
-        ast=node,
-    )
-    if node.bound:
-        yield from visit(node.bound, source, graph, state)
-    yield IncompleteFragment(scope, scope)
+@find_names.register
+def import_node(node: ast.Import, source: types.Source) -> Iterator[Event]:
+    for name in node.names:
+        last_event = None
+        for event in find_names(name, source):
+            if isinstance(event, NameOccurrence | Attribute):
+                last_event = event
 
+    if last_event is None:
+        return
 
-@dataclass(frozen=True)
-class Pop:
-    path: str
-
-    def __call__(self, stack: Path) -> Path:
-        return stack[1:]
-
-    def precondition(self, stack: Path) -> bool:
-        return bool(stack) and stack[0] == self.path
-
-
-@dataclass(frozen=True)
-class Push:
-    path: str
-
-    def __call__(self, stack: Path) -> Path:
-        return (self.path, *stack)
-
-    def precondition(self, stack: Path) -> bool:
-        return True
+    yield BindImport(occurrence=last_event)
 
 
 @singledispatch
-def names_from(node: ast.AST) -> Path:
+def sub_nodes(node: ast.AST) -> Iterable[ast.AST]:
     return ()
 
 
-@names_from.register
-def name_names(node: ast.Name) -> Path:
-    return (node.id,)
+@sub_nodes.register
+def sub_nodes_comprehension(
+    node: ast.GeneratorExp | ast.SetComp | ast.ListComp,
+) -> Iterable[ast.AST]:
+    return (node.elt,)
 
 
-@names_from.register
-def attribute_names(node: ast.Attribute) -> Path:
-    return (*names_from(node.value), node.attr)
+@sub_nodes.register
+def sub_nodes_dictionary_comprehension(node: ast.DictComp) -> Iterable[ast.AST]:
+    return (node.key, node.value)
 
 
-@names_from.register
-def call_names(node: ast.Call) -> Path:
-    names = names_from(node.func)
-    return names
+def process_keywords(node: ast.Call, source: types.Source) -> Iterator[Event]:
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            yield NameOccurrence(
+                name=keyword.arg,
+                position=source.node_position(keyword),
+                ast=keyword,
+                is_definition=False,
+            )
 
 
-def build_graph(
-    sources: Iterable[Source], follow_redefinitions: bool = True
-) -> ScopeGraph:
-    graph = ScopeGraph()
-    configuration = Configuration(follow_redefinitions=follow_redefinitions)
-    state = State(
-        scope_hierarchy=[],
-        inheritance_hierarchy=[],
-        configuration=configuration,
+@find_names.register
+def arg(node: ast.arg, source: types.Source) -> Iterator[Event]:
+    yield NameOccurrence(
+        name=node.arg,
+        position=source.node_position(node),
+        ast=node,
+        is_definition=True,
     )
 
-    for source in sources:
-        for _ in visit(source.ast, source=source, graph=graph, state=state):
-            pass
 
-    return graph
+@find_names.register
+def attribute(node: ast.Attribute, source: types.Source) -> Iterator[Event]:
+    last_event = None
+    for event in find_names(node.value, source):
+        if isinstance(event, Attribute | NameOccurrence):
+            last_event = event
+        yield event
+    if last_event is None:
+        return
+    end = source.node_end_position(node.value)
+    attribute = NameOccurrence(
+        name=node.attr,
+        position=end + 1 if end else source.node_position(node),
+        ast=node,
+        is_definition=isinstance(node.ctx, ast.Store),
+    )
+    yield Attribute(value=last_event, attribute=attribute)
+
+
+def get_targets(
+    node: ast.Assign,
+    source: types.Source,
+    targets: list[list[NameOccurrence | Attribute]],
+) -> Iterator[Event]:
+    for target in node.targets:
+        match target:
+            case ast.Tuple(elts=elements):
+                element_targets = []
+                for element in elements:
+                    last_target = None
+                    for event in find_names(element, source):
+                        if isinstance(event, NameOccurrence | Attribute):
+                            last_target = event
+                        yield event
+                    if last_target:
+                        element_targets.append(last_target)
+                targets.append(element_targets)
+            case _:
+                last_target = None
+                for event in find_names(target, source):
+                    if isinstance(event, NameOccurrence | Attribute):
+                        last_target = event
+                    yield event
+                if last_target:
+                    targets.append([last_target])
+
+
+def get_values(
+    node: ast.Assign,
+    source: types.Source,
+    value_events: list[NameOccurrence | Attribute],
+) -> Iterator[Event]:
+    match node.value:
+        case ast.Tuple(elts=elements):
+            for element in elements:
+                last_event = None
+                for event in find_names(element, source):
+                    if isinstance(event, NameOccurrence | Attribute):
+                        last_event = event
+                    yield event
+                if last_event:
+                    value_events.append(last_event)
+        case _:
+            for event in find_names(node.value, source):
+                if isinstance(event, NameOccurrence | Attribute):
+                    value_events[:] = [event]
+                yield event
+
+
+@find_names.register
+def assignment(node: ast.Assign, source: types.Source) -> Iterator[Event]:
+    targets: list[list[NameOccurrence | Attribute]] = []
+    yield from get_targets(node, source, targets)
+    value_events: list[NameOccurrence | Attribute] = []
+    yield from get_values(node, source, value_events)
+    if not value_events:
+        return
+
+    for target_events in targets:
+        if len(target_events) != len(value_events):
+            return
+        for target_event, value_event in zip(
+            target_events, value_events, strict=True
+        ):
+            yield Bind(target_event, value_event)
+
+
+@find_names.register
+def slice_node(node: ast.Subscript, source: types.Source) -> Iterator[Event]:
+    yield from find_names(node.slice, source)
+    yield from find_names(node.value, source)
+
+
+@find_names.register
+def alias(node: ast.alias, source: types.Source) -> Iterator[Event]:
+    yield NameOccurrence(
+        name=node.name,
+        position=source.node_position(node),
+        ast=node,
+        is_definition=False,
+    )
+
+
+@find_names.register
+def match_case(node: ast.match_case, source: types.Source) -> Iterator[Event]:
+    yield EnterScope()
+    yield from find_names(node.pattern, source)
+    if node.guard:
+        yield from find_names(node.guard, source)
+    for statement in node.body:
+        yield from find_names(statement, source)
+    yield LeaveScope()
+
+
+@find_names.register
+def match_as(node: ast.MatchAs, source: types.Source) -> Iterator[Event]:
+    if node.name:
+        yield NameOccurrence(
+            name=node.name,
+            position=source.node_position(node),
+            ast=node,
+            is_definition=True,
+        )
+
+
+@find_names.register
+def nonlocal_node(node: ast.Nonlocal, source: types.Source) -> Iterator[Event]:
+    position = source.node_position(node)
+    for name in node.names:
+        position = source.find_after(name, position)
+        yield Nonlocal(
+            name=name,
+            position=position,
+            ast=node,
+        )
+
+
+@find_names.register
+def global_node(node: ast.Global, source: types.Source) -> Iterator[Event]:
+    position = source.node_position(node)
+    for name in node.names:
+        position = source.find_after(name, position)
+        yield Global(
+            name=name,
+            position=position,
+            ast=node,
+        )
+
+
+def import_ordered(sources: Sequence[types.Source]) -> Sequence[types.Source]:
+    if len(sources) == 1:
+        return sources
+
+    result = []
+    processed: set[tuple[str, ...]] = set()
+    encountered: dict[tuple[str, ...], int] = {}
+    queue = deque(sources)
+    while queue:
+        source = queue.popleft()
+        imports = imported_modules(source)
+        if not imports - processed:
+            result.append(source)
+            processed.add(module(source))
+        else:
+            queue.append(source)
+            if encountered.get(source.module_name, -1) == len(processed):
+                break
+            encountered[source.module_name] = len(processed)
+
+    return (*result, *queue)
+
+
+def imported_modules(source: types.Source) -> set[tuple[str, ...]]:
+    return set(find_imported_modules(source.ast, source))
+
+
+def module(source: types.Source) -> tuple[str, ...]:
+    return tuple(source.module_name)
+
+
+def module_name(occurrence: NameOccurrence | Attribute) -> tuple[str, ...]:
+    if isinstance(occurrence, NameOccurrence):
+        return (occurrence.name,)
+
+    return (*module_name(occurrence.value), occurrence.attribute.name)
+
+
+@singledispatch
+def find_imported_modules(
+    node: ast.AST, source: types.Source
+) -> Iterator[tuple[str, ...]]:
+    yield from generic_visit(find_imported_modules, node, source)
+
+
+@find_imported_modules.register
+def _(node: ast.ImportFrom, source: types.Source) -> Iterator[tuple[str, ...]]:
+    if node.module is None:
+        return
+    yield (*source.module_name[: -node.level], *node.module.split("."))
+
+
+@find_imported_modules.register
+def _(node: ast.Import, source: types.Source) -> Iterator[tuple[str, ...]]:
+    for alias in node.names:
+        yield tuple(alias.name.split("."))
