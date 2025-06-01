@@ -1,5 +1,6 @@
 import logging
 from collections.abc import Iterator
+from functools import cached_property
 from glob import iglob
 from pathlib import Path
 
@@ -15,17 +16,18 @@ class Project:
         self._root = root
         self._initial_source = source
 
+    @cached_property
+    def sources(self) -> tuple[Source]:
+        return (
+            *((self._initial_source,) if self._initial_source else ()),
+            *self.find_sources(),
+        )
+
     def get_occurrences(
         self, position: Position, known_sources: list[Source] | None = None
     ) -> list[Occurrence]:
         return sorted(
-            all_occurrences(
-                position,
-                sources=(
-                    (self._initial_source,) if self._initial_source else ()
-                )
-                + self.find_sources(),
-            ),
+            all_occurrences(position, sources=self.sources),
             key=lambda o: o.position,
             reverse=True,
         )
