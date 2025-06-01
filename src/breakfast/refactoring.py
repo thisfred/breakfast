@@ -2058,68 +2058,6 @@ class MakeIfStatement:
         )
 
 
-@register
-@dataclass
-class FieldToProperty:
-    name = "convert field to property"
-
-    @classmethod
-    def from_selection(cls, selection: CodeSelection) -> Editor | None:
-        match (
-            selection.text_range.enclosing_scopes,
-            selection.text_range.enclosing_nodes,
-        ):
-            case (
-                [
-                    *_,
-                    class_definition,
-                    NodeWithRange(node=ast.FunctionDef()),
-                ],
-                [
-                    *_,
-                    NodeWithRange(node=ast.Assign()),
-                    NodeWithRange(node=attribute_node, range=attribute_range),
-                ],
-            ) if isinstance(class_definition.node, ast.ClassDef) and isinstance(
-                attribute_node, ast.Attribute
-            ):
-                return FieldToPropertyEditor(
-                    attribute_range=attribute_range,
-                    attribute_node=attribute_node,
-                    class_scope=class_definition,
-                    selection=selection,
-                )
-            case _:
-                return None
-
-        return None
-
-
-@dataclass
-class FieldToPropertyEditor:
-    attribute_range: TextRange
-    attribute_node: ast.Attribute
-    class_scope: ScopeWithRange
-    selection: CodeSelection
-
-    @property
-    def edits(self) -> Iterator[Edit]:
-        old_attribute_name = self.attribute_node.attr
-        # new_attribute_name = make_unique_name(
-        #     "_" + old_attribute_name, self.class_scope
-        # )
-        for occurrence in all_occurrences(
-            self.attribute_range.start.source.find_after(
-                old_attribute_name, self.attribute_range.start
-            ),
-            sources=self.selection.sources,
-        ):
-            if not occurrence.is_definition:
-                continue
-
-        yield from ()
-
-
 def to_class_name(var_name: str) -> str:
     return "".join(s.lower().title() for s in var_name.split("_"))
 
