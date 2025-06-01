@@ -2831,3 +2831,40 @@ def test_extract_generator():
             yield a
         """,
     )
+
+
+def test_inlining_method_call_should_translate_self_to_instance():
+    assert_refactors_to(
+        refactoring=InlineCall,
+        target="add_occurrence",
+        occurrence=2,
+        code="""
+        @dataclass
+        class NameCollector:
+            positions: dict[types.Position, Name | None]
+
+            def add_occurrence(self, occurrence: NameOccurrence) -> None:
+                if not self.positions.get(occurrence.position):
+                    self.add_name(occurrence)
+
+            def add_name(self, occurrence: NameOccurrence)-> None:
+                pass
+
+        @process.register
+        def _(event: NameOccurrence, collector: NameCollector) -> None:
+            collector.add_occurrence(occurrence=event)
+        """,
+        expected="""
+        @dataclass
+        class NameCollector:
+            positions: dict[types.Position, Name | None]
+
+            def add_name(self, occurrence: NameOccurrence)-> None:
+                pass
+
+        @process.register
+        def _(event: NameOccurrence, collector: NameCollector) -> None:
+            if not collector.positions.get(event.position):
+                collector.add_name(event)
+        """,
+    )

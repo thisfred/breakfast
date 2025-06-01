@@ -301,6 +301,8 @@ class ArgumentMapper:
         self, call: ast.Call, substitutions: dict[ast.AST, ast.AST]
     ) -> None:
         call_args = deque(call.args)
+        if isinstance(call.func, ast.Attribute):
+            call_args.appendleft(call.func.value)
         call_keywords = {k.arg: k.value for k in call.keywords}
         self.substitute_position_only_arguments(
             substitutions=substitutions, call_args=call_args
