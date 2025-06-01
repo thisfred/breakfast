@@ -1166,27 +1166,6 @@ def test_should_find_class_used_in_method_annotation():
     )
 
 
-def test_should_find_class_used_in_string_annotation():
-    assert_renames_to(
-        target="C",
-        new="Renamed",
-        code="""
-        class C:
-            ...
-
-        def f(c: "C"):
-            ...
-        """,
-        expected="""
-        class Renamed:
-            ...
-
-        def f(c: "Renamed"):
-            ...
-        """,
-    )
-
-
 def test_should_find_class_used_in_return_annotation():
     assert_renames_to(
         target="C",
@@ -1497,29 +1476,6 @@ def test_name_for_type_of_keyword_only_argument_should_be_found():
             refactor: Renamed,
         ) -> CodeAction:
             ...
-        """,
-    )
-
-
-def test_attribute_in_string_annotation():
-    assert_renames_to(
-        target="Call",
-        new="Renamed",
-        code="""
-        class ast:
-            Call: str
-
-        class C:
-            @property
-            def enclosing_call(self) -> "NodeWithRange[ast.Call] | None": ...
-        """,
-        expected="""
-        class ast:
-            Renamed: str
-
-        class C:
-            @property
-            def enclosing_call(self) -> "NodeWithRange[ast.Renamed] | None": ...
         """,
     )
 

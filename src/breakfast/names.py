@@ -15,7 +15,6 @@ from functools import singledispatch
 from typing import Any, Protocol, Self
 
 from breakfast import types
-from breakfast.source import SubSource
 from breakfast.types import Occurrence, Position
 from breakfast.visitor import generic_visit
 
@@ -818,21 +817,7 @@ def annotation(
     if not annotation:
         return
 
-    if isinstance(annotation, ast.Constant) and isinstance(
-        annotation.value, str
-    ):
-        annotation_position = source.node_position(annotation)
-        for statement in ast.parse(annotation.value).body:
-            yield from find_names(
-                statement,
-                SubSource(
-                    source=source,
-                    start_position=annotation_position,
-                    code=annotation.value,
-                ),
-            )
-    else:
-        yield from find_names(annotation, source)
+    yield from find_names(annotation, source)
 
 
 @find_names.register
