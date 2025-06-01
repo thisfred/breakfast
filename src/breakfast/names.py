@@ -57,7 +57,7 @@ class Global:
 
 @dataclass
 class Delay:
-    delayed: Iterator[Event]
+    delayed: Iterator[Any]
 
 
 @singledispatch
@@ -265,9 +265,6 @@ class FirstArgument:
     arg: NameOccurrence
 
 
-class Event(Protocol): ...
-
-
 def all_occurrences(
     position: types.Position,
     *,
@@ -304,7 +301,7 @@ def find_definition(
 @dataclass
 class NameCollector:
     positions: dict[types.Position, Name | None]
-    delays: deque[tuple[Scope, Iterator[Event]]]
+    delays: deque[tuple[Scope, Iterator[Any]]]
     current_scope: Scope
     previous_scopes: list[Scope]
     name_scopes: dict[int, Scope]
@@ -478,7 +475,7 @@ class NameCollector:
         if self.current_scope.parent:
             self.current_scope = self.current_scope.parent
 
-    def delay(self, delayed: Iterator[Event]) -> None:
+    def delay(self, delayed: Iterator[Any]) -> None:
         self.delays.append((self.current_scope, delayed))
 
     def add_first_argument(self, arg: NameOccurrence) -> None:
@@ -714,18 +711,18 @@ def lookup_attribute(value: Name, attribute: str) -> Name:
 
 
 @singledispatch
-def find_names(node: ast.AST, source: types.Source) -> Iterator[Event]:
+def find_names(node: ast.AST, source: types.Source) -> Iterator[Any]:
     yield from generic_visit(find_names, node, source)
 
 
 @find_names.register
-def name(node: ast.Name, source: types.Source) -> Iterator[Event]:
+def name(node: ast.Name, source: types.Source) -> Iterator[Any]:
     if name_occurrence := occurrence(node, source):
         yield name_occurrence
 
 
 @find_names.register
-def type_var(node: ast.TypeVar, source: types.Source) -> Iterator[Event]:
+def type_var(node: ast.TypeVar, source: types.Source) -> Iterator[Any]:
     yield NameOccurrence(
         node.name,
         position=source.node_position(node),
@@ -739,7 +736,7 @@ def type_var(node: ast.TypeVar, source: types.Source) -> Iterator[Event]:
 @find_names.register
 def function_definition(  # noqa: C901
     node: ast.FunctionDef | ast.AsyncFunctionDef, source: types.Source
-) -> Iterator[Event]:
+) -> Iterator[Any]:
     for decorator in node.decorator_list:
         yield from find_names(decorator, source)
 
@@ -772,7 +769,7 @@ def function_definition(  # noqa: C901
     )
     yield from arguments(node.args, source, in_static_method=in_static_method)
 
-    def process_body() -> Iterator[Event]:
+    def process_body() -> Iterator[Any]:
         for statement in node.body:
             yield from find_names(statement, source)
 
@@ -784,7 +781,7 @@ def function_definition(  # noqa: C901
 
 def arguments(
     arguments: ast.arguments, source: types.Source, *, in_static_method: bool
-) -> Iterator[Event]:
+) -> Iterator[Any]:
     for i, arg in enumerate(
         (
             *arguments.posonlyargs,
@@ -813,7 +810,7 @@ def arguments(
 
 def annotation(
     annotation: ast.AST | None, source: types.Source
-) -> Iterator[Event]:
+) -> Iterator[Any]:
     if not annotation:
         return
 
@@ -821,9 +818,7 @@ def annotation(
 
 
 @find_names.register
-def class_definition(
-    node: ast.ClassDef, source: types.Source
-) -> Iterator[Event]:
+def class_definition(node: ast.ClassDef, source: types.Source) -> Iterator[Any]:
     for decorator in node.decorator_list:
         yield from find_names(decorator, source)
     if not (class_occurrence := occurrence(node, source)):
@@ -848,7 +843,7 @@ def class_definition(
 
 def class_body(
     node: ast.ClassDef, source: types.Source, class_occurrence: NameOccurrence
-) -> Iterator[Event]:
+) -> Iterator[Any]:
     for statement in node.body:
         attribute_occurrence = None
         if attribute_occurrence := occurrence(statement, source):
@@ -860,7 +855,7 @@ def class_body(
 
 
 @find_names.register
-def call(node: ast.Call, source: types.Source) -> Iterator[Event]:
+def call(node: ast.Call, source: types.Source) -> Iterator[Any]:
     for arg in node.args:
         yield from find_names(arg, source)
     for keyword in node.keywords:
@@ -885,7 +880,7 @@ def call(node: ast.Call, source: types.Source) -> Iterator[Event]:
 def comprehension(
     node: ast.GeneratorExp | ast.SetComp | ast.ListComp | ast.DictComp,
     source: types.Source,
-) -> Iterator[Event]:
+) -> Iterator[Any]:
     yield EnterScope()
     for generator in node.generators:
         yield from find_names(generator, source)
@@ -895,7 +890,7 @@ def comprehension(
 
 
 @find_names.register
-def import_from(node: ast.ImportFrom, source: types.Source) -> Iterator[Event]:
+def import_from(node: ast.ImportFrom, source: types.Source) -> Iterator[Any]:
     if node.module is None:
         return
 
@@ -912,7 +907,7 @@ def import_from(node: ast.ImportFrom, source: types.Source) -> Iterator[Event]:
 
 
 @find_names.register
-def import_node(node: ast.Import, source: types.Source) -> Iterator[Event]:
+def import_node(node: ast.Import, source: types.Source) -> Iterator[Any]:
     for name in node.names:
         last_event = None
         for event in find_names(name, source):
@@ -942,7 +937,7 @@ def sub_nodes_dictionary_comprehension(node: ast.DictComp) -> Iterable[ast.AST]:
     return (node.key, node.value)
 
 
-def process_keywords(node: ast.Call, source: types.Source) -> Iterator[Event]:
+def process_keywords(node: ast.Call, source: types.Source) -> Iterator[Any]:
     for keyword in node.keywords:
         if keyword.arg is not None:
             yield NameOccurrence(
@@ -954,7 +949,7 @@ def process_keywords(node: ast.Call, source: types.Source) -> Iterator[Event]:
 
 
 @find_names.register
-def arg(node: ast.arg, source: types.Source) -> Iterator[Event]:
+def arg(node: ast.arg, source: types.Source) -> Iterator[Any]:
     yield NameOccurrence(
         name=node.arg,
         position=source.node_position(node),
@@ -964,7 +959,7 @@ def arg(node: ast.arg, source: types.Source) -> Iterator[Event]:
 
 
 @find_names.register
-def attribute(node: ast.Attribute, source: types.Source) -> Iterator[Event]:
+def attribute(node: ast.Attribute, source: types.Source) -> Iterator[Any]:
     last_event = None
     for event in find_names(node.value, source):
         if isinstance(event, Attribute | NameOccurrence):
@@ -986,7 +981,7 @@ def get_targets(
     node: ast.Assign,
     source: types.Source,
     targets: list[list[NameOccurrence | Attribute]],
-) -> Iterator[Event]:
+) -> Iterator[Any]:
     for target in node.targets:
         match target:
             case ast.Tuple(elts=elements):
@@ -1014,7 +1009,7 @@ def get_values(
     node: ast.Assign,
     source: types.Source,
     value_events: list[NameOccurrence | Attribute],
-) -> Iterator[Event]:
+) -> Iterator[Any]:
     match node.value:
         case ast.Tuple(elts=elements):
             for element in elements:
@@ -1033,7 +1028,7 @@ def get_values(
 
 
 @find_names.register
-def assignment(node: ast.Assign, source: types.Source) -> Iterator[Event]:
+def assignment(node: ast.Assign, source: types.Source) -> Iterator[Any]:
     targets: list[list[NameOccurrence | Attribute]] = []
     yield from get_targets(node, source, targets)
     value_events: list[NameOccurrence | Attribute] = []
@@ -1051,13 +1046,13 @@ def assignment(node: ast.Assign, source: types.Source) -> Iterator[Event]:
 
 
 @find_names.register
-def slice_node(node: ast.Subscript, source: types.Source) -> Iterator[Event]:
+def slice_node(node: ast.Subscript, source: types.Source) -> Iterator[Any]:
     yield from find_names(node.slice, source)
     yield from find_names(node.value, source)
 
 
 @find_names.register
-def alias(node: ast.alias, source: types.Source) -> Iterator[Event]:
+def alias(node: ast.alias, source: types.Source) -> Iterator[Any]:
     yield NameOccurrence(
         name=node.name,
         position=source.node_position(node),
@@ -1067,7 +1062,7 @@ def alias(node: ast.alias, source: types.Source) -> Iterator[Event]:
 
 
 @find_names.register
-def match_case(node: ast.match_case, source: types.Source) -> Iterator[Event]:
+def match_case(node: ast.match_case, source: types.Source) -> Iterator[Any]:
     yield EnterScope()
     yield from find_names(node.pattern, source)
     if node.guard:
@@ -1078,7 +1073,7 @@ def match_case(node: ast.match_case, source: types.Source) -> Iterator[Event]:
 
 
 @find_names.register
-def match_as(node: ast.MatchAs, source: types.Source) -> Iterator[Event]:
+def match_as(node: ast.MatchAs, source: types.Source) -> Iterator[Any]:
     if node.name:
         yield NameOccurrence(
             name=node.name,
@@ -1089,7 +1084,7 @@ def match_as(node: ast.MatchAs, source: types.Source) -> Iterator[Event]:
 
 
 @find_names.register
-def nonlocal_node(node: ast.Nonlocal, source: types.Source) -> Iterator[Event]:
+def nonlocal_node(node: ast.Nonlocal, source: types.Source) -> Iterator[Any]:
     position = source.node_position(node)
     for name in node.names:
         position = source.find_after(name, position)
@@ -1101,7 +1096,7 @@ def nonlocal_node(node: ast.Nonlocal, source: types.Source) -> Iterator[Event]:
 
 
 @find_names.register
-def global_node(node: ast.Global, source: types.Source) -> Iterator[Event]:
+def global_node(node: ast.Global, source: types.Source) -> Iterator[Any]:
     position = source.node_position(node)
     for name in node.names:
         position = source.find_after(name, position)

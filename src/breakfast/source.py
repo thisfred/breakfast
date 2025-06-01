@@ -477,7 +477,6 @@ class Source:
         if path.startswith(os.path.sep):
             path = path[1:]
 
-        # Remove .py
         dot_py = ".py"
         if path.endswith(dot_py):
             path = path[: -len(dot_py)]
