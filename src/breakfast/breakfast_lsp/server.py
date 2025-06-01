@@ -380,68 +380,6 @@ def to_range(occurrence: Occurrence) -> Range:
     )
 
 
-# @LSP_SERVER.command("breakfast.slideStatementsDown")
-# async def slide_statements_down(
-#     server: LanguageServer, arguments: Sequence[Mapping[str, Any]]
-# ) -> None:
-#     document_uri = arguments[0]["uri"]
-#     line = arguments[0]["line"] - 1
-#     document = server.workspace.get_text_document(document_uri)
-
-#     source_lines = tuple(document.source.split("\n"))
-#     project_root = server.workspace.root_uri[len("file://") :]
-#     source = get_source(
-#         uri=document_uri, project_root=project_root, lines=source_lines
-#     )
-#     start = source.position(row=line, column=0)
-#     end = source.position(row=line, column=0)
-#     selection = CodeSelection(text_range=TextRange(start, end))
-
-#     client_documents = server.workspace.text_documents
-#     version = (
-#         versioned.version
-#         if (versioned := client_documents.get(document_uri))
-#         else None
-#     )
-#     workspace_edit = await _slide_statements_down(
-#         selection, document_uri, version
-#     )
-#     if workspace_edit is None:
-#         return
-#     server.apply_edit(workspace_edit, "breakfast: slide statement")
-
-
-# @LSP_SERVER.command("breakfast.slideStatementsUp")
-# async def slide_statements_up(
-#     server: LanguageServer, arguments: Sequence[Mapping[str, Any]]
-# ) -> None:
-#     document_uri = arguments[0]["uri"]
-#     line = arguments[0]["line"] - 1
-#     document = server.workspace.get_text_document(document_uri)
-
-#     source_lines = tuple(document.source.split("\n"))
-#     project_root = server.workspace.root_uri[len("file://") :]
-#     source = get_source(
-#         uri=document_uri, project_root=project_root, lines=source_lines
-#     )
-#     start = source.position(row=line, column=0)
-#     end = source.position(row=line, column=0)
-#     selection = CodeSelection(text_range=TextRange(start, end))
-
-#     client_documents = server.workspace.text_documents
-#     version = (
-#         versioned.version
-#         if (versioned := client_documents.get(document_uri))
-#         else None
-#     )
-#     workspace_edit = await _slide_statements_up(
-#         selection, document_uri, version
-#     )
-#     if workspace_edit is None:
-#         return
-#     server.apply_edit(workspace_edit, "breakfast: slide statement")
-
-
 def show_message(message: str) -> None:
     LSP_SERVER.show_message_log(message, MessageType.Log)
 
