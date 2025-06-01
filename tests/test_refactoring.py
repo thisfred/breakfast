@@ -697,7 +697,7 @@ def test_slide_statements_should_not_slide_beyond_first_usage():
     last = source.lines[1]
 
     refactor = SlideStatementsDown(
-        CodeSelection(TextRange(first.start, last.end))
+        CodeSelection(TextRange(first.start, last.end), sources=[source])
     )
     edits = list(refactor.edits)
 
@@ -717,7 +717,7 @@ def test_slide_statements_should_not_slide_into_nested_scopes():
     last = source.lines[1]
 
     refactor = SlideStatementsDown(
-        CodeSelection(TextRange(first.start, last.end))
+        CodeSelection(TextRange(first.start, last.end), sources=[source])
     )
     edits = list(refactor.edits)
     assert not edits
@@ -745,7 +745,7 @@ def test_slide_statements_should_not_slide_inside_if_else():
     last = source.lines[2]
 
     refactor = SlideStatementsDown(
-        CodeSelection(TextRange(first.start, last.end))
+        CodeSelection(TextRange(first.start, last.end), sources=[source])
     )
     edits = list(refactor.edits)
     assert edits[0].start.row == 7
@@ -764,7 +764,7 @@ def test_slide_statements_should_slide_past_irrelevant_statements():
     last = source.lines[1]
 
     refactor = SlideStatementsDown(
-        CodeSelection(TextRange(first.start, last.end))
+        CodeSelection(TextRange(first.start, last.end), sources=[source])
     )
     insert, delete = list(refactor.edits)
 
@@ -787,7 +787,7 @@ def test_slide_statements_should_slide_multiple_lines():
     last = source.lines[2]
 
     refactor = SlideStatementsDown(
-        CodeSelection(TextRange(first.start, last.end))
+        CodeSelection(TextRange(first.start, last.end), sources=[source])
     )
     insert, delete = refactor.edits
 
@@ -813,7 +813,7 @@ def test_slide_statements_up_should_slide_past_irrelevant_statements():
     last = source.lines[3]
 
     refactor = SlideStatementsUp(
-        CodeSelection(TextRange(first.start, last.end))
+        CodeSelection(TextRange(first.start, last.end), sources=[source])
     )
     insert, delete = refactor.edits
 
@@ -921,7 +921,9 @@ def test_inline_call_should_work_without_return_value():
     )
     start = source.position(5, 0)
     end = source.position(5, 0)
-    refactor = InlineCall(CodeSelection(TextRange(start, end)))
+    refactor = InlineCall(
+        CodeSelection(TextRange(start, end), sources=[source])
+    )
     edit, *_ = refactor.edits
 
     assert "b.append(2)" in edit.text
@@ -941,7 +943,9 @@ def test_inline_call_should_work_when_given_position_within_called_name():
     )
     start = source.position(5, 3)
     end = source.position(5, 3)
-    refactor = InlineCall(CodeSelection(TextRange(start, end)))
+    refactor = InlineCall(
+        CodeSelection(TextRange(start, end), sources=[source])
+    )
     edit, *_ = refactor.edits
 
     assert "b.append(2)" in edit.text
@@ -966,7 +970,9 @@ def test_inline_call_should_work_inside_branches():
     )
     start = source.position(8, 4)
     end = source.position(8, 4)
-    refactor = InlineCall(CodeSelection(TextRange(start, end)))
+    refactor = InlineCall(
+        CodeSelection(TextRange(start, end), sources=[source])
+    )
     edit, *_ = refactor.edits
     assert edit.start == source.position(8, 4)
     assert edit.end == source.position(8, 11)

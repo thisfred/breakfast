@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import ast
 import re
 from collections.abc import Iterable
@@ -42,7 +44,7 @@ def assert_refactors_to(
 ):
     source = make_source(code) if isinstance(code, str) else code
     selection_range = range_for(target, source, occurrence)
-    selection = CodeSelection(selection_range)
+    selection = CodeSelection(text_range=selection_range, sources=[source])
     editor = refactoring.from_selection(selection)
     assert editor
     edits = editor.edits

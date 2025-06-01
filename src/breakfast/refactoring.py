@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import ast
 import logging
 from collections import defaultdict
@@ -53,7 +55,7 @@ DUNDER_INIT = "__init__"
 COMPUTE = "compute"
 
 
-def register(refactoring: "type[Refactoring]") -> "type[Refactoring]":
+def register(refactoring: type[Refactoring]) -> type[Refactoring]:
     CodeSelection.register_refactoring(refactoring)
     return refactoring
 
@@ -61,33 +63,30 @@ def register(refactoring: "type[Refactoring]") -> "type[Refactoring]":
 @dataclass
 class CodeSelection:
     text_range: TextRange
-    _refactorings: ClassVar[dict[str, "type[Refactoring]"]] = {}
+    sources: Sequence[Source]
+    _refactorings: ClassVar[dict[str, type[Refactoring]]] = {}
 
     @property
     def source(self) -> Source:
         return self.text_range.source
 
     @property
-    def sources(self) -> Sequence[Source]:
-        return [self.source]
-
-    @property
-    def start(self) -> "Position":
+    def start(self) -> Position:
         return self.text_range.start
 
     @property
-    def end(self) -> "Position":
+    def end(self) -> Position:
         return self.text_range.end
 
     def __contains__(self, other: Ranged) -> bool:
         return other in self.text_range
 
     @classmethod
-    def register_refactoring(cls, refactoring: "type[Refactoring]") -> None:
+    def register_refactoring(cls, refactoring: type[Refactoring]) -> None:
         cls._refactorings[refactoring.name] = refactoring
 
     @property
-    def refactorings(self) -> dict[str, "Editor"]:
+    def refactorings(self) -> dict[str, Editor]:
         return {
             refactoring.name: refactoring_instance
             for refactoring in self._refactorings.values()
@@ -145,7 +144,7 @@ class CodeSelection:
             )
         )
 
-    def rtrim(self) -> "CodeSelection":
+    def rtrim(self) -> CodeSelection:
         lines = self.text_range.text.rstrip().split("\n")
         offset = 0
         last_line = lines[-1]
@@ -157,7 +156,8 @@ class CodeSelection:
             return self
 
         return CodeSelection(
-            text_range=replace(self.text_range, end=self.end - offset)
+            sources=self.sources,
+            text_range=replace(self.text_range, end=self.end - offset),
         )
 
 

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 import os
 from collections.abc import Iterable
@@ -266,6 +268,7 @@ def code_action(
         source = get_source(
             uri=document_uri, project_root=project_root, lines=source_lines
         )
+        project = Project(source=source, root=project_root)
         extraction_range = params.range
         start = source.position(
             row=extraction_range.start.line,
@@ -276,7 +279,9 @@ def code_action(
             column=max(extraction_range.end.character, 0),
         )
 
-        selection = CodeSelection(text_range=TextRange(start, end)).rtrim()
+        selection = CodeSelection(
+            sources=project.sources, text_range=TextRange(start, end)
+        ).rtrim()
 
         for name, refactoring in selection.refactorings.items():
             edits = get_edits(refactoring, document_uri, version)
