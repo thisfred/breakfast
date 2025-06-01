@@ -779,44 +779,6 @@ def function_definition(  # noqa: C901
     yield LeaveScope()
 
 
-def arguments(
-    arguments: ast.arguments, source: types.Source, *, in_static_method: bool
-) -> Iterator[Any]:
-    for i, arg in enumerate(
-        (
-            *arguments.posonlyargs,
-            *arguments.args,
-            *arguments.kwonlyargs,
-            *([arguments.vararg] if arguments.vararg else []),
-            *([arguments.kwarg] if arguments.kwarg else []),
-        )
-    ):
-        name_event = type_event = None
-        for event in find_names(arg, source):
-            yield event
-            if isinstance(event, NameOccurrence):
-                name_event = event
-        if arg.annotation:
-            for event in annotation(arg.annotation, source):
-                yield event
-                if isinstance(event, NameOccurrence):
-                    type_event = event
-            if name_event and type_event:
-                yield Bind(name_event, type_event)
-        if i == 0:
-            if name_event and not in_static_method:
-                yield FirstArgument(name_event)
-
-
-def annotation(
-    annotation: ast.AST | None, source: types.Source
-) -> Iterator[Any]:
-    if not annotation:
-        return
-
-    yield from find_names(annotation, source)
-
-
 @find_names.register
 def class_definition(node: ast.ClassDef, source: types.Source) -> Iterator[Any]:
     for decorator in node.decorator_list:
@@ -839,19 +801,6 @@ def class_definition(node: ast.ClassDef, source: types.Source) -> Iterator[Any]:
         yield from find_names(type_parameter, source)
     yield from class_body(node, source, class_occurrence)
     yield LeaveScope()
-
-
-def class_body(
-    node: ast.ClassDef, source: types.Source, class_occurrence: NameOccurrence
-) -> Iterator[Any]:
-    for statement in node.body:
-        attribute_occurrence = None
-        if attribute_occurrence := occurrence(statement, source):
-            yield ClassAttribute(
-                class_occurrence=class_occurrence,
-                attribute=attribute_occurrence,
-            )
-        yield from find_names(statement, source)
 
 
 @find_names.register
@@ -920,34 +869,6 @@ def import_node(node: ast.Import, source: types.Source) -> Iterator[Any]:
     yield BindImport(occurrence=last_event)
 
 
-@singledispatch
-def sub_nodes(node: ast.AST) -> Iterable[ast.AST]:
-    return ()
-
-
-@sub_nodes.register
-def sub_nodes_comprehension(
-    node: ast.GeneratorExp | ast.SetComp | ast.ListComp,
-) -> Iterable[ast.AST]:
-    return (node.elt,)
-
-
-@sub_nodes.register
-def sub_nodes_dictionary_comprehension(node: ast.DictComp) -> Iterable[ast.AST]:
-    return (node.key, node.value)
-
-
-def process_keywords(node: ast.Call, source: types.Source) -> Iterator[Any]:
-    for keyword in node.keywords:
-        if keyword.arg is not None:
-            yield NameOccurrence(
-                name=keyword.arg,
-                position=source.node_position(keyword),
-                ast=keyword,
-                is_definition=False,
-            )
-
-
 @find_names.register
 def arg(node: ast.arg, source: types.Source) -> Iterator[Any]:
     yield NameOccurrence(
@@ -975,56 +896,6 @@ def attribute(node: ast.Attribute, source: types.Source) -> Iterator[Any]:
         is_definition=isinstance(node.ctx, ast.Store),
     )
     yield Attribute(value=last_event, attribute=attribute)
-
-
-def get_targets(
-    node: ast.Assign,
-    source: types.Source,
-    targets: list[list[NameOccurrence | Attribute]],
-) -> Iterator[Any]:
-    for target in node.targets:
-        match target:
-            case ast.Tuple(elts=elements):
-                element_targets = []
-                for element in elements:
-                    last_target = None
-                    for event in find_names(element, source):
-                        if isinstance(event, NameOccurrence | Attribute):
-                            last_target = event
-                        yield event
-                    if last_target:
-                        element_targets.append(last_target)
-                targets.append(element_targets)
-            case _:
-                last_target = None
-                for event in find_names(target, source):
-                    if isinstance(event, NameOccurrence | Attribute):
-                        last_target = event
-                    yield event
-                if last_target:
-                    targets.append([last_target])
-
-
-def get_values(
-    node: ast.Assign,
-    source: types.Source,
-    value_events: list[NameOccurrence | Attribute],
-) -> Iterator[Any]:
-    match node.value:
-        case ast.Tuple(elts=elements):
-            for element in elements:
-                last_event = None
-                for event in find_names(element, source):
-                    if isinstance(event, NameOccurrence | Attribute):
-                        last_event = event
-                    yield event
-                if last_event:
-                    value_events.append(last_event)
-        case _:
-            for event in find_names(node.value, source):
-                if isinstance(event, NameOccurrence | Attribute):
-                    value_events[:] = [event]
-                yield event
 
 
 @find_names.register
@@ -1105,6 +976,135 @@ def global_node(node: ast.Global, source: types.Source) -> Iterator[Any]:
             position=position,
             ast=node,
         )
+
+
+def arguments(
+    arguments: ast.arguments, source: types.Source, *, in_static_method: bool
+) -> Iterator[Any]:
+    for i, arg in enumerate(
+        (
+            *arguments.posonlyargs,
+            *arguments.args,
+            *arguments.kwonlyargs,
+            *([arguments.vararg] if arguments.vararg else []),
+            *([arguments.kwarg] if arguments.kwarg else []),
+        )
+    ):
+        name_event = type_event = None
+        for event in find_names(arg, source):
+            yield event
+            if isinstance(event, NameOccurrence):
+                name_event = event
+        if arg.annotation:
+            for event in annotation(arg.annotation, source):
+                yield event
+                if isinstance(event, NameOccurrence):
+                    type_event = event
+            if name_event and type_event:
+                yield Bind(name_event, type_event)
+        if i == 0:
+            if name_event and not in_static_method:
+                yield FirstArgument(name_event)
+
+
+def annotation(
+    annotation: ast.AST | None, source: types.Source
+) -> Iterator[Any]:
+    if not annotation:
+        return
+
+    yield from find_names(annotation, source)
+
+
+def class_body(
+    node: ast.ClassDef, source: types.Source, class_occurrence: NameOccurrence
+) -> Iterator[Any]:
+    for statement in node.body:
+        attribute_occurrence = None
+        if attribute_occurrence := occurrence(statement, source):
+            yield ClassAttribute(
+                class_occurrence=class_occurrence,
+                attribute=attribute_occurrence,
+            )
+        yield from find_names(statement, source)
+
+
+@singledispatch
+def sub_nodes(node: ast.AST) -> Iterable[ast.AST]:
+    return ()
+
+
+@sub_nodes.register
+def sub_nodes_comprehension(
+    node: ast.GeneratorExp | ast.SetComp | ast.ListComp,
+) -> Iterable[ast.AST]:
+    return (node.elt,)
+
+
+@sub_nodes.register
+def sub_nodes_dictionary_comprehension(node: ast.DictComp) -> Iterable[ast.AST]:
+    return (node.key, node.value)
+
+
+def process_keywords(node: ast.Call, source: types.Source) -> Iterator[Any]:
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            yield NameOccurrence(
+                name=keyword.arg,
+                position=source.node_position(keyword),
+                ast=keyword,
+                is_definition=False,
+            )
+
+
+def get_targets(
+    node: ast.Assign,
+    source: types.Source,
+    targets: list[list[NameOccurrence | Attribute]],
+) -> Iterator[Any]:
+    for target in node.targets:
+        match target:
+            case ast.Tuple(elts=elements):
+                element_targets = []
+                for element in elements:
+                    last_target = None
+                    for event in find_names(element, source):
+                        if isinstance(event, NameOccurrence | Attribute):
+                            last_target = event
+                        yield event
+                    if last_target:
+                        element_targets.append(last_target)
+                targets.append(element_targets)
+            case _:
+                last_target = None
+                for event in find_names(target, source):
+                    if isinstance(event, NameOccurrence | Attribute):
+                        last_target = event
+                    yield event
+                if last_target:
+                    targets.append([last_target])
+
+
+def get_values(
+    node: ast.Assign,
+    source: types.Source,
+    value_events: list[NameOccurrence | Attribute],
+) -> Iterator[Any]:
+    match node.value:
+        case ast.Tuple(elts=elements):
+            for element in elements:
+                last_event = None
+                for event in find_names(element, source):
+                    if isinstance(event, NameOccurrence | Attribute):
+                        last_event = event
+                    yield event
+                if last_event:
+                    value_events.append(last_event)
+        case _:
+            for event in find_names(node.value, source):
+                if isinstance(event, NameOccurrence | Attribute):
+                    value_events[:] = [event]
+                yield event
 
 
 def import_ordered(sources: Sequence[types.Source]) -> Sequence[types.Source]:
