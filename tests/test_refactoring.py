@@ -1,5 +1,3 @@
-from pytest import mark
-
 from breakfast.refactoring import (
     AddParameter,
     CodeSelection,
@@ -2803,7 +2801,6 @@ def test_extract_function_with_full_lines_should_work():
     )
 
 
-@mark.xfail
 def test_extract_generator():
     assert_refactors_to(
         refactoring=ExtractFunction,
@@ -2817,7 +2814,7 @@ def test_extract_generator():
                 return
         """,
         expected="""
-        def fun()
+        def fun(a):
             if a == 1:
                 yield from f(a)
             else:

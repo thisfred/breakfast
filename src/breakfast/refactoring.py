@@ -23,6 +23,7 @@ from breakfast.search import (
     find_other_nodes,
     find_returns,
     find_statements,
+    find_yields,
     get_nodes,
     is_structurally_identical,
 )
@@ -321,14 +322,18 @@ class ExtractFunctionEditor:
 
     @staticmethod
     def make_call(
-        has_returns: bool,
         arguments: Sequence[Occurrence],
         return_node: ast.Return | None,
         name: str,
         self_or_cls_name: str | None,
-    ) -> ast.Call | ast.Assign | ast.Return:
+        *,
+        returns: bool,
+        yields: bool,
+    ) -> ast.Call | ast.Assign | ast.Return | ast.YieldFrom:
         func = ast.Name(id=name)
-        return make_call(return_node, func, arguments, has_returns)
+        return make_call(
+            return_node, func, arguments, returns=returns, yields=yields
+        )
 
     def make_decorators(self, usages: UsageCollector) -> list[ast.expr]:
         return []
@@ -418,24 +423,26 @@ class ExtractMethodEditor:
 
     @staticmethod
     def make_call(
-        has_returns: bool,
         arguments: Sequence[Occurrence],
         return_node: ast.Return | None,
         name: str,
         self_or_cls_name: str | None,
-    ) -> ast.Call | ast.Assign | ast.Return:
+        *,
+        returns: bool,
+        yields: bool,
+    ) -> ast.Call | ast.Assign | ast.Return | ast.YieldFrom:
         if self_or_cls_name:
             arguments = [o for o in arguments if o.name != self_or_cls_name]
             func: ast.Attribute | ast.Name = ast.Attribute(
                 value=ast.Name(id=self_or_cls_name), attr=name
             )
             calling_statement = make_call(
-                return_node, func, arguments, has_returns
+                return_node, func, arguments, returns=returns, yields=yields
             )
         else:
             func = ast.Name(id=name)
             calling_statement = make_call(
-                return_node, func, arguments, has_returns
+                return_node, func, arguments, returns=returns, yields=yields
             )
         return calling_statement
 
@@ -480,19 +487,25 @@ def make_extract_callable_edits(
         decorator_list=decorator_list, name=name, body=body, arguments=arguments
     )
 
-    has_returns = any(
+    returns = any(
         found
         for node in refactoring.range.statements
         for found in find_returns(node)
     )
+    yields = any(
+        found
+        for node in refactoring.range.statements
+        for found in find_yields(node)
+    )
     calling_statement = refactoring.make_call(
-        has_returns=has_returns,
         arguments=arguments,
         return_node=return_node,
         name=name,
         self_or_cls_name=(
             usages.self_or_cls.name if usages.self_or_cls else None
         ),
+        returns=returns,
+        yields=yields,
     )
 
     yield replace_with_node(
@@ -538,8 +551,10 @@ def make_call(
     return_node: ast.Return | None,
     func: ast.Name | ast.Attribute,
     arguments: Sequence[Occurrence],
-    has_returns: bool,
-) -> ast.Call | ast.Assign | ast.Return:
+    *,
+    returns: bool,
+    yields: bool,
+) -> ast.Call | ast.Assign | ast.Return | ast.YieldFrom:
     if len(arguments) == 1:
         keywords = []
         args: list[ast.expr] = [ast.Name(o.name) for o in arguments]
@@ -553,8 +568,10 @@ def make_call(
     if return_node:
         if isinstance(return_node.value, ast.expr):
             return ast.Assign(targets=[return_node.value], value=call)
-    elif has_returns:
+    elif returns:
         return ast.Return(value=call)
+    elif yields:
+        return ast.YieldFrom(value=call)
     return call
 
 

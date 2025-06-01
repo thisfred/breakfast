@@ -221,6 +221,23 @@ def find_returns_in_nested_definition(
     yield from ()
 
 
+@singledispatch
+def find_yields(node: ast.AST) -> Iterator[ast.Yield]:
+    yield from generic_visit(find_yields, node)
+
+
+@find_yields.register
+def find_yields_in_yield(node: ast.Yield) -> Iterator[ast.Yield]:
+    yield node
+
+
+@find_yields.register
+def find_yields_in_nested_definition(
+    node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
+) -> Iterator[ast.Yield]:
+    yield from ()
+
+
 class NodeFilter(Protocol):
     def __call__(self, node: ast.AST) -> bool: ...
 
