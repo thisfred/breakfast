@@ -735,9 +735,10 @@ class InlineVariable:
 
     @classmethod
     def from_selection(cls, selection: CodeSelection) -> Editor | None:
-        name_at_cursor = selection.source.get_name_at(selection.start)
-        if not name_at_cursor:
+        enclosing_names = selection.text_range.enclosing_nodes_by_type(ast.Name)
+        if not enclosing_names:
             return None
+        enclosing_name = enclosing_names[-1]
         try:
             occurrences_of_name_at_cursor = all_occurrences(
                 selection.text_range.start, sources=selection.sources
@@ -748,7 +749,7 @@ class InlineVariable:
         return InlineVariableEditor(
             range=selection.text_range,
             occurrences_of_name_at_cursor=occurrences_of_name_at_cursor,
-            name_at_cursor=name_at_cursor,
+            name_at_cursor=enclosing_name.node.id,
         )
 
 
@@ -981,6 +982,7 @@ class InlineCall:
     ) -> list[ast.stmt]:
         substitutions: dict[ast.AST, ast.AST] = {}
 
+        # TODO: make unique
         name = "result"
         returned_names = set()
         for statement in definition_ast.body:

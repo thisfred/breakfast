@@ -62,7 +62,6 @@ class Delay:
 
 @singledispatch
 def occurrence(node: ast.AST, source: types.Source) -> NameOccurrence | None:
-    logger.warning(f"Unable to handle {ast.dump(node)=}")
     return None
 
 
@@ -306,10 +305,6 @@ class NameCollector:
     previous_scopes: list[Scope]
     name_scopes: dict[int, Scope]
     modules: dict[tuple[str, ...], Scope]
-
-    @classmethod
-    def from_source(cls, source: types.Source) -> Self:
-        return cls.from_sources(sources=[source])
 
     @classmethod
     def from_sources(cls, sources: Sequence[types.Source]) -> Self:
@@ -598,7 +593,8 @@ def process(event: Any, collector: NameCollector) -> None:
 
 @process.register
 def _(event: NameOccurrence, collector: NameCollector) -> None:
-    collector.add_occurrence(occurrence=event)
+    if not collector.positions.get(event.position):
+        collector.add_name(event)
 
 
 @process.register
