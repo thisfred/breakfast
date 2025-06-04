@@ -21,10 +21,6 @@ from breakfast.visitor import generic_visit
 STATIC_METHOD = "staticmethod"
 logger = logging.getLogger(__name__)
 
-CLASS_OFFSET = len("class ")
-DEF_OFFSET = len("def ")
-ASYNC_DEF_OFFSET = len("async def ")
-
 
 @dataclass(frozen=True)
 class NameOccurrence:
@@ -115,13 +111,12 @@ def definition(
     source: types.Source,
     prefix: str = "",
 ) -> NameOccurrence | None:
-    name_occurrence = NameOccurrence(
+    return NameOccurrence(
         name=node.name,
         position=source.node_position(node) + len(prefix),
         ast=node,
         is_definition=True,
     )
-    return name_occurrence
 
 
 class Namespace(Protocol):

@@ -896,6 +896,7 @@ class InlineCall:
             for statement in definition.ast.body
             for r in find_returns(statement)
             if (return_range := self.source.node_range(r))
+            and r.value is not None
         ]
         if return_ranges:
             name = "result"
@@ -1007,7 +1008,7 @@ class InlineCall:
         result = rewrite_body(
             function_definition=definition_ast, substitutions=substitutions
         )
-        return result
+        return list(takewhile(lambda s: not isinstance(s, ast.Return), result))
 
 
 @register

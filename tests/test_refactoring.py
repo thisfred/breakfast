@@ -2868,3 +2868,42 @@ def test_inlining_method_call_should_translate_self_to_instance():
                 collector.add_name(event)
         """,
     )
+
+
+def test_inlining_method_call_should_not_add_result_variable_if_no_value_is_returned():
+    assert_refactors_to(
+        refactoring=InlineCall,
+        target="function",
+        occurrence=2,
+        code="""
+        def function(arg):
+            if arg is None:
+                return
+            else:
+                print(arg+2)
+
+        function(arg=1)
+        """,
+        expected="""
+        print(1 + 2)
+        """,
+    )
+
+
+def test_inlining_method_call_should_handle_early_exits():
+    assert_refactors_to(
+        refactoring=InlineCall,
+        target="function",
+        occurrence=2,
+        code="""
+        def function(arg):
+            if arg is None:
+                return
+            print(arg+2)
+
+        function(arg=None)
+        """,
+        expected="""
+        pass
+        """,
+    )
