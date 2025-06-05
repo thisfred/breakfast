@@ -281,17 +281,6 @@ def all_occurrence_positions(
     return result
 
 
-def find_definition(
-    position: Position, *, sources: Sequence[types.Source]
-) -> Occurrence | None:
-    definitions = [
-        o for o in all_occurrences(position, sources=sources) if o.is_definition
-    ]
-    if not definitions:
-        return None
-    return definitions[0]
-
-
 @dataclass
 class NameCollector:
     positions: dict[types.Position, Name | None]

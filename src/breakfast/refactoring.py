@@ -17,7 +17,7 @@ from typing import ClassVar, Protocol, Self
 
 from breakfast.code_generation import unparse
 from breakfast.configuration import configuration
-from breakfast.names import all_occurrences, find_definition
+from breakfast.names import NameCollector
 from breakfast.rewrites import ArgumentMapper, rewrite_body
 from breakfast.search import (
     NodeFilter,
@@ -65,6 +65,14 @@ class CodeSelection:
     text_range: TextRange
     sources: Sequence[Source]
     _refactorings: ClassVar[dict[str, type[Refactoring]]] = {}
+    _names: NameCollector | None = None
+
+    @property
+    def names(self) -> NameCollector:
+        if self._names is None:
+            self._names = NameCollector.from_sources(self.sources)
+
+        return self._names
 
     @property
     def source(self) -> Source:
@@ -142,6 +150,21 @@ class CodeSelection:
                 for d in scope_node.decorator_list
                 if isinstance(d, ast.Name)
             )
+        )
+
+    def find_definition(self, position: Position) -> Occurrence | None:
+        definitions = [
+            o
+            for o in self.names.all_occurrences_for(position)
+            if o.is_definition
+        ]
+        if not definitions:
+            return None
+        return definitions[0]
+
+    def all_occurrences(self, position: Position) -> Sequence[Occurrence]:
+        return sorted(
+            self.names.all_occurrences_for(position), key=lambda o: o.position
         )
 
     def rtrim(self) -> CodeSelection:
@@ -740,8 +763,8 @@ class InlineVariable:
             return None
         enclosing_name = enclosing_names[-1]
         try:
-            occurrences_of_name_at_cursor = all_occurrences(
-                selection.text_range.start, sources=selection.sources
+            occurrences_of_name_at_cursor = selection.all_occurrences(
+                selection.text_range.start
             )
         except NotFoundError:
             return None
@@ -866,7 +889,7 @@ class InlineCall:
 
         name_start = self.get_start_of_name(call=call)
 
-        definition = find_definition(name_start, sources=self.selection.sources)
+        definition = self.selection.find_definition(name_start)
         if definition is None or definition.position is None:
             logger.warning(f"No definition position {definition=}.")
             return
@@ -920,9 +943,7 @@ class InlineCall:
     def maybe_remove_definition(
         self, name_start: Position, definition: Occurrence
     ) -> Iterator[Edit]:
-        number_of_occurrences = len(
-            all_occurrences(name_start, sources=self.selection.sources)
-        )
+        number_of_occurrences = len(self.selection.all_occurrences(name_start))
         if (
             number_of_occurrences > 2
             or definition.ast is None
@@ -1214,9 +1235,7 @@ class RemoveParameter:
             len(
                 [
                     o
-                    for o in all_occurrences(
-                        self.arg.start, sources=self.selection.sources
-                    )
+                    for o in self.selection.all_occurrences(self.arg.start)
                     if o.position in self.function_definition.range
                 ]
             )
@@ -1227,10 +1246,9 @@ class RemoveParameter:
     def call_edits(self) -> Sequence[Edit]:
         call_edits = []
         index = self.function_definition.node.args.args.index(self.arg.node)
-        for occurrence in all_occurrences(
+        for occurrence in self.selection.all_occurrences(
             self.selection.source.node_position(self.function_definition.node)
-            + len("def "),
-            sources=self.selection.sources,
+            + len("def ")
         ):
             if occurrence.is_definition:
                 continue
@@ -1310,10 +1328,9 @@ class AddParameter:
 
     def call_edits(self, arg_name: str) -> Sequence[Edit]:
         call_edits = []
-        for occurrence in all_occurrences(
+        for occurrence in self.selection.all_occurrences(
             self.selection.source.node_position(self.function_definition.node)
-            + len("def "),
-            sources=self.selection.sources,
+            + len("def ")
         ):
             if occurrence.is_definition:
                 continue
@@ -1423,9 +1440,8 @@ class EncapsulateRecordEditor:
             ),
         )
 
-        for occurrence in all_occurrences(
-            self.range.source.node_position(self.enclosing_assignment.node),
-            sources=self.selection.sources,
+        for occurrence in self.selection.all_occurrences(
+            self.range.source.node_position(self.enclosing_assignment.node)
         ):
             if occurrence.is_definition:
                 continue
@@ -1507,10 +1523,9 @@ class MethodToProperty:
                 ],
             ),
         )
-        for occurrence in all_occurrences(
+        for occurrence in self.selection.all_occurrences(
             self.selection.source.node_position(self.function_definition.node)
-            + len("def "),
-            sources=self.selection.sources,
+            + len("def ")
         ):
             if occurrence.is_definition:
                 continue
@@ -1557,10 +1572,9 @@ class PropertyToMethod:
             start = start.line.previous.start if start.line.previous else start
         range_with_decorators = start.through(self.function_definition.end)
         yield replace_with_node(range_with_decorators, new_function)
-        for occurrence in all_occurrences(
+        for occurrence in self.selection.all_occurrences(
             self.selection.source.node_position(self.function_definition.node)
-            + len("def "),
-            sources=self.selection.sources,
+            + len("def ")
         ):
             if occurrence.is_definition:
                 continue
@@ -1627,11 +1641,10 @@ class ExtractClass:
             if isinstance(assignment.targets[0], ast.Attribute) and isinstance(
                 assignment.targets[0].value, ast.Name
             ):
-                for occurrence in all_occurrences(
+                for occurrence in self.selection.all_occurrences(
                     self.selection.source.node_position(assignment.targets[0])
                     + len(assignment.targets[0].value.id)
-                    + 1,
-                    sources=self.selection.sources,
+                    + 1
                 ):
                     if occurrence.is_definition:
                         continue
@@ -1886,9 +1899,7 @@ class ReplaceWithMethodObject:
         ).through(self.function_definition.end)
         return [
             o
-            for o in all_occurrences(
-                arg_position, sources=self.selection.sources
-            )
+            for o in self.selection.all_occurrences(arg_position)
             if o.position in body_range and o.ast
         ]
 
