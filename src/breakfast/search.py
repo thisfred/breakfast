@@ -5,7 +5,7 @@ import logging
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from functools import singledispatch
-from typing import Any, Protocol
+from typing import Protocol
 
 from breakfast import types
 from breakfast.types import Position, Source
@@ -141,7 +141,7 @@ def find_similar_nodes_in_subscope(
         )
 
 
-def is_structurally_identical(node: ast.AST, other_node: Any) -> bool:
+def is_structurally_identical(node: ast.AST, other_node: object) -> bool:
     if type(node) is not type(other_node):
         return False
 

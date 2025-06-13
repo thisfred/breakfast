@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import ast
 from collections.abc import Callable, Iterator
-from typing import Any, Concatenate, ParamSpec, TypeVar
+from typing import Concatenate, ParamSpec, TypeVar
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -29,7 +29,7 @@ def generic_transform(
     *args: P.args,
     **kwargs: P.kwargs,
 ) -> Iterator[ast.AST]:
-    params: dict[str, ast.AST | list[Any]] = {}
+    params: dict[str, ast.AST | list[object]] = {}
     for field, old_value in ast.iter_fields(node):
         if isinstance(old_value, list):
             new_values = []
