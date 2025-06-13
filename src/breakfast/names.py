@@ -714,49 +714,78 @@ def type_var(node: ast.TypeVar, source: types.Source) -> Iterator[object]:
 
 
 @find_names.register
-def function_definition(  # noqa: C901
+def function_definition(
     node: ast.FunctionDef | ast.AsyncFunctionDef, source: types.Source
 ) -> Iterator[object]:
-    for decorator in node.decorator_list:
-        yield from find_names(decorator, source)
+    yield from decorators(node=node, source=source)
 
     if not (definition := occurrence(node, source)):
         return
 
     yield definition
-    for default in node.args.defaults:
-        yield from find_names(default, source)
-
+    yield from defaults(node=node, source=source)
     yield EnterFunctionScope(definition)
+    yield from type_parameters(node=node, source=source)
+    yield from returns(node=node, source=source, definition=definition)
+    yield from arguments(
+        node.args, source, in_static_method=is_static_method(node)
+    )
+    yield from body(node=node, source=source)
+    yield LeaveScope()
 
-    for type_parameter in node.type_params:
-        yield from find_names(type_parameter, source)
 
+def is_static_method(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    return any(
+        d.id == STATIC_METHOD
+        for d in node.decorator_list
+        if isinstance(d, ast.Name)
+    )
+
+
+def body(
+    node: ast.FunctionDef | ast.AsyncFunctionDef, source: types.Source
+) -> Iterator[object]:
+    def process_body() -> Iterator[object]:
+        for statement in node.body:
+            yield from find_names(statement, source)
+
+    yield Delay(process_body())
+
+
+def returns(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    source: types.Source,
+    definition: NameOccurrence,
+) -> Iterator[object]:
     return_event = None
     if node.returns:
         for event in annotation(node.returns, source):
             if isinstance(event, NameOccurrence | Attribute):
                 return_event = event
             yield event
-
     if return_event:
         yield Bind(definition, return_event)
 
-    in_static_method = any(
-        d.id == STATIC_METHOD
-        for d in node.decorator_list
-        if isinstance(d, ast.Name)
-    )
-    yield from arguments(node.args, source, in_static_method=in_static_method)
 
-    def process_body() -> Iterator[object]:
-        for statement in node.body:
-            yield from find_names(statement, source)
+def type_parameters(
+    node: ast.FunctionDef | ast.AsyncFunctionDef, source: types.Source
+) -> Iterator[object]:
+    for type_parameter in node.type_params:
+        yield from find_names(type_parameter, source)
 
-    # TODO: can factor out traversal and get rid of this
-    yield Delay(process_body())
 
-    yield LeaveScope()
+def defaults(
+    node: ast.FunctionDef | ast.AsyncFunctionDef, source: types.Source
+) -> Iterator[object]:
+    for default in node.args.defaults:
+        yield from find_names(default, source)
+
+
+def decorators(
+    node: ast.FunctionDef | ast.AsyncFunctionDef, source: types.Source
+) -> Iterator[object]:
+    for decorator in node.decorator_list:
+        yield from find_names(decorator, source)
 
 
 @find_names.register

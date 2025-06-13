@@ -515,11 +515,12 @@ def make_extract_callable_edits(
         for node in refactoring.range.statements
         for found in find_returns(node)
     )
-    yields = any(
+    found_yields = [
         found
         for node in refactoring.range.statements
         for found in find_yields(node)
-    )
+    ]
+    yields = any(found_yields)
     calling_statement = refactoring.make_call(
         arguments=arguments,
         return_node=return_node,
@@ -2048,7 +2049,8 @@ class ReplaceWithMethodObject:
     def get_occurrences(
         self, argument: ast.keyword | ast.arg
     ) -> Sequence[Occurrence]:
-        assert argument.arg is not None  # noqa: S101
+        if argument.arg is None:
+            return []
         arg_position = self.selection.source.node_position(argument)
         body_range = self.selection.source.node_position(
             self.function_definition.node.body[0]

@@ -2931,7 +2931,7 @@ def test_extract_function_with_full_lines_should_work():
     )
 
 
-def test_extract_generator():
+def test_extract_generator_should_yield_from_call():
     assert_refactors_to(
         refactoring=ExtractFunction,
         target=("a = a + 1", "yield a"),
@@ -2953,6 +2953,32 @@ def test_extract_generator():
         def f(a):
             a = a + 1
             yield a
+        """,
+    )
+
+
+def test_extract_generator_should_yield_from_call_2():
+    assert_refactors_to(
+        refactoring=ExtractFunction,
+        target=("for decorator", "find_names(decorator, source)"),
+        code="""
+        @find_names.register
+        def function_definition(
+            node: ast.FunctionDef | ast.AsyncFunctionDef, source: types.Source
+        ) -> Iterator[object]:
+            for decorator in node.decorator_list:
+                yield from find_names(decorator, source)
+        """,
+        expected="""
+        @find_names.register
+        def function_definition(
+            node: ast.FunctionDef | ast.AsyncFunctionDef, source: types.Source
+        ) -> Iterator[object]:
+            yield from f(node=node, source=source)
+
+        def f(node: ast.FunctionDef | ast.AsyncFunctionDef, source: types.Source):
+            for decorator in node.decorator_list:
+                yield from find_names(decorator, source)
         """,
     )
 

@@ -224,19 +224,28 @@ def find_returns_in_nested_definition(
 
 
 @singledispatch
-def find_yields(node: ast.AST) -> Iterator[ast.Yield]:
+def find_yields(node: ast.AST) -> Iterator[ast.Yield | ast.YieldFrom]:
     yield from generic_visit(find_yields, node)
 
 
 @find_yields.register
-def find_yields_in_yield(node: ast.Yield) -> Iterator[ast.Yield]:
+def find_yields_in_yield(
+    node: ast.Yield,
+) -> Iterator[ast.Yield | ast.YieldFrom]:
+    yield node
+
+
+@find_yields.register
+def find_yields_in_yield_from(
+    node: ast.YieldFrom,
+) -> Iterator[ast.Yield | ast.YieldFrom]:
     yield node
 
 
 @find_yields.register
 def find_yields_in_nested_definition(
     node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
-) -> Iterator[ast.Yield]:
+) -> Iterator[ast.Yield | ast.YieldFrom]:
     yield from ()
 
 
