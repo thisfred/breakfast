@@ -114,6 +114,11 @@ class TextRange(Protocol):
     def enclosing_assignment(self) -> NodeWithRange[ast.Assign] | None: ...
 
     @property
+    def enclosing_annotation_assignment(
+        self,
+    ) -> NodeWithRange[ast.AnnAssign] | None: ...
+
+    @property
     def statements(self) -> Iterable[ast.stmt]: ...
 
     @property

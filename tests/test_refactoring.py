@@ -4,6 +4,7 @@ from breakfast.refactoring import (
     ConvertToIfExpression,
     ConvertToIfStatement,
     Edit,
+    EncapsulateField,
     EncapsulateRecord,
     ExtractClass,
     ExtractFunction,
@@ -1355,6 +1356,9 @@ def test_inline_call_should_inline_method_call():
                 result = self
                 nodes = result
                 return nodes
+
+            def containing_nodes_by_type(self):
+                return self
         """,
     )
 
@@ -2047,6 +2051,126 @@ def test_encapsulate_record_should_create_dataclass():
         result = f"<h1>{organization.name}</h1>"
 
         organization.name = "new name"
+        """,
+    )
+
+
+def test_encapsulate_field_should_create_getter():
+    assert_refactors_to(
+        refactoring=EncapsulateField,
+        target="discount_rate",
+        occurrence=2,
+        code=r"""
+        class Customer:
+            def __init__(self, discount_rate):
+                self.discount_rate = discount_rate
+
+            def become_preferred(self):
+                self.discount_rate += 0.03;
+
+            def apply_discount(self, amount):
+                return amount - (amount * this.discount_rate);
+        """,
+        expected=r"""
+        class Customer:
+            def __init__(self, discount_rate):
+                self.discount_rate = discount_rate
+
+            @property
+            def discount_rate(self):
+                return self._discount_rate
+
+            @discount_rate.setter
+            def discount_rate(self, value):
+                self._discount_rate = value
+
+            def become_preferred(self):
+                self.discount_rate += 0.03
+
+            def apply_discount(self, amount):
+                return amount - (amount * this.discount_rate)
+        """,
+    )
+
+
+def test_encapsulate_field_should_rename_class_attribute():
+    assert_refactors_to(
+        refactoring=EncapsulateField,
+        target="discount_rate",
+        code=r"""
+        class Customer:
+            discount_rate: int
+
+            def __init__(self, discount_rate):
+                self.discount_rate = discount_rate
+
+            def become_preferred(self):
+                self.discount_rate += 0.03;
+
+            def apply_discount(self, amount):
+                return amount - (amount * this.discount_rate);
+        """,
+        expected=r"""
+        class Customer:
+            _discount_rate: int
+
+            def __init__(self, discount_rate):
+                self.discount_rate = discount_rate
+
+            @property
+            def discount_rate(self):
+                return self._discount_rate
+
+            @discount_rate.setter
+            def discount_rate(self, value):
+                self._discount_rate = value
+
+            def become_preferred(self):
+                self.discount_rate += 0.03
+
+            def apply_discount(self, amount):
+                return amount - (amount * this.discount_rate)
+        """,
+    )
+
+
+def test_encapsulate_field_should_rename_class_attribute_with_default_value():
+    assert_refactors_to(
+        refactoring=EncapsulateField,
+        target="discount_rate",
+        code=r"""
+        class Customer:
+            discount_rate = 10
+
+            def __init__(self, discount_rate):
+                self.discount_rate = discount_rate
+
+            def become_preferred(self):
+                self.discount_rate += 0.03;
+
+            def apply_discount(self, amount):
+                return amount - (amount * this.discount_rate);
+        """,
+        expected=r"""
+        class Customer:
+            _discount_rate = 10
+
+            def __init__(self, discount_rate):
+                self.discount_rate = discount_rate
+
+            @property
+            def discount_rate(self):
+                return self._discount_rate
+
+            @discount_rate.setter
+            def discount_rate(self, value):
+                self._discount_rate = value
+
+            def become_preferred(self):
+                self.discount_rate += 0.03
+
+            def apply_discount(self, amount):
+                return amount - (amount * this.discount_rate)
         """,
     )
 
@@ -2859,6 +2983,10 @@ def test_inlining_method_call_should_translate_self_to_instance():
         class NameCollector:
             positions: dict[types.Position, Name | None]
 
+            def add_occurrence(self, occurrence: NameOccurrence) -> None:
+                if not self.positions.get(occurrence.position):
+                    self.add_name(occurrence)
+
             def add_name(self, occurrence: NameOccurrence)-> None:
                 pass
 
@@ -2905,5 +3033,48 @@ def test_inlining_method_call_should_handle_early_exits():
         """,
         expected="""
         pass
+        """,
+    )
+
+
+def test_inlining_method_call_should_translate_self_to_instance_2():
+    assert_refactors_to(
+        refactoring=InlineCall,
+        target="add_base_class",
+        occurrence=2,
+        code="""
+        class NameCollector:
+            def add_base_class(
+                self,
+                class_occurrence: NameOccurrence | Attribute,
+                base: NameOccurrence | Attribute,
+            ) -> None:
+                class_name = self.lookup(class_occurrence)
+                base_name = self.lookup(base)
+                if class_name and base_name:
+                    class_name.types.append(base_name)
+
+        def function(event: BaseClass, collector: NameCollector) -> None:
+            collector.add_base_class(
+                class_occurrence=event.class_occurrence, base=event.base
+            )
+        """,
+        expected="""
+        class NameCollector:
+            def add_base_class(
+                self,
+                class_occurrence: NameOccurrence | Attribute,
+                base: NameOccurrence | Attribute,
+            ) -> None:
+                class_name = self.lookup(class_occurrence)
+                base_name = self.lookup(base)
+                if class_name and base_name:
+                    class_name.types.append(base_name)
+
+        def function(event: BaseClass, collector: NameCollector) -> None:
+            class_name = collector.lookup(event.class_occurrence)
+            base_name = collector.lookup(event.base)
+            if class_name and base_name:
+                class_name.types.append(base_name)
         """,
     )

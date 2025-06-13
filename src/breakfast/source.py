@@ -244,8 +244,14 @@ class TextRange:
 
     @property
     def enclosing_assignment(self) -> types.NodeWithRange[ast.Assign] | None:
-        types = ast.Assign
-        assignments = self.enclosing_nodes_by_type(types)
+        assignments = self.enclosing_nodes_by_type(ast.Assign)
+        return assignments[-1] if assignments else None
+
+    @property
+    def enclosing_annotation_assignment(
+        self,
+    ) -> types.NodeWithRange[ast.AnnAssign] | None:
+        assignments = self.enclosing_nodes_by_type(ast.AnnAssign)
         return assignments[-1] if assignments else None
 
     @cached_property

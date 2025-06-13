@@ -531,17 +531,14 @@ def make_extract_callable_edits(
         yields=yields,
     )
 
-    yield replace_with_node(
+    yield replace_range(
         refactoring.insert_position.as_range,
         callable_definition,
         add_newline_after=True,
         add_indentation_after=True,
         level=refactoring.new_level,
     )
-    yield replace_with_node(
-        text_range=refactoring.range,
-        node=calling_statement,
-    )
+    yield replace_range(refactoring.range, calling_statement)
 
 
 def make_function(
@@ -837,7 +834,7 @@ class InlineVariableEditor:
             )
 
         yield from (
-            replace_with_node(name_range, assignment.node.value)
+            replace_range(name_range, assignment.node.value)
             for name_range in to_replace
         )
 
@@ -850,7 +847,7 @@ class InlineVariableEditor:
                     for t in assignment.node.targets
                     if isinstance(t, ast.Name) and t.id != self.name_at_cursor
                 ]
-                yield replace_with_node(assignment.range, assignment.node)
+                yield replace_range(assignment.range, assignment.node)
 
 
 @register
@@ -935,7 +932,7 @@ class InlineCall:
             else ast.Pass()
         )
         result = (
-            replace_with_node(insert_range, body, add_newline_after=True),
+            replace_range(insert_range, body, add_newline_after=True),
             *result,
         )
         yield from result
@@ -943,6 +940,13 @@ class InlineCall:
     def maybe_remove_definition(
         self, name_start: Position, definition: Occurrence
     ) -> Iterator[Edit]:
+        position_range = definition.position.as_range
+        in_method = len(position_range.enclosing_scopes) > 1 and isinstance(
+            position_range.enclosing_scopes[-2].node, ast.ClassDef
+        )
+        if in_method:
+            return None
+
         number_of_occurrences = len(self.selection.all_occurrences(name_start))
         if (
             number_of_occurrences > 2
@@ -1179,7 +1183,7 @@ class MoveFunctionToParentScope:
         )
         yield from (
             *result,
-            replace_with_node(insert_position.as_range, enclosing_scope.node),
+            replace_range(insert_position.as_range, enclosing_scope.node),
         )
 
     @staticmethod
@@ -1265,7 +1269,7 @@ class RemoveParameter:
                     args=call.args[:index] + call.args[index + 1 :],
                     keywords=call.keywords,
                 )
-                call_edits.append(replace_with_node(calls[-1].range, new_call))
+                call_edits.append(replace_range(calls[-1].range, new_call))
             elif call.keywords:
                 new_call = ast.Call(
                     func=call.func,
@@ -1276,13 +1280,13 @@ class RemoveParameter:
                         if kw.arg != self.arg.node.arg
                     ],
                 )
-                call_edits.append(replace_with_node(calls[-1].range, new_call))
+                call_edits.append(replace_range(calls[-1].range, new_call))
         return call_edits
 
     @property
     def function_definition_edit(self) -> Edit:
         definition = self.function_definition.node
-        return replace_with_node(
+        return replace_range(
             self.function_definition.range,
             copy_function_def(
                 definition=definition,
@@ -1349,12 +1353,12 @@ class AddParameter:
                     ast.keyword(arg=arg_name, value=ast.Constant(value=None)),
                 ],
             )
-            call_edits.append(replace_with_node(calls[-1].range, new_call))
+            call_edits.append(replace_range(calls[-1].range, new_call))
         return call_edits
 
     def function_definition_edit(self, arg_name: str) -> Edit:
         definition = self.function_definition.node
-        return replace_with_node(
+        return replace_range(
             self.function_definition.range,
             copy_function_def(
                 definition,
@@ -1363,6 +1367,160 @@ class AddParameter:
                     args=[*definition.args.args, ast.arg(arg=arg_name)],
                 ),
             ),
+        )
+
+
+@register
+@dataclass
+class EncapsulateField:
+    name = "encapsulate field"
+
+    @classmethod
+    def from_selection(cls, selection: CodeSelection) -> Editor | None:
+        enclosing_assignment = (
+            selection.text_range.enclosing_assignment
+            or selection.text_range.enclosing_annotation_assignment
+        )
+        if enclosing_assignment:
+            parent = selection.text_range.enclosing_scopes[-1]
+            if isinstance(parent.node, ast.ClassDef):
+                return EncapsulateFieldEditor(
+                    selection.source,
+                    node=enclosing_assignment,
+                    class_scope=parent,
+                )
+
+        enclosing_attributes = selection.text_range.enclosing_nodes_by_type(
+            ast.Attribute
+        )
+        if not enclosing_attributes:
+            return None
+        enclosing_scopes = selection.text_range.enclosing_scopes
+        if not len(enclosing_scopes) >= 2:
+            return None
+
+        grandparent = selection.text_range.enclosing_scopes[-2]
+
+        if not isinstance(grandparent.node, ast.ClassDef):
+            return None
+
+        return EncapsulateFieldEditor(
+            selection.source,
+            node=enclosing_attributes[-1],
+            class_scope=grandparent,
+        )
+
+
+@dataclass
+class EncapsulateFieldEditor:
+    source: Source
+    node: (
+        NodeWithRange[ast.Attribute]
+        | NodeWithRange[ast.Assign]
+        | NodeWithRange[ast.AnnAssign]
+    )
+    class_scope: NodeWithRange[ast.ClassDef]
+
+    def field_replacement(self, private_name: str) -> Edit | None:
+        if isinstance(self.node.node, ast.Attribute):
+            return None
+
+        if isinstance(self.node.node, ast.AnnAssign):
+            return replace_range(
+                self.node.range,
+                ast.AnnAssign(
+                    target=ast.Name(id=private_name),
+                    annotation=self.node.node.annotation,
+                    value=self.node.node.value,
+                    simple=self.node.node.simple,
+                ),
+            )
+
+        if isinstance(self.node.node, ast.Assign):
+            return replace_range(
+                self.node.range,
+                ast.Assign(
+                    targets=[ast.Name(id=private_name)],
+                    value=self.node.node.value,
+                ),
+            )
+
+        return None
+
+    @property
+    def edits(self) -> Iterator[Edit]:
+        end = None
+        for statement in self.class_scope.node.body:
+            match statement:
+                case ast.FunctionDef():
+                    if end is None:
+                        end = self.source.node_end_position(statement)
+
+        end = end or self.class_scope.end
+
+        match self.node.node:
+            case ast.Attribute():
+                name = self.node.node.attr
+            case ast.Assign(targets=[ast.Name() as target]):
+                name = target.id
+            case ast.AnnAssign(target=ast.Name() as target):
+                name = target.id
+
+        private_name = make_unique_name(f"_{name}", self.class_scope)
+        if field_replacement := self.field_replacement(private_name):
+            yield field_replacement
+        getter = ast.FunctionDef(
+            decorator_list=[ast.Name(id="property")],
+            name=name,
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[ast.arg(arg="self")],
+                vararg=None,
+                kwonlyargs=[],
+                kw_defaults=[],
+                kwarg=None,
+                defaults=[],
+            ),
+            body=[
+                ast.Return(
+                    ast.Attribute(value=ast.Name(id="self"), attr=private_name)
+                )
+            ],
+            returns=None,
+            type_params=[],
+        )
+        setter = ast.FunctionDef(
+            decorator_list=[
+                ast.Attribute(value=ast.Name(id=name), attr="setter")
+            ],
+            name=name,
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[ast.arg(arg="self"), ast.arg(arg="value")],
+                vararg=None,
+                kwonlyargs=[],
+                kw_defaults=[],
+                kwarg=None,
+                defaults=[],
+            ),
+            body=[
+                ast.Assign(
+                    targets=[
+                        ast.Attribute(
+                            value=ast.Name(id="self"), attr=private_name
+                        )
+                    ],
+                    value=ast.Name(id="value"),
+                )
+            ],
+            returns=None,
+            type_params=[],
+        )
+
+        yield replace_range(
+            end.as_range,
+            [getter, setter],
+            level=1,
         )
 
 
@@ -1419,12 +1577,12 @@ class EncapsulateRecordEditor:
         dataclass_definition = make_dataclass(
             class_name=class_name, new_statements=new_statements
         )
-        yield replace_with_node(
+        yield replace_range(
             self.enclosing_assignment.start.as_range,
             dataclass_definition,
             add_newline_after=True,
         )
-        yield replace_with_node(
+        yield replace_range(
             self.enclosing_assignment.range,
             ast.Assign(
                 targets=self.targets,
@@ -1454,7 +1612,7 @@ class EncapsulateRecordEditor:
                 continue
             node = subscripts[0].node
             if isinstance(node.slice, ast.Constant):
-                yield replace_with_node(
+                yield replace_range(
                     subscripts[0].range,
                     ast.Attribute(value=node.value, attr=node.slice.value),
                 )
@@ -1513,7 +1671,7 @@ class MethodToProperty:
     @property
     def edits(self) -> Iterator[Edit]:
         definition = self.function_definition.node
-        yield replace_with_node(
+        yield replace_range(
             self.function_definition.range,
             copy_function_def(
                 definition,
@@ -1537,7 +1695,7 @@ class MethodToProperty:
                 continue
             node = calls[-1].node
 
-            yield replace_with_node(calls[-1].range, node.func)
+            yield replace_range(calls[-1].range, node.func)
 
     @property
     def function_definition(self) -> NodeWithRange[ast.FunctionDef]:
@@ -1571,7 +1729,7 @@ class PropertyToMethod:
         for _ in definition.decorator_list:
             start = start.line.previous.start if start.line.previous else start
         range_with_decorators = start.through(self.function_definition.end)
-        yield replace_with_node(range_with_decorators, new_function)
+        yield replace_range(range_with_decorators, new_function)
         for occurrence in self.selection.all_occurrences(
             self.selection.source.node_position(self.function_definition.node)
             + len("def ")
@@ -1587,7 +1745,7 @@ class PropertyToMethod:
                 continue
             node = attributes[-1].node
 
-            yield replace_with_node(
+            yield replace_range(
                 attributes[-1].range,
                 ast.Call(func=node, args=[], keywords=[]),
             )
@@ -1653,7 +1811,7 @@ class ExtractClass:
                             ast.Attribute
                         )[0]
                     )
-                    yield replace_with_node(
+                    yield replace_range(
                         attribute.range,
                         ast.Attribute(
                             value=ast.Attribute(
@@ -1681,7 +1839,7 @@ class ExtractClass:
         dataclass_definition = make_dataclass(
             class_name=class_name, new_statements=new_assignments
         )
-        yield replace_with_node(
+        yield replace_range(
             self.selection.text_range.enclosing_scopes[0].start.as_range,
             dataclass_definition,
             add_newline_after=True,
@@ -1714,7 +1872,7 @@ class ExtractClass:
                         )
                 else:
                     new_body.append(statement)
-        yield replace_with_node(
+        yield replace_range(
             self.function_definition.range,
             copy_function_def(definition, body=new_body),
         )
@@ -1838,7 +1996,7 @@ class ReplaceWithMethodObject:
             type_params=[],
         )
 
-        yield replace_with_node(
+        yield replace_range(
             self.selection.text_range.enclosing_scopes[0].start.as_range,
             method_object_class,
             add_newline_after=True,
@@ -1874,9 +2032,7 @@ class ReplaceWithMethodObject:
             ],
         )
 
-        yield replace_with_node(
-            self.function_definition.range, call_method_object
-        )
+        yield replace_range(self.function_definition.range, call_method_object)
 
     def add_substitutions(
         self,
@@ -1981,7 +2137,7 @@ class MakeIfExpression:
     @property
     def edits(self) -> Iterator[Edit]:
         if self.annotation:
-            yield replace_with_node(
+            yield replace_range(
                 self.range,
                 ast.AnnAssign(
                     target=self.target,
@@ -1995,7 +2151,7 @@ class MakeIfExpression:
                 ),
             )
         else:
-            yield replace_with_node(
+            yield replace_range(
                 self.range,
                 ast.Assign(
                     targets=[self.target],
@@ -2068,7 +2224,7 @@ class MakeIfStatement:
 
     @property
     def edits(self) -> Iterator[Edit]:
-        yield replace_with_node(
+        yield replace_range(
             self.range,
             ast.If(
                 test=self.test,
@@ -2118,22 +2274,26 @@ def delete_range(text_range: TextRange) -> Edit:
     return Edit(text_range, "")
 
 
-def replace_with_node(
+def replace_range(
     text_range: TextRange,
-    node: ast.AST,
+    nodes: ast.AST | list[ast.AST],
     *,
     add_newline_after: bool = False,
     add_indentation_after: bool = False,
     level: int | None = None,
 ) -> Edit:
+    node_list = nodes if isinstance(nodes, list) else [nodes]
     return Edit(
         text_range,
-        text=render_node(node=node, text_range=text_range, level=level)
-        + (NEWLINE if add_newline_after else "")
-        + (
-            INDENTATION * (level or text_range.start.level)
-            if add_indentation_after
-            else ""
+        text="\n".join(
+            render_node(node=node, text_range=text_range, level=level)
+            + (NEWLINE if add_newline_after else "")
+            + (
+                INDENTATION * (level or text_range.start.level)
+                if add_indentation_after
+                else ""
+            )
+            for node in node_list
         ),
     )
 
@@ -2149,10 +2309,10 @@ def copy_function_def(
     type_params: list[ast.type_param] | Sentinel = DEFAULT,
 ) -> ast.FunctionDef:
     new_function = ast.FunctionDef(
+        decorator_list=default(decorator_list, definition.decorator_list),
         name=default(name, definition.name),
         args=default(args, definition.args),
         body=default(body, definition.body),
-        decorator_list=default(decorator_list, definition.decorator_list),
         returns=default(returns, definition.returns),
         type_params=default(type_params, definition.type_params),
     )
