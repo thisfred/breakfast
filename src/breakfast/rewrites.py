@@ -272,7 +272,8 @@ class ArgumentMapper:
     def get_occurrences(
         self, argument: ast.keyword | ast.arg, body_range: TextRange
     ) -> Sequence[Occurrence]:
-        assert argument.arg is not None  # noqa: S101
+        if argument.arg is None:
+            return []
         arg_position = self.body_range.start.source.node_position(argument)
         return [
             o

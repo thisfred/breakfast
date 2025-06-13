@@ -440,8 +440,8 @@ class Source:
         return match.group()
 
     def get_text(self, *, start: types.Position, end: types.Position) -> str:
-        assert start.source == end.source  # noqa: S101
-        assert end > start  # noqa: S101
+        if start.source != end.source or end <= start:
+            raise ValueError(f"Could not get text from {start=} to {end=}")
         lines = []
         for i, line in enumerate(self.text[start.row :]):
             current_row = start.row + i
