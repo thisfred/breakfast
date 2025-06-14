@@ -885,31 +885,38 @@ class InlineCall:
             logger.warning("No enclosing call.")
             return
 
-        name_start = self.get_start_of_name(call=call)
-
-        definition = self.selection.find_definition(name_start)
+        definition = self.selection.find_definition(
+            self.get_start_of_name(call=call)
+        )
         if definition is None or definition.position is None:
             logger.warning(f"No definition position {definition=}.")
             return
+
         if not isinstance(definition.ast, ast.FunctionDef):
             logger.warning(f"Not a function {definition.ast=}.")
             return
 
-        node_filter = self.make_filter(definition)
-        found = next(
-            get_nodes(definition.position.source.ast, node_filter), None
+        function_on_line = next(
+            get_nodes(
+                definition.position.source.ast,
+                self.filter_function_on_line(definition),
+            ),
+            None,
         )
-        if not isinstance(found, ast.FunctionDef | ast.AsyncFunctionDef):
+        if not isinstance(
+            function_on_line, ast.FunctionDef | ast.AsyncFunctionDef
+        ):
             return
 
-        body_range = self.get_body_range(definition=definition, found=found)
-
-        result: Iterable[Edit] = self.maybe_remove_definition(
-            name_start=name_start, definition=definition
+        body_range = self.get_body_range(
+            definition=definition, found=function_on_line
         )
-
         new_statements = self.get_new_statements(
             call=call.node, body_range=body_range, definition_ast=definition.ast
+        )
+
+        result: Iterable[Edit] = self.maybe_remove_definition(
+            name_start=self.get_start_of_name(call=call), definition=definition
         )
 
         return_ranges = [
@@ -976,7 +983,7 @@ class InlineCall:
         return body_range
 
     @staticmethod
-    def make_filter(definition: Occurrence) -> NodeFilter:
+    def filter_function_on_line(definition: Occurrence) -> NodeFilter:
         def node_filter(node: ast.AST) -> bool:
             return (
                 isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)

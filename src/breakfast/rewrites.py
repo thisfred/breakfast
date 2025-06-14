@@ -295,7 +295,7 @@ class ArgumentMapper:
             return
 
         for occurrence in occurrences:
-            if occurrence.ast:
+            if isinstance(occurrence.ast, ast.Name):
                 substitutions[occurrence.ast] = value
 
     def add_substitutions(

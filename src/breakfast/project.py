@@ -20,14 +20,17 @@ class Project:
 
     @cached_property
     def sources(self) -> tuple[Source]:
-        return (
-            *((self._initial_source,) if self._initial_source else ()),
-            *self.find_sources(),
+        return tuple(
+            {
+                *((self._initial_source,) if self._initial_source else ()),
+                *self.find_sources(),
+            }
         )
 
     def get_occurrences(
         self, position: Position, known_sources: list[Source] | None = None
     ) -> list[Occurrence]:
+        logger.debug(f"{self.sources=}")
         return sorted(
             all_occurrences(position, sources=self.sources),
             key=lambda o: o.position,

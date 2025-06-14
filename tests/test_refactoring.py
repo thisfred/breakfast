@@ -3104,3 +3104,50 @@ def test_inlining_method_call_should_translate_self_to_instance_2():
                 class_name.types.append(base_name)
         """,
     )
+
+
+def test_inlining_classmethod_call_should_translate_cls_to_class():
+    assert_refactors_to(
+        refactoring=InlineCall,
+        target="from_selection",
+        occurrence=2,
+        code="""
+        class ExtractMethod:
+            @classmethod
+            def from_selection(cls, selection: CodeSelection) -> Editor | None:
+                return ExtractMethodEditor.from_selection(selection)
+
+        @dataclass
+        class ExtractMethodEditor:
+            selection: CodeSelection
+            new_level: int
+
+            @classmethod
+            def from_selection(cls, selection: CodeSelection) -> Self | None:
+                enclosing_scope = selection.text_range.enclosing_scopes[-1]
+                new_level = enclosing_scope.start.column // 4
+
+                return cls(selection=selection, new_level=new_level)
+        """,
+        expected="""
+        class ExtractMethod:
+            @classmethod
+            def from_selection(cls, selection: CodeSelection) -> Editor | None:
+                enclosing_scope = selection.text_range.enclosing_scopes[-1]
+                new_level = enclosing_scope.start.column // 4
+
+                result = ExtractMethodEditor(selection=selection, new_level=new_level)
+                return result
+
+        @dataclass
+        class ExtractMethodEditor:
+            selection: CodeSelection
+            new_level: int
+
+            @classmethod
+            def from_selection(cls, selection: CodeSelection) -> Self | None:
+                enclosing_scope = selection.text_range.enclosing_scopes[-1]
+                new_level = enclosing_scope.start.column // 4
+                return cls(selection=selection, new_level=new_level)
+        """,
+    )
