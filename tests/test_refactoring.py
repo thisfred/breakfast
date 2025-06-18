@@ -17,6 +17,7 @@ from breakfast.refactoring import (
     MoveFunctionToParentScope,
     PropertyToMethod,
     RemoveParameter,
+    ReplaceLoopWithComprehension,
     ReplaceWithMethodObject,
     SlideStatementsDown,
     SlideStatementsUp,
@@ -3149,5 +3150,20 @@ def test_inlining_classmethod_call_should_translate_cls_to_class():
                 enclosing_scope = selection.text_range.enclosing_scopes[-1]
                 new_level = enclosing_scope.start.column // 4
                 return cls(selection=selection, new_level=new_level)
+        """,
+    )
+
+
+def test_replace_loop_should_replace_append_with_list_comprehension():
+    assert_refactors_to(
+        refactoring=ReplaceLoopWithComprehension,
+        target="for",
+        code="""
+        l = []
+        for i in range(10):
+            l.append(i)
+        """,
+        expected="""
+        l = [i for i in range(10)]
         """,
     )

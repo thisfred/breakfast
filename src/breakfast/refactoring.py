@@ -886,7 +886,7 @@ class InlineCall:
             return
 
         definition = self.selection.find_definition(
-            self.get_start_of_name(call=call)
+            get_start_of_function_name(call=call)
         )
         if definition is None or definition.position is None:
             logger.warning(f"No definition position {definition=}.")
@@ -916,7 +916,8 @@ class InlineCall:
         )
 
         result: Iterable[Edit] = self.maybe_remove_definition(
-            name_start=self.get_start_of_name(call=call), definition=definition
+            name_start=get_start_of_function_name(call=call),
+            definition=definition,
         )
 
         return_ranges = [
@@ -992,20 +993,6 @@ class InlineCall:
             )
 
         return node_filter
-
-    @staticmethod
-    def get_start_of_name(call: NodeWithRange[ast.Call]) -> Position:
-        name_start = call.start
-        if isinstance(call.node.func, ast.Attribute):
-            if (
-                call.node.func.value.end_col_offset
-                and call.node.func.col_offset
-            ):
-                name_start += (
-                    call.node.func.value.end_col_offset
-                    - call.node.func.col_offset
-                ) + 1
-        return name_start
 
     def get_new_statements(
         self,
@@ -2254,6 +2241,91 @@ class MakeIfStatement:
         )
 
 
+@register
+@dataclass
+class ReplaceLoopWithComprehension:
+    name = "replace loop with comprehension"
+
+    @classmethod
+    def from_selection(cls, selection: CodeSelection) -> Editor | None:
+        return Comprehension.from_selection(selection)
+
+
+@dataclass
+class Comprehension:
+    selection: CodeSelection
+    loop: NodeWithRange[ast.For]
+    collection: ast.AST
+
+    @classmethod
+    def from_selection(cls, selection: CodeSelection) -> Self | None:
+        for_loops = selection.text_range.enclosing_nodes_by_type(ast.For)
+        if not for_loops:
+            return None
+        loop = for_loops[-1]
+        match loop.node.body:
+            case [
+                ast.Expr(
+                    ast.Call(
+                        ast.Attribute(
+                            value=ast.Name() as collection, attr="append"
+                        )
+                    )
+                )
+            ]:
+                return cls(
+                    selection=selection,
+                    loop=loop,
+                    collection=collection,
+                )
+            case _:
+                return None
+
+    @property
+    def edits(self) -> Iterator[Edit]:
+        position = self.selection.source.node_position(self.collection)
+        if len(self.selection.all_occurrences(position)) != 2:
+            return
+
+        definition = self.selection.find_definition(position)
+        if (
+            definition is None
+            or definition.ast is None
+            or not isinstance(definition.ast, ast.expr)
+        ):
+            return
+
+        definition_range = definition.position.source.node_range(definition.ast)
+        if definition_range is None:
+            return
+
+        assignments = definition_range.enclosing_nodes_by_type(ast.Assign)
+        if not assignments:
+            return
+
+        yield replace_range(assignments[-1].range, [])
+
+        yield replace_range(
+            self.loop.range,
+            [
+                ast.Assign(
+                    targets=[definition.ast],
+                    value=ast.ListComp(
+                        elt=self.loop.node.target,
+                        generators=[
+                            ast.comprehension(
+                                target=self.loop.node.target,
+                                iter=self.loop.node.iter,
+                                ifs=[],
+                                is_async=0,
+                            ),
+                        ],
+                    ),
+                )
+            ],
+        )
+
+
 def to_class_name(var_name: str) -> str:
     return "".join(s.lower().title() for s in var_name.split("_"))
 
@@ -2352,3 +2424,13 @@ def copy_arguments(
 
 def default[T](value: T | Sentinel, default: T) -> T:
     return default if value is DEFAULT else value
+
+
+def get_start_of_function_name(call: NodeWithRange[ast.Call]) -> Position:
+    name_start = call.start
+    if isinstance(call.node.func, ast.Attribute):
+        if call.node.func.value.end_col_offset and call.node.func.col_offset:
+            name_start += (
+                call.node.func.value.end_col_offset - call.node.func.col_offset
+            ) + 1
+    return name_start

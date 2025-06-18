@@ -214,8 +214,8 @@ class TextRange:
     @cached_property
     def enclosing_nodes(self) -> Sequence[types.NodeWithRange[ast.AST]]:
         source = self.source
-        scopes = []
         stripped = self.stripped
+        scopes = []
         for node in get_nodes(source.ast):
             if hasattr(node, "end_lineno"):
                 if source.node_position(node) > self.end:
