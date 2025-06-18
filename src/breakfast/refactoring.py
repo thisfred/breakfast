@@ -2295,15 +2295,11 @@ class Comprehension:
         ):
             return
 
-        definition_range = definition.position.source.node_range(definition.ast)
-        if definition_range is None:
+        assignment_range = self.assignment_range(definition)
+        if assignment_range is None:
             return
 
-        assignments = definition_range.enclosing_nodes_by_type(ast.Assign)
-        if not assignments:
-            return
-
-        yield replace_range(assignments[-1].range, [])
+        yield replace_range(assignment_range, [])
 
         yield replace_range(
             self.loop.range,
@@ -2324,6 +2320,19 @@ class Comprehension:
                 )
             ],
         )
+
+    @staticmethod
+    def assignment_range(definition: Occurrence) -> TextRange | None:
+        if not isinstance(definition.ast, ast.expr):
+            return None
+        definition_range = definition.position.source.node_range(definition.ast)
+        if definition_range is None:
+            return None
+        assignments = definition_range.enclosing_nodes_by_type(ast.Assign)
+        if not assignments:
+            return None
+        assignment_range = assignments[-1].range
+        return assignment_range
 
 
 def to_class_name(var_name: str) -> str:
