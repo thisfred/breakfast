@@ -2256,6 +2256,7 @@ class Comprehension:
     selection: CodeSelection
     loop: NodeWithRange[ast.For]
     collection: ast.AST
+    test: ast.expr | None = None
 
     @classmethod
     def from_selection(cls, selection: CodeSelection) -> Self | None:
@@ -2277,6 +2278,27 @@ class Comprehension:
                     selection=selection,
                     loop=loop,
                     collection=collection,
+                )
+            case [
+                ast.If(
+                    test=test,
+                    body=[
+                        ast.Expr(
+                            value=ast.Call(
+                                func=ast.Attribute(
+                                    value=ast.Name() as collection,
+                                    attr="append",
+                                ),
+                            )
+                        )
+                    ],
+                )
+            ]:
+                return cls(
+                    selection=selection,
+                    loop=loop,
+                    collection=collection,
+                    test=test,
                 )
             case _:
                 return None
@@ -2312,7 +2334,7 @@ class Comprehension:
                             ast.comprehension(
                                 target=self.loop.node.target,
                                 iter=self.loop.node.iter,
-                                ifs=[],
+                                ifs=[self.test] if self.test else [],
                                 is_async=0,
                             ),
                         ],
