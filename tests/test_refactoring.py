@@ -3169,6 +3169,21 @@ def test_replace_loop_should_replace_append_with_list_comprehension():
     )
 
 
+def test_replace_loop_should_replace_append_of_expression_with_comprehension():
+    assert_refactors_to(
+        refactoring=ReplaceLoopWithComprehension,
+        target="for",
+        code="""
+        l = []
+        for i in range(10):
+            l.append(i + 8)
+        """,
+        expected="""
+        l = [i + 8 for i in range(10)]
+        """,
+    )
+
+
 def test_replace_loop_should_replace_conditional_append_with_list_comprehension():
     assert_refactors_to(
         refactoring=ReplaceLoopWithComprehension,

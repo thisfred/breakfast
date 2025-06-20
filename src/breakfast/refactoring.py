@@ -2256,6 +2256,7 @@ class Comprehension:
     selection: CodeSelection
     loop: NodeWithRange[ast.For]
     collection: ast.AST
+    arg: ast.expr
     test: ast.expr | None = None
 
     @classmethod
@@ -2270,7 +2271,8 @@ class Comprehension:
                     ast.Call(
                         ast.Attribute(
                             value=ast.Name() as collection, attr="append"
-                        )
+                        ),
+                        args=[arg],
                     )
                 )
             ]:
@@ -2278,6 +2280,7 @@ class Comprehension:
                     selection=selection,
                     loop=loop,
                     collection=collection,
+                    arg=arg,
                 )
             case [
                 ast.If(
@@ -2289,6 +2292,7 @@ class Comprehension:
                                     value=ast.Name() as collection,
                                     attr="append",
                                 ),
+                                args=[arg],
                             )
                         )
                     ],
@@ -2299,6 +2303,7 @@ class Comprehension:
                     loop=loop,
                     collection=collection,
                     test=test,
+                    arg=arg,
                 )
             case _:
                 return None
@@ -2329,7 +2334,7 @@ class Comprehension:
                 ast.Assign(
                     targets=[definition.ast],
                     value=ast.ListComp(
-                        elt=self.loop.node.target,
+                        elt=self.arg,
                         generators=[
                             ast.comprehension(
                                 target=self.loop.node.target,
