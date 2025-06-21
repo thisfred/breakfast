@@ -268,6 +268,7 @@ class ArgumentMapper:
     body_range: TextRange
     returned_names: Container[str]
     sources: Sequence[Source]
+    static_method: bool
 
     def get_occurrences(
         self, argument: ast.keyword | ast.arg, body_range: TextRange
@@ -302,7 +303,7 @@ class ArgumentMapper:
         self, call: ast.Call, substitutions: dict[ast.AST, ast.AST]
     ) -> None:
         call_args = deque(call.args)
-        if isinstance(call.func, ast.Attribute):
+        if isinstance(call.func, ast.Attribute) and not self.static_method:
             call_args.appendleft(call.func.value)
         call_keywords = {k.arg: k.value for k in call.keywords}
         self.substitute_position_only_arguments(

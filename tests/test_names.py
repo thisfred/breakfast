@@ -1510,6 +1510,32 @@ def test_rename_should_find_local_variable():
     )
 
 
+@mark.xfail
+def test_rename_should_rename_class_fields_in_classmethod():
+    assert_renames_to(
+        target="field",
+        new="renamed",
+        code="""
+        class C:
+            def __init__(self, field: str) -> None:
+                self.field = field
+
+            @classmethod
+            def from_string(cls, string: str) -> Self:
+                return cls(field=string)
+        """,
+        expected="""
+        class C:
+            def __init__(self, renamed: str) -> None:
+                self.field = renamed
+
+            @classmethod
+            def from_string(cls, string: str) -> Self:
+                return cls(renamed=string)
+        """,
+    )
+
+
 def test_dogfood(project_root):
     application = Project(root=project_root)
     sources = application.find_sources()

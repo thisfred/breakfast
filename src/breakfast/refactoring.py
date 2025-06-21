@@ -589,10 +589,10 @@ def make_call(
     if return_node:
         if isinstance(return_node.value, ast.expr):
             return ast.Assign(targets=[return_node.value], value=call)
-    elif returns:
-        return ast.Return(value=call)
     elif yields:
         return ast.YieldFrom(value=call)
+    elif returns:
+        return ast.Return(value=call)
     return call
 
 
@@ -880,7 +880,6 @@ class InlineCall:
     @property
     def edits(self) -> Iterator[Edit]:
         call = self.enclosing_call
-
         if not call:
             logger.warning("No enclosing call.")
             return
@@ -912,7 +911,15 @@ class InlineCall:
             definition=definition, found=function_on_line
         )
         new_statements = self.get_new_statements(
-            call=call.node, body_range=body_range, definition_ast=definition.ast
+            call=call.node,
+            body_range=body_range,
+            definition_ast=definition.ast,
+            static_method=STATIC_METHOD
+            in {
+                n.id
+                for n in definition.ast.decorator_list
+                if isinstance(n, ast.Name)
+            },
         )
 
         result: Iterable[Edit] = self.maybe_remove_definition(
@@ -1000,6 +1007,7 @@ class InlineCall:
         call: ast.Call,
         body_range: TextRange,
         definition_ast: ast.FunctionDef,
+        static_method: bool,
     ) -> list[ast.stmt]:
         substitutions: dict[ast.AST, ast.AST] = {}
 
@@ -1021,6 +1029,7 @@ class InlineCall:
             body_range,
             returned_names,
             sources=self.selection.sources,
+            static_method=static_method,
         )
         arg_mapper.add_substitutions(call, substitutions)
 
@@ -2256,7 +2265,8 @@ class Comprehension:
     selection: CodeSelection
     loop: NodeWithRange[ast.For]
     collection: ast.AST
-    arg: ast.expr
+    value: ast.expr
+    key: ast.expr | None = None
     test: ast.expr | None = None
 
     @classmethod
@@ -2266,44 +2276,71 @@ class Comprehension:
             return None
         loop = for_loops[-1]
         match loop.node.body:
-            case [
-                ast.Expr(
-                    ast.Call(
-                        ast.Attribute(
-                            value=ast.Name() as collection, attr="append"
-                        ),
-                        args=[arg],
-                    )
+            case [ast.If(test=if_test, body=[_] as body)]:
+                test: ast.expr | None = if_test
+                inner = body[0]
+            case [_] as body:
+                test = None
+                inner = body[0]
+
+        match inner:
+            case ast.Expr(
+                ast.Call(
+                    ast.Attribute(
+                        value=ast.Name() as collection, attr="append"
+                    ),
+                    args=[arg],
                 )
-            ]:
-                return cls(
-                    selection=selection,
-                    loop=loop,
-                    collection=collection,
-                    arg=arg,
-                )
-            case [
-                ast.If(
-                    test=test,
-                    body=[
-                        ast.Expr(
-                            value=ast.Call(
-                                func=ast.Attribute(
-                                    value=ast.Name() as collection,
-                                    attr="append",
-                                ),
-                                args=[arg],
-                            )
-                        )
-                    ],
-                )
-            ]:
+            ):
                 return cls(
                     selection=selection,
                     loop=loop,
                     collection=collection,
                     test=test,
-                    arg=arg,
+                    value=arg,
+                )
+            case ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name() as collection,
+                        attr="append",
+                    ),
+                    args=[arg],
+                )
+            ):
+                return cls(
+                    selection=selection,
+                    loop=loop,
+                    collection=collection,
+                    test=test,
+                    value=arg,
+                )
+            case ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name() as collection,
+                        attr="add",
+                    ),
+                    args=[arg],
+                )
+            ):
+                return cls(
+                    selection=selection,
+                    loop=loop,
+                    collection=collection,
+                    test=test,
+                    value=arg,
+                )
+            case ast.Assign(
+                targets=[ast.Subscript(value=collection, slice=key)], value=arg
+            ):
+                return cls(
+                    selection=selection,
+                    loop=loop,
+                    collection=collection,
+                    test=test,
+                    key=key,
+                    value=arg,
                 )
             case _:
                 return None
@@ -2315,51 +2352,70 @@ class Comprehension:
             return
 
         definition = self.selection.find_definition(position)
-        if (
-            definition is None
-            or definition.ast is None
-            or not isinstance(definition.ast, ast.expr)
-        ):
+        if definition is None:
+            return
+        definition_node = definition.ast
+        if definition_node is None or not isinstance(definition_node, ast.expr):
             return
 
-        assignment_range = self.assignment_range(definition)
-        if assignment_range is None:
+        if not isinstance(definition_node, ast.expr):
             return
 
-        yield replace_range(assignment_range, [])
+        definition_range = definition.position.source.node_range(
+            definition_node
+        )
+        if definition_range is None:
+            return
 
+        assignments = definition_range.enclosing_nodes_by_type(ast.Assign)
+        if not assignments:
+            return
+        assignment = assignments[-1]
+
+        yield from self.remove_assignment(assignment)
+        yield from self.replace_loop(
+            definition_node=definition_node, assignment=assignment
+        )
+
+    def replace_loop(
+        self, definition_node: ast.expr, assignment: NodeWithRange[ast.Assign]
+    ) -> Iterator[Edit]:
+        generator = ast.comprehension(
+            target=self.loop.node.target,
+            iter=self.loop.node.iter,
+            ifs=([self.test] if self.test else []),
+            is_async=0,
+        )
+        match assignment.node.value:
+            case ast.Call(func=ast.Name(id="set")):
+                comprehension: ast.SetComp | ast.ListComp | ast.DictComp = (
+                    ast.SetComp(elt=self.value, generators=[generator])
+                )
+            case ast.List():
+                comprehension = ast.ListComp(
+                    elt=self.value, generators=[generator]
+                )
+            case ast.Dict():
+                if self.key is None:
+                    return
+                comprehension = ast.DictComp(
+                    key=self.key, value=self.value, generators=[generator]
+                )
+            case _:
+                return
         yield replace_range(
             self.loop.range,
-            [
-                ast.Assign(
-                    targets=[definition.ast],
-                    value=ast.ListComp(
-                        elt=self.arg,
-                        generators=[
-                            ast.comprehension(
-                                target=self.loop.node.target,
-                                iter=self.loop.node.iter,
-                                ifs=[self.test] if self.test else [],
-                                is_async=0,
-                            ),
-                        ],
-                    ),
-                )
-            ],
+            [ast.Assign(targets=[definition_node], value=comprehension)],
         )
 
     @staticmethod
-    def assignment_range(definition: Occurrence) -> TextRange | None:
-        if not isinstance(definition.ast, ast.expr):
-            return None
-        definition_range = definition.position.source.node_range(definition.ast)
-        if definition_range is None:
-            return None
-        assignments = definition_range.enclosing_nodes_by_type(ast.Assign)
-        if not assignments:
-            return None
-        assignment_range = assignments[-1].range
-        return assignment_range
+    def remove_assignment(
+        assignment: NodeWithRange[ast.Assign],
+    ) -> Iterator[Edit]:
+        assignment_range = assignment.range
+        if assignment_range is None:
+            return
+        yield replace_range(assignment_range, [])
 
 
 def to_class_name(var_name: str) -> str:

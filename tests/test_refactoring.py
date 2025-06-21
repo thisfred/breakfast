@@ -1088,6 +1088,36 @@ def test_inline_call_should_indent_in_new_context():
     )
 
 
+def test_inline_call_should_inline_static_methods():
+    assert_refactors_to(
+        refactoring=InlineCall,
+        target="static_method",
+        code="""
+        class C:
+
+            def method(self):
+                foo = self.static_method(12)
+                print(foo)
+
+            @staticmethod
+            def static_method(arg):
+                return arg + 2
+        """,
+        expected="""
+        class C:
+
+            def method(self):
+                result = 12 + 2
+                foo = result
+                print(foo)
+
+            @staticmethod
+            def static_method(arg):
+                return arg + 2
+        """,
+    )
+
+
 def test_inline_variable_should_replace_variable_with_expression():
     assert_refactors_to(
         refactoring=InlineVariable,
@@ -2984,6 +3014,32 @@ def test_extract_generator_should_yield_from_call_2():
     )
 
 
+def test_extract_generator_should_yield_from_call_that_returns_and_yields():
+    assert_refactors_to(
+        refactoring=ExtractMethod,
+        target=("assignment_range =", "replace_range(assignment_range, [])"),
+        code="""
+        class C:
+            def method(self):
+                assignment_range = self.range
+                if assignment_range is None:
+                    return
+                yield replace_range(assignment_range, [])
+        """,
+        expected="""
+        class C:
+            def method(self):
+                yield from self.m()
+
+            def m(self):
+                assignment_range = self.range
+                if assignment_range is None:
+                    return
+                yield replace_range(assignment_range, [])
+        """,
+    )
+
+
 def test_inlining_method_call_should_translate_self_to_instance():
     assert_refactors_to(
         refactoring=InlineCall,
@@ -3196,5 +3252,35 @@ def test_replace_loop_should_replace_conditional_append_with_list_comprehension(
         """,
         expected="""
         l = [i for i in range(10) if i > 5]
+        """,
+    )
+
+
+def test_replace_loop_should_replace_dictionary_update_with_dict_comprehension():
+    assert_refactors_to(
+        refactoring=ReplaceLoopWithComprehension,
+        target="for",
+        code="""
+        d = {}
+        for i in range(10):
+            d[i] = i + 1
+        """,
+        expected="""
+        d = {i: i + 1 for i in range(10)}
+        """,
+    )
+
+
+def test_replace_loop_should_replace_set_add_with_set_comprehension():
+    assert_refactors_to(
+        refactoring=ReplaceLoopWithComprehension,
+        target="for",
+        code="""
+        s = set()
+        for i in range(10):
+            s.add(i)
+        """,
+        expected="""
+        s = {i for i in range(10)}
         """,
     )
