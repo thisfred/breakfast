@@ -29,18 +29,15 @@ def generic_transform(
     *args: P.args,
     **kwargs: P.kwargs,
 ) -> Iterator[ast.AST]:
-    params: dict[str, ast.AST | list[object]] = {}
+    params: dict[str, ast.AST | list[ast.AST]] = {}
     for field, old_value in ast.iter_fields(node):
         if isinstance(old_value, list):
-            new_values = []
+            new_values: list[ast.AST] = []
             for value in old_value:
                 if isinstance(value, ast.AST):
-                    value = f(value, *args, **kwargs)
-                    if value is None:
-                        continue
-                    elif not isinstance(value, ast.AST):
-                        new_values.extend(list(value))
-                        continue
+                    for new_value in f(value, *args, **kwargs):
+                        new_values.append(new_value)
+                    continue
                 new_values.append(value)
             params[field] = new_values
         elif isinstance(old_value, ast.AST):

@@ -14,7 +14,12 @@ from typing import Protocol, TypeGuard
 
 from breakfast import types
 from breakfast.configuration import configuration
-from breakfast.search import find_names, find_statements, get_nodes
+from breakfast.search import (
+    find_names,
+    find_statements,
+    get_nodes,
+    nodes_in_range,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +128,31 @@ class Position:
 
     def __contains__(self, other: types.Ranged) -> bool:
         return types.contains(self, other)
+
+    def __and__(self, other: types.Ranged) -> types.Ranged:
+        if self in other:
+            return self
+
+        return EmptyRange(self.source)
+
+
+@dataclass
+class EmptyRange:
+    source: types.Source
+
+    @property
+    def start(self) -> types.Position:
+        return self.source.position(0, 0)
+
+    @property
+    def end(self) -> types.Position:
+        return self.source.position(0, 0)
+
+    def __contains__(self, other: types.Ranged) -> bool:
+        return False
+
+    def __and__(self, other: types.Ranged) -> types.Ranged:
+        return self
 
 
 @dataclass(order=True, frozen=True)
@@ -237,6 +267,14 @@ class TextRange:
 
         return scopes
 
+    @cached_property
+    def enclosed_nodes(self) -> Sequence[types.NodeWithRange[ast.AST]]:
+        return [
+            types.NodeWithRange(node, node_range)
+            for node in nodes_in_range(self.source.ast, self)
+            if (node_range := self.source.node_range(node)) is not None
+        ]
+
     @property
     def enclosing_call(self) -> types.NodeWithRange[ast.Call] | None:
         calls = self.enclosing_nodes_by_type(ast.Call)
@@ -347,6 +385,25 @@ class TextRange:
     def replace(self, new_text: str) -> types.Edit:
         return types.Edit(TextRange(self.start, self.end), text=new_text)
 
+    def __and__(self, other: types.Ranged) -> types.Ranged:
+        if (
+            self.source != other.source
+            or self.end < other.start
+            or other.end < self.start
+        ):
+            return EmptyRange(self.source)
+
+        if self in other:
+            return self
+
+        if other in self:
+            return other
+
+        return TextRange(
+            start=max(self.start, other.start),
+            end=min(self.end, other.end),
+        )
+
 
 @dataclass(order=True, frozen=True)
 class Line:
@@ -365,8 +422,15 @@ class Line:
     def end(self) -> types.Position:
         return self.source.position(self.row, max(len(self.text) - 1, 0))
 
+    @property
+    def text_range(self) -> types.TextRange:
+        return TextRange(self.start, self.end)
+
     def __contains__(self, other: types.Ranged) -> bool:
         return types.contains(self, other)
+
+    def __and__(self, other: types.Ranged) -> types.Ranged:
+        return self.text_range & other
 
     @property
     def previous(self) -> types.Line | None:

@@ -1,3 +1,5 @@
+from pytest import mark
+
 from breakfast.refactoring import (
     AddParameter,
     CodeSelection,
@@ -9,6 +11,7 @@ from breakfast.refactoring import (
     ExtractClass,
     ExtractFunction,
     ExtractMethod,
+    ExtractProtocol,
     ExtractVariable,
     ExtractVariableEditor,
     InlineCall,
@@ -3282,5 +3285,26 @@ def test_replace_loop_should_replace_set_add_with_set_comprehension():
         """,
         expected="""
         s = {i for i in range(10)}
+        """,
+    )
+
+
+@mark.skip
+def test_extract_protocol_from_usage():
+    assert_refactors_to(
+        refactoring=ExtractProtocol,
+        target="a",
+        code="""
+        def f(a):
+            a.method()
+        """,
+        expected="""
+        from typing import Protocol
+
+        class P(Protocol):
+            def method(self): ...
+
+        def f(a: P):
+            a.method()
         """,
     )

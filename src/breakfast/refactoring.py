@@ -46,6 +46,7 @@ from breakfast.types import (
 
 logger = logging.getLogger(__name__)
 
+FunctionDefinition = ast.FunctionDef | ast.AsyncFunctionDef
 INDENTATION = " " * configuration["code_generation"]["indentation"]
 NEWLINE = "\n"
 STATIC_METHOD = "staticmethod"
@@ -113,7 +114,7 @@ class CodeSelection:
             self.in_method
             and isinstance(
                 (scope_node := self.text_range.enclosing_scopes[-1].node),
-                ast.FunctionDef,
+                FunctionDefinition,
             )
             and any(
                 d.id == STATIC_METHOD
@@ -128,7 +129,7 @@ class CodeSelection:
             self.in_method
             and isinstance(
                 (scope_node := self.text_range.enclosing_scopes[-1].node),
-                ast.FunctionDef,
+                FunctionDefinition,
             )
             and any(
                 d.id == CLASS_METHOD
@@ -143,7 +144,7 @@ class CodeSelection:
             self.in_method
             and isinstance(
                 (scope_node := self.text_range.enclosing_scopes[-1].node),
-                ast.FunctionDef,
+                FunctionDefinition,
             )
             and any(
                 d.id == PROPERTY
@@ -891,7 +892,7 @@ class InlineCall:
             logger.warning(f"No definition position {definition=}.")
             return
 
-        if not isinstance(definition.ast, ast.FunctionDef):
+        if not isinstance(definition.ast, FunctionDefinition):
             logger.warning(f"Not a function {definition.ast=}.")
             return
 
@@ -902,9 +903,7 @@ class InlineCall:
             ),
             None,
         )
-        if not isinstance(
-            function_on_line, ast.FunctionDef | ast.AsyncFunctionDef
-        ):
+        if not isinstance(function_on_line, FunctionDefinition):
             return
 
         body_range = self.get_body_range(
@@ -979,7 +978,7 @@ class InlineCall:
 
     @staticmethod
     def get_body_range(
-        definition: Occurrence, found: ast.FunctionDef | ast.AsyncFunctionDef
+        definition: Occurrence, found: FunctionDefinition
     ) -> TextRange:
         children = found.body
         start_position = definition.position.source.node_position(children[0])
@@ -1006,7 +1005,7 @@ class InlineCall:
         *,
         call: ast.Call,
         body_range: TextRange,
-        definition_ast: ast.FunctionDef,
+        definition_ast: FunctionDefinition,
         static_method: bool,
     ) -> list[ast.stmt]:
         substitutions: dict[ast.AST, ast.AST] = {}
@@ -2416,6 +2415,33 @@ class Comprehension:
         if assignment_range is None:
             return
         yield replace_range(assignment_range, [])
+
+
+@register
+@dataclass
+class ExtractProtocol:
+    name = "Extract Protocol from Parameter"
+
+    @classmethod
+    def from_selection(cls, selection: CodeSelection) -> Editor | None:
+        scope = selection.text_range.enclosing_scopes[-1]
+        if not isinstance(scope.node, ast.FunctionDef):
+            return None
+
+        argument = next(
+            (
+                n
+                for n in selection.text_range.enclosed_nodes
+                if isinstance(n.node, ast.arg)
+            ),
+            None,
+        )
+        print(f"{argument=}")
+
+        if not argument:
+            return None
+
+        return None
 
 
 def to_class_name(var_name: str) -> str:

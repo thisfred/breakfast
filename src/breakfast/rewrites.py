@@ -403,7 +403,8 @@ class ArgumentMapper:
 
 
 def rewrite_body(
-    function_definition: ast.FunctionDef, substitutions: dict[ast.AST, ast.AST]
+    function_definition: ast.FunctionDef | ast.AsyncFunctionDef,
+    substitutions: dict[ast.AST, ast.AST],
 ) -> list[ast.stmt]:
     return [
         s

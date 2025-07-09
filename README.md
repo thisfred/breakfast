@@ -37,7 +37,18 @@ improve testing that will make stronger guarantees there.
 ## Testing
 
 To run tests:
+(requires just to be installed, but you can always look at the commands
+it runs in the `Justfile` file in the root directory and run them
+directly.)
 
 ```
-make test
+just test
 ```
+
+To perform all checks:
+(requires just to be installed, but you can always look at the commands
+it runs in the `Justfile` file in the root directory and run them
+directly.)
+
+```
+just check-all

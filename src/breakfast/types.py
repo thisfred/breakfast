@@ -38,6 +38,8 @@ class Ranged(Protocol):  # pragma: nocover
 
     def __contains__(self, other: Ranged) -> bool: ...
 
+    def __and__(self, other: Ranged) -> Ranged: ...
+
 
 @dataclass(order=True, frozen=True)  # pragma: nocover
 class Position(Protocol):
@@ -69,6 +71,8 @@ class Position(Protocol):
     def through(self, end: Position) -> TextRange: ...
     def to(self, end: Position) -> TextRange: ...
     def insert(self, text: str) -> Edit: ...
+
+    def __and__(self, other: Ranged) -> Ranged: ...
 
 
 def contains(self: Ranged, other: Ranged) -> bool:
@@ -108,6 +112,9 @@ class TextRange(Protocol):
     def enclosing_nodes(self) -> Sequence[NodeWithRange[ast.AST]]: ...
 
     @property
+    def enclosed_nodes(self) -> Sequence[NodeWithRange[ast.AST]]: ...
+
+    @property
     def enclosing_call(self) -> NodeWithRange[ast.Call] | None: ...
 
     @property
@@ -125,6 +132,8 @@ class TextRange(Protocol):
     def expression(self) -> ast.expr | None: ...
 
     def __contains__(self, other: Ranged) -> bool: ...
+
+    def __and__(self, other: Ranged) -> Ranged: ...
 
     def enclosing_nodes_by_type[T: ast.AST](
         self, node_type: type[T]
@@ -156,6 +165,9 @@ class NodeWithRange[T: ast.AST]:
 
     def __contains__(self, other: Ranged) -> bool:
         return contains(self, other)
+
+    def __and__(self, other: Ranged) -> Ranged:
+        return self.range & other
 
 
 ScopeWithRange = (

@@ -8,7 +8,7 @@ from functools import singledispatch
 from typing import Protocol
 
 from breakfast import types
-from breakfast.types import Position, Source
+from breakfast.types import Position, Source, TextRange
 from breakfast.visitor import generic_visit
 
 logger = logging.getLogger(__name__)
@@ -92,6 +92,19 @@ def find_statements_in_try(
     yield from find(node.body)
     yield from find(node.orelse)
     yield from find(node.finalbody)
+
+
+def nodes_in_range(node: ast.AST, text_range: TextRange) -> Iterator[ast.AST]:
+    node_range = text_range.source.node_range(node)
+    if (
+        node_range := text_range.source.node_range(node)
+    ) and node_range in text_range:
+        yield node
+
+    if node_range is None or node_range & text_range:
+        yield from generic_visit(
+            nodes_in_range, node=node, text_range=text_range
+        )
 
 
 def find_other_nodes(
