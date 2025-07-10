@@ -21,7 +21,9 @@ jobs:
       - name: Run Tests
         run: |
           python -m pip install --upgrade pip uv
-          make test
+          uv sync
+          uv run -m pytest tests
+          uv run -m mypy src tests
 
   linting:
     runs-on: ubuntu-latest
