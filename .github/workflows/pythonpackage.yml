@@ -24,4 +24,5 @@ jobs:
           uv sync
           uv run -m coverage run -m pytest tests
           uv run -m mypy src tests
-          uv run -m ruff
+          uv run -m ruff check
+          uv run -m ruff format
