@@ -2417,33 +2417,6 @@ class Comprehension:
         yield replace_range(assignment_range, [])
 
 
-@register
-@dataclass
-class ExtractProtocol:
-    name = "Extract Protocol from Parameter"
-
-    @classmethod
-    def from_selection(cls, selection: CodeSelection) -> Editor | None:
-        scope = selection.text_range.enclosing_scopes[-1]
-        if not isinstance(scope.node, ast.FunctionDef):
-            return None
-
-        argument = next(
-            (
-                n
-                for n in selection.text_range.enclosed_nodes
-                if isinstance(n.node, ast.arg)
-            ),
-            None,
-        )
-        print(f"{argument=}")
-
-        if not argument:
-            return None
-
-        return None
-
-
 def to_class_name(var_name: str) -> str:
     return "".join(s.lower().title() for s in var_name.split("_"))
 
