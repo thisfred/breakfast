@@ -280,7 +280,7 @@ def code_action(
         )
 
         selection = CodeSelection(
-            sources=project.sources, text_range=TextRange(start, end)
+            sources=project.sources, text_range=TextRange(start=start, end=end)
         ).rtrim()
 
         for name, refactoring in selection.refactorings.items():

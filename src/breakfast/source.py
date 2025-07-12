@@ -53,7 +53,7 @@ def has_position(node: AST) -> TypeGuard[PositionalNode]:
     )
 
 
-@dataclass(order=True, frozen=True)
+@dataclass(order=True, frozen=True, kw_only=True)
 class Position:
     source: types.Source
     row: int
@@ -112,19 +112,19 @@ class Position:
 
     @property
     def as_range(self) -> types.TextRange:
-        return TextRange(self, self)
+        return TextRange(start=self, end=self)
 
     def to(self, end: types.Position) -> types.TextRange:
-        return TextRange(self, end)
+        return TextRange(start=self, end=end)
 
     def through(self, end: types.Position) -> types.TextRange:
-        return TextRange(self, end + 1)
+        return TextRange(start=self, end=end + 1)
 
     def _add_offset(self, offset: int) -> types.Position:
         return replace(self, column=self.column + offset)
 
     def insert(self, text: str) -> types.Edit:
-        return types.Edit(TextRange(start=self, end=self), text=text)
+        return types.Edit(text_range=TextRange(start=self, end=self), text=text)
 
     def __contains__(self, other: types.Ranged) -> bool:
         return types.contains(self, other)
@@ -133,10 +133,10 @@ class Position:
         if self in other:
             return self
 
-        return EmptyRange(self.source)
+        return EmptyRange(source=self.source)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class EmptyRange:
     source: types.Source
 
@@ -155,7 +155,7 @@ class EmptyRange:
         return self
 
 
-@dataclass(order=True, frozen=True)
+@dataclass(order=True, frozen=True, kw_only=True)
 class TextRange:
     start: types.Position
     end: types.Position
@@ -253,14 +253,16 @@ class TextRange:
                 if (
                     node_range := source.node_range(node)
                 ) is not None and stripped in node_range:
-                    scopes.append(types.NodeWithRange(node, node_range))
+                    scopes.append(
+                        types.NodeWithRange(node=node, range=node_range)
+                    )
             elif isinstance(node, ast.Module):
                 scopes.append(
                     types.NodeWithRange(
-                        node,
-                        TextRange(
-                            source.position(0, 0),
-                            source.lines[-1].end,
+                        node=node,
+                        range=TextRange(
+                            start=source.position(0, 0),
+                            end=source.lines[-1].end,
                         ),
                     )
                 )
@@ -270,7 +272,7 @@ class TextRange:
     @cached_property
     def enclosed_nodes(self) -> Sequence[types.NodeWithRange[ast.AST]]:
         return [
-            types.NodeWithRange(node, node_range)
+            types.NodeWithRange(node=node, range=node_range)
             for node in nodes_in_range(self.source.ast, self)
             if (node_range := self.source.node_range(node)) is not None
         ]
@@ -383,7 +385,9 @@ class TextRange:
         return text
 
     def replace(self, new_text: str) -> types.Edit:
-        return types.Edit(TextRange(self.start, self.end), text=new_text)
+        return types.Edit(
+            text_range=TextRange(start=self.start, end=self.end), text=new_text
+        )
 
     def __and__(self, other: types.Ranged) -> types.Ranged:
         if (
@@ -391,7 +395,7 @@ class TextRange:
             or self.end < other.start
             or other.end < self.start
         ):
-            return EmptyRange(self.source)
+            return EmptyRange(source=self.source)
 
         if self in other:
             return self
@@ -405,7 +409,7 @@ class TextRange:
         )
 
 
-@dataclass(order=True, frozen=True)
+@dataclass(order=True, frozen=True, kw_only=True)
 class Line:
     source: types.Source
     row: int
@@ -424,7 +428,7 @@ class Line:
 
     @property
     def text_range(self) -> types.TextRange:
-        return TextRange(self.start, self.end)
+        return TextRange(start=self.start, end=self.end)
 
     def __contains__(self, other: types.Ranged) -> bool:
         return types.contains(self, other)
@@ -445,7 +449,7 @@ class Line:
         return self.source.lines[self.row + 1]
 
 
-@dataclass(order=True)
+@dataclass(order=True, kw_only=True)
 class Source:
     path: str
     project_root: str
@@ -462,13 +466,15 @@ class Source:
 
     @property
     def start(self) -> types.Position:
-        return Position(self, 0, 0)
+        return Position(source=self, row=0, column=0)
 
     @property
     def end(self) -> types.Position:
         if not self.text:
-            return Position(self, 0, 0)
-        return Position(self, len(self.text) - 1, len(self.text[-1]) - 1)
+            return Position(source=self, row=0, column=0)
+        return Position(
+            source=self, row=len(self.text) - 1, column=len(self.text[-1]) - 1
+        )
 
     @property
     def source(self) -> types.Source:
@@ -488,7 +494,7 @@ class Source:
 
     @cached_property
     def lines(self) -> tuple[types.Line, ...]:
-        return tuple(Line(self, i) for i in range(len(self.text)))
+        return tuple(Line(source=self, row=i) for i in range(len(self.text)))
 
     @cached_property
     def ast(self) -> AST:
@@ -602,4 +608,4 @@ class Source:
         if not end:
             return None
         start = self.node_position(node)
-        return TextRange(start, end)
+        return TextRange(start=start, end=end)

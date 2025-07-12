@@ -41,7 +41,7 @@ class Ranged(Protocol):  # pragma: nocover
     def __and__(self, other: Ranged) -> Ranged: ...
 
 
-@dataclass(order=True, frozen=True)  # pragma: nocover
+@dataclass(order=True, frozen=True, kw_only=True)  # pragma: nocover
 class Position(Protocol):
     source: Source
     row: int
@@ -83,7 +83,7 @@ def contains(self: Ranged, other: Ranged) -> bool:
     )
 
 
-@dataclass(order=True, frozen=True)  # pragma: nocover
+@dataclass(order=True, frozen=True, kw_only=True)  # pragma: nocover
 class TextRange(Protocol):
     start: Position
     end: Position
@@ -146,7 +146,7 @@ class TextRange(Protocol):
     def replace(self, new_text: str) -> Edit: ...
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class NodeWithRange[T: ast.AST]:
     node: T
     range: TextRange
@@ -231,7 +231,7 @@ class Source(Protocol):  # pragma: nocover
     def node_range(self, node: AST) -> TextRange | None: ...
 
 
-@dataclass(order=True, frozen=True)
+@dataclass(order=True, frozen=True, kw_only=True)
 class Edit:
     text_range: TextRange
     text: str

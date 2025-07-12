@@ -262,7 +262,7 @@ def always_false_bool_op(node: ast.BoolOp) -> bool:
     return False
 
 
-@dataclass
+@dataclass(kw_only=True)
 class ArgumentMapper:
     arguments: ast.arguments
     body_range: TextRange

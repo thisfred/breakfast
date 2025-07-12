@@ -49,11 +49,12 @@ def test_should_find_occurrences_along_longer_import_paths():
         filename="cooking/stove.py",
     )
     positions = all_occurrence_positions(
-        Position(source1, 4, 6), sources=[source1, source2, source3]
+        Position(source=source1, row=4, column=6),
+        sources=[source1, source2, source3],
     )
     assert positions == [
-        Position(source1, 4, 6),
-        Position(source3, 5, 8),
+        Position(source=source1, row=4, column=6),
+        Position(source=source3, row=5, column=8),
     ]
 
 
@@ -74,12 +75,12 @@ def test_should_find_occurrences_along_relative_import_paths():
         filename="a/d/e.py",
     )
     positions = all_occurrence_positions(
-        Position(source2, 1, 6), sources=[source1, source2]
+        Position(source=source2, row=1, column=6), sources=[source1, source2]
     )
     assert positions == [
-        Position(source1, 1, 18),
-        Position(source1, 3, 4),
-        Position(source2, 1, 6),
+        Position(source=source1, row=1, column=18),
+        Position(source=source1, row=3, column=4),
+        Position(source=source2, row=1, column=6),
     ]
 
 
@@ -1019,12 +1020,12 @@ def test_does_not_rename_imported_names():
         filename="a.py",
     )
     positions = all_occurrence_positions(
-        Position(source1, 5, 4), sources=[source1, source2]
+        Position(source=source1, row=5, column=4), sources=[source1, source2]
     )
 
     assert positions == [
-        Position(source1, 5, 4),
-        Position(source1, 6, 10),
+        Position(source=source1, row=5, column=4),
+        Position(source=source1, row=6, column=10),
     ]
 
 
@@ -1043,13 +1044,13 @@ def test_finds_namespace_imports():
         """,
         filename="bar.py",
     )
-    position = Position(source1, 1, 4)
+    position = Position(source=source1, row=1, column=4)
     assert all_occurrence_positions(
         position, sources=[source1, source2]
     ) == sorted(
         [
-            Position(source1, 1, 4),
-            Position(source2, 2, 4),
+            Position(source=source1, row=1, column=4),
+            Position(source=source2, row=2, column=4),
         ]
     )
 

@@ -61,7 +61,7 @@ def register(refactoring: type[Refactoring]) -> type[Refactoring]:
     return refactoring
 
 
-@dataclass
+@dataclass(kw_only=True)
 class CodeSelection:
     text_range: TextRange
     sources: Sequence[Source]
@@ -277,7 +277,7 @@ class Refactoring(Protocol):
 
 
 @register
-@dataclass
+@dataclass(kw_only=True)
 class ExtractFunction:
     name = "extract function"
 
@@ -286,7 +286,7 @@ class ExtractFunction:
         return ExtractFunctionEditor.from_selection(selection)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class ExtractFunctionEditor:
     selection: CodeSelection
     range: TextRange
@@ -398,7 +398,7 @@ def make_body(
 
 
 @register
-@dataclass
+@dataclass(kw_only=True)
 class ExtractMethod:
     name = "extract method"
 
@@ -407,7 +407,7 @@ class ExtractMethod:
         return ExtractMethodEditor.from_selection(selection)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class ExtractMethodEditor:
     selection: CodeSelection
     range: TextRange
@@ -639,7 +639,7 @@ def make_argument(occurrence: Occurrence) -> ast.arg:
 
 
 @register
-@dataclass
+@dataclass(kw_only=True)
 class ExtractVariable:
     name = "extract variable"
 
@@ -648,7 +648,7 @@ class ExtractVariable:
         return ExtractVariableEditor.from_text_range(selection.text_range)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class ExtractVariableEditor:
     range: TextRange
     expression: ast.AST
@@ -750,7 +750,7 @@ def get_body_range(enclosing_scope: ScopeWithRange) -> TextRange:
 
 
 @register
-@dataclass
+@dataclass(kw_only=True)
 class InlineVariable:
     name = "inline variable"
     selection: CodeSelection
@@ -775,7 +775,7 @@ class InlineVariable:
         )
 
 
-@dataclass
+@dataclass(kw_only=True)
 class InlineVariableEditor:
     range: TextRange
     name_at_cursor: str
@@ -853,7 +853,7 @@ class InlineVariableEditor:
 
 
 @register
-@dataclass
+@dataclass(kw_only=True)
 class InlineCall:
     name = "inline call"
     selection: CodeSelection
@@ -935,7 +935,7 @@ class InlineCall:
         ]
         if return_ranges:
             name = "result"
-            result = (Edit(call.range, text=name), *result)
+            result = (Edit(text_range=call.range, text=name), *result)
         insert_range = (
             self.selection.start.line.start.as_range
             if return_ranges
@@ -974,7 +974,7 @@ class InlineCall:
             is None
         ):
             return
-        yield Edit(definition_range, text="")
+        yield Edit(text_range=definition_range, text="")
 
     @staticmethod
     def get_body_range(
@@ -1024,9 +1024,9 @@ class InlineCall:
                         returned_names.add(return_node.value.id)
 
         arg_mapper = ArgumentMapper(
-            definition_ast.args,
-            body_range,
-            returned_names,
+            arguments=definition_ast.args,
+            body_range=body_range,
+            returned_names=returned_names,
             sources=self.selection.sources,
             static_method=static_method,
         )
@@ -1040,7 +1040,7 @@ class InlineCall:
 
 
 @register
-@dataclass
+@dataclass(kw_only=True)
 class SlideStatementsUp:
     name = "slide statements up"
     selection: CodeSelection
@@ -1092,7 +1092,7 @@ class SlideStatementsUp:
 
 
 @register
-@dataclass
+@dataclass(kw_only=True)
 class SlideStatementsDown:
     name = "slide statements down"
     selection: CodeSelection
@@ -1150,7 +1150,7 @@ class SlideStatementsDown:
 
 
 @register
-@dataclass
+@dataclass(kw_only=True)
 class MoveFunctionToParentScope:
     name = "move function to parent scope"
     selection: CodeSelection
@@ -1169,7 +1169,9 @@ class MoveFunctionToParentScope:
     @property
     def edits(self) -> Iterator[Edit]:
         enclosing_scope = self.selection.text_range.enclosing_scopes[-1]
-        result: tuple[Edit, ...] = (Edit(enclosing_scope.range, ""),)
+        result: tuple[Edit, ...] = (
+            Edit(text_range=enclosing_scope.range, text=""),
+        )
 
         if not (
             scope := self.closest_enclosing_non_class_scope(
@@ -1203,7 +1205,7 @@ class MoveFunctionToParentScope:
 
 
 @register
-@dataclass
+@dataclass(kw_only=True)
 class RemoveParameter:
     name = "remove parameter"
     selection: CodeSelection
@@ -1304,7 +1306,7 @@ class RemoveParameter:
 
 
 @register
-@dataclass
+@dataclass(kw_only=True)
 class AddParameter:
     name = "add parameter"
     selection: CodeSelection
@@ -1374,7 +1376,7 @@ class AddParameter:
 
 
 @register
-@dataclass
+@dataclass(kw_only=True)
 class EncapsulateField:
     name = "encapsulate field"
 
@@ -1388,7 +1390,7 @@ class EncapsulateField:
             parent = selection.text_range.enclosing_scopes[-1]
             if isinstance(parent.node, ast.ClassDef):
                 return EncapsulateFieldEditor(
-                    selection.source,
+                    source=selection.source,
                     node=enclosing_assignment,
                     class_scope=parent,
                 )
@@ -1408,13 +1410,13 @@ class EncapsulateField:
             return None
 
         return EncapsulateFieldEditor(
-            selection.source,
+            source=selection.source,
             node=enclosing_attributes[-1],
             class_scope=grandparent,
         )
 
 
-@dataclass
+@dataclass(kw_only=True)
 class EncapsulateFieldEditor:
     source: Source
     node: (
@@ -1528,7 +1530,7 @@ class EncapsulateFieldEditor:
 
 
 @register
-@dataclass
+@dataclass(kw_only=True)
 class EncapsulateRecord:
     name = "encapsulate record"
 
@@ -1561,7 +1563,7 @@ class EncapsulateRecord:
         )
 
 
-@dataclass
+@dataclass(kw_only=True)
 class EncapsulateRecordEditor:
     range: TextRange
     enclosing_assignment: (
@@ -1658,7 +1660,7 @@ class EncapsulateRecordEditor:
 
 
 @register
-@dataclass
+@dataclass(kw_only=True)
 class MethodToProperty:
     name = "convert method to property"
     selection: CodeSelection
@@ -1708,7 +1710,7 @@ class MethodToProperty:
 
 
 @register
-@dataclass
+@dataclass(kw_only=True)
 class PropertyToMethod:
     name = "convert property to method"
     selection: CodeSelection
@@ -1761,7 +1763,7 @@ class PropertyToMethod:
 
 
 @register
-@dataclass
+@dataclass(kw_only=True)
 class ExtractClass:
     name = "extract class"
     selection: CodeSelection
@@ -1911,7 +1913,7 @@ def make_dataclass(
 
 
 @register
-@dataclass
+@dataclass(kw_only=True)
 class ReplaceWithMethodObject:
     name = "replace with method object"
     selection: CodeSelection
@@ -2071,7 +2073,7 @@ class ReplaceWithMethodObject:
 
 
 @register
-@dataclass
+@dataclass(kw_only=True)
 class ConvertToIfExpression:
     name = "convert if statement to if expression"
 
@@ -2080,7 +2082,7 @@ class ConvertToIfExpression:
         return MakeIfExpression.from_text_range(selection.text_range)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class MakeIfExpression:
     target: ast.Name | ast.Attribute | ast.Subscript
     annotation: ast.expr | None
@@ -2169,7 +2171,7 @@ class MakeIfExpression:
 
 
 @register
-@dataclass
+@dataclass(kw_only=True)
 class ConvertToIfStatement:
     name = "convert if expression to if statement"
 
@@ -2178,7 +2180,7 @@ class ConvertToIfStatement:
         return MakeIfStatement.from_text_range(selection.text_range)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class MakeIfStatement:
     target: ast.Name | ast.Attribute | ast.Subscript
     test: ast.expr
@@ -2250,7 +2252,7 @@ class MakeIfStatement:
 
 
 @register
-@dataclass
+@dataclass(kw_only=True)
 class ReplaceLoopWithComprehension:
     name = "replace loop with comprehension"
 
@@ -2259,7 +2261,7 @@ class ReplaceLoopWithComprehension:
         return Comprehension.from_selection(selection)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Comprehension:
     selection: CodeSelection
     loop: NodeWithRange[ast.For]
@@ -2443,7 +2445,7 @@ def render_node(node: ast.AST, text_range: TextRange, level: int | None) -> str:
 
 
 def delete_range(text_range: TextRange) -> Edit:
-    return Edit(text_range, "")
+    return Edit(text_range=text_range, text="")
 
 
 def replace_range(
@@ -2456,7 +2458,7 @@ def replace_range(
 ) -> Edit:
     node_list = nodes if isinstance(nodes, list) else [nodes]
     return Edit(
-        text_range,
+        text_range=text_range,
         text="\n".join(
             render_node(node=node, text_range=text_range, level=level)
             + (NEWLINE if add_newline_after else "")

@@ -22,7 +22,7 @@ STATIC_METHOD = "staticmethod"
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class NameOccurrence:
     name: str
     position: types.Position
@@ -30,12 +30,12 @@ class NameOccurrence:
     is_definition: bool
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class SuperCall:
     occurrence: NameOccurrence
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class Nonlocal:
     name: str
     position: types.Position
@@ -43,7 +43,7 @@ class Nonlocal:
     is_definition: bool = False
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class Global:
     name: str
     position: types.Position
@@ -51,7 +51,7 @@ class Global:
     is_definition: bool = False
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Delay:
     delayed: Iterator[object]
 
@@ -123,7 +123,7 @@ class Namespace(Protocol):
     attributes: dict[str, Name]
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Name:
     attributes: dict[str, Name]
     types: list[Namespace]
@@ -134,7 +134,7 @@ class Name:
         return cls(attributes={}, types=[], occurrences=set())
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Scope:
     module: tuple[str, ...]
     attributes: dict[str, Name]
@@ -188,18 +188,18 @@ class Scope:
         return child
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class EnterScope:
     name: str | None = None
     is_class: bool = False
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class EnterFunctionScope:
     occurrence: NameOccurrence
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class MoveToScope:
     event: NameOccurrence | Attribute
 
@@ -207,7 +207,7 @@ class MoveToScope:
 class ReturnFromScope: ...
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class MoveToModule:
     name: tuple[str, ...]
 
@@ -218,43 +218,43 @@ class ReturnFromModule: ...
 class LeaveScope: ...
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class Attribute:
     value: NameOccurrence | Attribute
     attribute: NameOccurrence
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class ClassAttribute:
     class_occurrence: NameOccurrence
     attribute: NameOccurrence
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class Bind:
     target: NameOccurrence | Attribute
     value: NameOccurrence | Attribute
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class BindImportFrom:
     occurrence: NameOccurrence
     module: tuple[str, ...]
     level: int
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class BindImport:
     occurrence: NameOccurrence | Attribute
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class BaseClass:
     class_occurrence: NameOccurrence | Attribute
     base: NameOccurrence | Attribute
 
 
-@dataclass
+@dataclass(kw_only=True)
 class FirstArgument:
     arg: NameOccurrence
 
@@ -281,7 +281,7 @@ def all_occurrence_positions(
     return result
 
 
-@dataclass
+@dataclass(kw_only=True)
 class NameCollector:
     positions: dict[types.Position, Name | None]
     delays: deque[tuple[Scope, Iterator[object]]]
@@ -704,7 +704,7 @@ def name(node: ast.Name, source: types.Source) -> Iterator[object]:
 @find_names.register
 def type_var(node: ast.TypeVar, source: types.Source) -> Iterator[object]:
     yield NameOccurrence(
-        node.name,
+        name=node.name,
         position=source.node_position(node),
         ast=node,
         is_definition=True,
@@ -724,7 +724,7 @@ def function_definition(
 
     yield definition
     yield from defaults(node=node, source=source)
-    yield EnterFunctionScope(definition)
+    yield EnterFunctionScope(occurrence=definition)
     yield from type_parameters(node=node, source=source)
     yield from returns(node=node, source=source, definition=definition)
     yield from arguments(
@@ -749,7 +749,7 @@ def body(
         for statement in node.body:
             yield from find_names(statement, source)
 
-    yield Delay(process_body())
+    yield Delay(delayed=process_body())
 
 
 def returns(
@@ -764,7 +764,7 @@ def returns(
                 return_event = event
             yield event
     if return_event:
-        yield Bind(definition, return_event)
+        yield Bind(target=definition, value=return_event)
 
 
 def type_parameters(
@@ -805,9 +805,9 @@ def class_definition(
                 last_event = event
             yield event
         if last_event:
-            yield BaseClass(class_occurrence, last_event)
+            yield BaseClass(class_occurrence=class_occurrence, base=last_event)
 
-    yield EnterScope(class_occurrence.name, is_class=True)
+    yield EnterScope(name=class_occurrence.name, is_class=True)
     for type_parameter in node.type_params:
         yield from find_names(type_parameter, source)
     yield from class_body(node, source, class_occurrence)
@@ -829,9 +829,9 @@ def call(node: ast.Call, source: types.Source) -> Iterator[object]:
         return
 
     if isinstance(last_event, NameOccurrence) and last_event.name == "super":
-        yield SuperCall(last_event)
+        yield SuperCall(occurrence=last_event)
 
-    yield MoveToScope(last_event)
+    yield MoveToScope(event=last_event)
     yield from process_keywords(node, source)
     yield ReturnFromScope()
 
@@ -924,7 +924,7 @@ def assignment(node: ast.Assign, source: types.Source) -> Iterator[object]:
         for target_event, value_event in zip(
             target_events, value_events, strict=True
         ):
-            yield Bind(target_event, value_event)
+            yield Bind(target=target_event, value=value_event)
 
 
 @find_names.register
@@ -1012,10 +1012,10 @@ def arguments(
                 if isinstance(event, NameOccurrence):
                     type_event = event
             if name_event and type_event:
-                yield Bind(name_event, type_event)
+                yield Bind(target=name_event, value=type_event)
         if i == 0:
             if name_event and not in_static_method:
-                yield FirstArgument(name_event)
+                yield FirstArgument(arg=name_event)
 
 
 def annotation(

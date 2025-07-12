@@ -14,7 +14,7 @@ from breakfast.visitor import generic_visit
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class Occurrence:
     name: str
     position: Position

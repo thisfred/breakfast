@@ -85,7 +85,7 @@ def assert_renames_to(
 
 def apply_edits(source: types.Source, edits: Iterable[types.Edit]):
     end = source.position(len(source.lines), 0)
-    full_range = TextRange(source.position(0, 0), end)
+    full_range = TextRange(start=source.position(0, 0), end=end)
 
     edit_list = list(edits)
 
@@ -116,15 +116,15 @@ def range_for(
                     found += 1
                 if i > 0 or found == occurrence:
                     last_range = TextRange(
-                        source.position(row, match.start()),
-                        source.position(row, match.start() + len(needle)),
+                        start=source.position(row, match.start()),
+                        end=source.position(row, match.start() + len(needle)),
                     )
                     if first_range is None:
                         first_range = last_range
                     break
 
     if first_range and last_range:
-        found_range = TextRange(first_range.start, last_range.end)
+        found_range = TextRange(start=first_range.start, end=last_range.end)
         print(f"{found_range=}")
         return found_range
 

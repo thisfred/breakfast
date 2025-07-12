@@ -36,7 +36,7 @@ def test_extract_variable_should_insert_name_definition():
     extraction_end = source.position(1, 9)
 
     refactor = ExtractVariableEditor.from_text_range(
-        TextRange(extraction_start, extraction_end)
+        TextRange(start=extraction_start, end=extraction_end)
     )
     assert refactor is not None
     insert, *_ = list(refactor.edits)
@@ -53,12 +53,13 @@ def test_extract_variable_should_replace_extracted_test_with_result():
     extraction_end = source.position(1, 9)
 
     refactor = ExtractVariableEditor.from_text_range(
-        TextRange(extraction_start, extraction_end)
+        TextRange(start=extraction_start, end=extraction_end)
     )
     assert refactor is not None
     _, replace = list(refactor.edits)
     assert replace == Edit(
-        TextRange(start=extraction_start, end=extraction_end), text="v"
+        text_range=TextRange(start=extraction_start, end=extraction_end),
+        text="v",
     )
 
 
@@ -72,7 +73,7 @@ def test_extract_variable_should_insert_name_definition_before_extraction_point(
     extraction_end = source.position(1, 9)
 
     refactor = ExtractVariableEditor.from_text_range(
-        TextRange(extraction_start, extraction_end)
+        TextRange(start=extraction_start, end=extraction_end)
     )
     assert refactor is not None
     insert, *_ = list(refactor.edits)
@@ -90,17 +91,22 @@ def test_extract_variable_should_replace_code_with_variable():
     extraction_start = source.position(1, 4)
     extraction_end = source.position(1, 22)
     refactor = ExtractVariableEditor.from_text_range(
-        TextRange(extraction_start, extraction_end)
+        TextRange(start=extraction_start, end=extraction_end)
     )
     assert refactor is not None
     edits = list(refactor.edits)
 
     assert edits == [
         Edit(
-            TextRange(source.position(1, 0), source.position(1, 0)),
-            "v = some_calculation()\n",
+            text_range=TextRange(
+                start=source.position(1, 0), end=source.position(1, 0)
+            ),
+            text="v = some_calculation()\n",
         ),
-        Edit(TextRange(extraction_start, extraction_end), "v"),
+        Edit(
+            text_range=TextRange(start=extraction_start, end=extraction_end),
+            text="v",
+        ),
     ]
 
 
@@ -114,7 +120,7 @@ def test_extract_variable_will_not_extract_partial_expression():
     extraction_start = source.position(1, 4)
     extraction_end = source.position(1, 21)
     refactor = ExtractVariableEditor.from_text_range(
-        TextRange(extraction_start, extraction_end)
+        TextRange(start=extraction_start, end=extraction_end)
     )
     assert refactor is None
 
@@ -132,7 +138,7 @@ def test_extract_variable_should_move_definition_before_current_statement():
     extraction_start = source.position(3, 4)
     extraction_end = source.position(3, 22)
     refactor = ExtractVariableEditor.from_text_range(
-        TextRange(extraction_start, extraction_end)
+        TextRange(start=extraction_start, end=extraction_end)
     )
     assert refactor is not None
     insert, _ = list(refactor.edits)
@@ -149,7 +155,7 @@ def test_extract_variable_should_extract_value_in_index_position():
     extraction_start = source.position(2, 33)
     extraction_end = source.position(2, 48)
     refactor = ExtractVariableEditor.from_text_range(
-        TextRange(extraction_start, extraction_end)
+        TextRange(start=extraction_start, end=extraction_end)
     )
     assert refactor is not None
     insert, _ = list(refactor.edits)
@@ -171,7 +177,7 @@ def test_extract_variable_should_retain_indentation_level():
     extraction_start = source.position(4, 8)
     extraction_end = source.position(4, 26)
     refactor = ExtractVariableEditor.from_text_range(
-        TextRange(extraction_start, extraction_end)
+        TextRange(start=extraction_start, end=extraction_end)
     )
     assert refactor is not None
     insert, *_ = list(refactor.edits)
@@ -194,7 +200,7 @@ def test_extract_variable_should_extract_all_identical_nodes_in_the_same_scope()
     extraction_end = source.position(1, 26)
 
     refactor = ExtractVariableEditor.from_text_range(
-        TextRange(extraction_start, extraction_end)
+        TextRange(start=extraction_start, end=extraction_end)
     )
     assert refactor is not None
     _, *edits = list(refactor.edits)
@@ -218,7 +224,7 @@ def test_extract_variable_should_extract_before_first_occurrence():
     extraction_end = source.position(4, 26)
 
     refactor = ExtractVariableEditor.from_text_range(
-        TextRange(extraction_start, extraction_end)
+        TextRange(start=extraction_start, end=extraction_end)
     )
     assert refactor is not None
     insert, *edits = list(refactor.edits)
@@ -240,7 +246,7 @@ def test_extract_variable_should_not_extract_occurrences_in_other_function():
     extraction_start = source.position(2, 8)
     extraction_end = source.position(2, 30)
     refactor = ExtractVariableEditor.from_text_range(
-        TextRange(extraction_start, extraction_end)
+        TextRange(start=extraction_start, end=extraction_end)
     )
     assert refactor is not None
     _insert, *edits = list(refactor.edits)
@@ -263,7 +269,7 @@ def test_extract_variable_should_not_extract_occurrences_in_other_method_of_the_
     extraction_start = source.position(3, 12)
     extraction_end = source.position(3, 34)
     refactor = ExtractVariableEditor.from_text_range(
-        TextRange(extraction_start, extraction_end)
+        TextRange(start=extraction_start, end=extraction_end)
     )
     assert refactor is not None
     _insert, *edits = list(refactor.edits)
@@ -699,7 +705,10 @@ def test_slide_statements_should_not_slide_beyond_first_usage():
     last = source.lines[1]
 
     refactor = SlideStatementsDown(
-        CodeSelection(TextRange(first.start, last.end), sources=[source])
+        selection=CodeSelection(
+            text_range=TextRange(start=first.start, end=last.end),
+            sources=[source],
+        )
     )
     edits = list(refactor.edits)
 
@@ -719,7 +728,10 @@ def test_slide_statements_should_not_slide_into_nested_scopes():
     last = source.lines[1]
 
     refactor = SlideStatementsDown(
-        CodeSelection(TextRange(first.start, last.end), sources=[source])
+        selection=CodeSelection(
+            text_range=TextRange(start=first.start, end=last.end),
+            sources=[source],
+        )
     )
     edits = list(refactor.edits)
     assert not edits
@@ -747,7 +759,10 @@ def test_slide_statements_should_not_slide_inside_if_else():
     last = source.lines[2]
 
     refactor = SlideStatementsDown(
-        CodeSelection(TextRange(first.start, last.end), sources=[source])
+        selection=CodeSelection(
+            text_range=TextRange(start=first.start, end=last.end),
+            sources=[source],
+        )
     )
     edits = list(refactor.edits)
     assert edits[0].start.row == 7
@@ -766,7 +781,10 @@ def test_slide_statements_should_slide_past_irrelevant_statements():
     last = source.lines[1]
 
     refactor = SlideStatementsDown(
-        CodeSelection(TextRange(first.start, last.end), sources=[source])
+        selection=CodeSelection(
+            text_range=TextRange(start=first.start, end=last.end),
+            sources=[source],
+        )
     )
     insert, delete = list(refactor.edits)
 
@@ -789,7 +807,10 @@ def test_slide_statements_should_slide_multiple_lines():
     last = source.lines[2]
 
     refactor = SlideStatementsDown(
-        CodeSelection(TextRange(first.start, last.end), sources=[source])
+        selection=CodeSelection(
+            text_range=TextRange(start=first.start, end=last.end),
+            sources=[source],
+        )
     )
     insert, delete = refactor.edits
 
@@ -815,7 +836,10 @@ def test_slide_statements_up_should_slide_past_irrelevant_statements():
     last = source.lines[3]
 
     refactor = SlideStatementsUp(
-        CodeSelection(TextRange(first.start, last.end), sources=[source])
+        selection=CodeSelection(
+            text_range=TextRange(start=first.start, end=last.end),
+            sources=[source],
+        )
     )
     insert, delete = refactor.edits
 
@@ -924,7 +948,9 @@ def test_inline_call_should_work_without_return_value():
     start = source.position(5, 0)
     end = source.position(5, 0)
     refactor = InlineCall(
-        CodeSelection(TextRange(start, end), sources=[source])
+        selection=CodeSelection(
+            text_range=TextRange(start=start, end=end), sources=[source]
+        )
     )
     edit, *_ = refactor.edits
 
@@ -946,7 +972,9 @@ def test_inline_call_should_work_when_given_position_within_called_name():
     start = source.position(5, 3)
     end = source.position(5, 3)
     refactor = InlineCall(
-        CodeSelection(TextRange(start, end), sources=[source])
+        selection=CodeSelection(
+            text_range=TextRange(start=start, end=end), sources=[source]
+        )
     )
     edit, *_ = refactor.edits
 
@@ -973,7 +1001,9 @@ def test_inline_call_should_work_inside_branches():
     start = source.position(8, 4)
     end = source.position(8, 4)
     refactor = InlineCall(
-        CodeSelection(TextRange(start, end), sources=[source])
+        selection=CodeSelection(
+            text_range=TextRange(start=start, end=end), sources=[source]
+        )
     )
     edit, *_ = refactor.edits
     assert edit.start == source.position(8, 4)
@@ -1202,7 +1232,9 @@ def test_extract_variable_should_include_quotes():
     start = source.position(4, 21)
     end = source.position(4, 26)
 
-    refactor = ExtractVariableEditor.from_text_range(TextRange(start, end))
+    refactor = ExtractVariableEditor.from_text_range(
+        TextRange(start=start, end=end)
+    )
     assert refactor is not None
     edits = list(refactor.edits)
     for edit in edits[1:]:
